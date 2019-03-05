@@ -18,6 +18,7 @@ test:
                           Pkg.test("ConScape"; coverage=true);'
 
 pages:
+  stage: deploy
   script:
     - julia --project=docs -e 'using Pkg; Pkg.instantiate(); Pkg.develop(PackageSpec(path=pwd()))'
     - julia --project=docs --color=yes docs/make.jl
