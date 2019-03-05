@@ -1,0 +1,3 @@
+module ConScape
+
+end
