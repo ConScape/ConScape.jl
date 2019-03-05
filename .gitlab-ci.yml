@@ -1,8 +1,13 @@
+image: "julia:1"
+
 variables:
   JULIA_DEPOT_PATH: "$CI_PROJECT_DIR/.julia/"
 
+before_script:
+  # workaround for https://github.com/JuliaDocs/Documenter.jl/issues/686
+  - apt-get -qq update; apt-get -y install git
+
 test:
-  image: "julia:1"
   script:
     - julia -e 'using InteractiveUtils;
                 versioninfo()'
@@ -11,3 +16,14 @@ test:
                           Pkg.clone(pwd(), "ConScape");
                           Pkg.build("ConScape");
                           Pkg.test("ConScape"; coverage=true);'
+
+pages:
+  script:
+    - julia --project=docs -e 'using Pkg; Pkg.instantiate(); Pkg.develop(PackageSpec(path=pwd()))'
+    - julia --project=docs --color=yes docs/make.jl
+    - mv docs/build public # move to the directory picked up by Gitlab pages
+  artifacts:
+    paths:
+      - public
+  only:
+  - master
