@@ -332,8 +332,7 @@ module ConScape
 
             @info("Computing (C*W)Z...")
             D = Matrix(CW)
-            # D = D*Z
-            D = Z'\Matrix(CW)'
+            D = D*Z
 
             @info("Computing Z(C*W)Z...")
             D = Z*D

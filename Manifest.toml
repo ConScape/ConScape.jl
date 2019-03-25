@@ -127,9 +127,9 @@ uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
 [[PyCall]]
 deps = ["Conda", "Dates", "Libdl", "LinearAlgebra", "MacroTools", "Serialization", "Statistics", "Test", "VersionParsing"]
-git-tree-sha1 = "a77c1841800535a02b65be1e2b8202b0d66f8b92"
+git-tree-sha1 = "29febb62247356e13ef87bf253d1cda10de74bfc"
 uuid = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
-version = "1.90.0"
+version = "1.91.0"
 
 [[PyPlot]]
 deps = ["Colors", "LaTeXStrings", "PyCall", "Sockets", "Test", "VersionParsing"]
