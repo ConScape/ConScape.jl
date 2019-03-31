@@ -268,7 +268,7 @@ module ConScape
     Compute full RSP betweenness of all nodes weighted with proximity
     TODO: Verify that this works
     ```
-    function RSP_full_betweenness_kweighted(h::HabitatAnalysis, β=nothing)
+    function RSP_full_betweenness_kweighted(h::HabitatAnalysis; β=nothing)
         if β === nothing
             throw(ArgumentError("β must be set to a value"))
         else
@@ -281,15 +281,17 @@ module ConScape
         #     Z[Z < 1./1000000] = 1./1000000 #used to avoid 0 division
         Zdiv = inv.(Z)
 
-        q = h.g.qualities
+        qs = qt = h.g.qualities
 
-        K = _similarities_all2L(h)
+        # FIXME! The python version allows for difference distance measures here. Figure out how to handle this in Julia
+        K = map(t -> exp(-t), RSP_dissimilarities_to(h, β=β))
+        K[diagind(K)] .= 0
 
-        K = Qs*(K*Qt)
-        e = ones(length(q), length(q))
+        K = qs.*(K.*qt'); return K
+        e = ones(length(qs), length(qt))
 
         # TODO: Check that this is written correctly, especially concerning the elementwise and dot products:
-        bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) * diag(K' * e)) * Z )
+        bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* diag(K' * e)) * Z )
 
         return bet
     end
