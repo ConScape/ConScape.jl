@@ -1,6 +1,6 @@
 module ConScape
 
-    using SparseArrays, PyPlot, LightGraphs, SimpleWeightedGraphs
+    using SparseArrays, Plots, LightGraphs, SimpleWeightedGraphs
     using LinearAlgebra
 
     mutable struct Grid
@@ -173,13 +173,13 @@ module ConScape
         return B
     end
 
-    function plot_outdegrees(g::Grid; cmap="cool")
+    function plot_outdegrees(g::Grid)
         values = sum(g.A, dims=2)
         canvas = zeros(g.shape...)
         for (i,v) in enumerate(values)
             canvas[g.id_to_grid_coordinate_list[i]...] = v
         end
-        imshow(canvas, cmap=cmap)
+        heatmap(canvas)
     end
 
 
