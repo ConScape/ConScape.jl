@@ -13,7 +13,7 @@ test:
                 versioninfo()'
     - mkdir $JULIA_DEPOT_PATH # Pkg3.jl#325
     - julia --project -e 'using Pkg;
-                          Pkg.clone(pwd(), "ConScape");
+                          Pkg.instantiate();
                           Pkg.build("ConScape");
                           Pkg.test("ConScape"; coverage=true);'
 

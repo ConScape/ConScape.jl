@@ -10,18 +10,30 @@ module ConScape
         qualities::Vector{Float64}
     end
 
-    function Grid(;shape=nothing, qualities::Vector=ones(prod(shape)), nhood_size=8)
+    """
+        Grid(;shape=nothing,
+             qualities::Vector=ones(prod(shape)),
+             nhood_size::Integer=8,
+             landscape=_generateA(shape..., nhood_size)) -> Grid
+
+    Construct a `Grid` from a `landscape` passed a `SparseMatrixCSC`.
+    """
+    function Grid(;shape=nothing,
+                  qualities::Vector=ones(prod(shape)),
+                  nhood_size::Integer=8,
+                  landscape=_generateA(shape..., nhood_size))
+        @assert prod(shape) == LinearAlgebra.checksquare(landscape)
         N_grid = prod(shape)
         n_cols = shape[2]
         Grid(shape,
-             _generateA(shape..., nhood_size),
+             landscape,
              _set_id_to_grid_coordinate_list(N_grid, n_cols),
              qualities)
     end
 
-    """
-    simulate a permeable wall
-    """
+    Base.size(g::Grid) = g.shape
+
+    # simulate a permeable wall
     function perm_wall_sim(;grid_shape=(30,60), Q=1, A=0.5, ww=3, wp=0.5, cw=(3,3), cp=(0.35,0.7), qualities=fill(Q, prod(grid_shape)))
 
         # 1. initialize landscape
@@ -52,13 +64,13 @@ module ConScape
         return g
     end
 
-    """
+    #=
     Generate the affinity matrix of a grid graph, where each
     pixel is connected to its vertical and horizontal neighbors.
 
     Parameters:
     - nhood_size: 4 creates horizontal and vertical edges, 8 creates also diagonal edges
-    """
+    =#
     function _generateA(n_rows, n_cols, nhood_size)
 
         N = n_rows*n_cols
@@ -118,11 +130,11 @@ module ConScape
         return id_to_grid_coordinate_list
     end
 
-    """
+    #=
     Make pixels impossible to move to by changing the affinities to them to zero.
     Input:
         - node_list: list of nodes (either node_ids or coordinate-tuples) to be made impossible
-    """
+    =#
     function _set_impossible_nodes!(g::Grid, node_list::Vector{<:Tuple}, impossible_affinity=1e-20)
         # Find the indices of the coordinates in the id_to_grid_coordinate_list vector
         node_list_idx = [findfirst(isequal(n), g.id_to_grid_coordinate_list) for n in node_list]
@@ -142,24 +154,6 @@ module ConScape
             A = A[nodes_to_keep,:]
             A = A[:,nodes_to_keep]
 
-            # MORE COMPLICATED VERSION OF ABOVE:
-            ##################
-            # sh = A.shape
-
-            # # Delete rows:
-            # A.rows = np.delete(A.rows, node_list_idx)
-            # A.data = np.delete(A.data, node_list_idx)
-            # A._shape = (sh[0]-num_of_removed, sh[1])
-
-            # # Delete columns:
-            # A = A.T
-            # sh = A.shape
-            # A.rows = np.delete(A.rows, node_list_idx)
-            # A.data = np.delete(A.data, node_list_idx)
-            # A._shape = (sh[0]-num_of_removed, sh[1])
-            # A = A.T
-            ###################
-
             deleteat!(g.qualities, node_list_idx)
             g.id_to_grid_coordinate_list = [g.id_to_grid_coordinate_list[id] for id in 1:length(g.id_to_grid_coordinate_list) if !(id in node_list_idx)]
         end
@@ -167,6 +161,11 @@ module ConScape
         g.A = A
     end
 
+    """
+        mapnz(f, A::SparseMatrixCSC) -> SparseMatrixCSC
+
+    Map the non-zero values of a sparse matrix `A` with the function `f`.
+    """
     function mapnz(f, A::SparseMatrixCSC)
         B = copy(A)
         map!(f, B.nzval, A.nzval)
@@ -183,22 +182,33 @@ module ConScape
     end
 
 
-    struct HabitatAnalysis
+    struct Habitat
         g::Grid
         C::SparseMatrixCSC{Float64,Int}
         P_ref::SparseMatrixCSC{Float64,Int}
         landmarks::Vector{Int}
     end
 
-    HabitatAnalysis(g::Grid,
-                    costfunction::Function,
-                    landmarks::AbstractVector = 1:size(g.A, 1)) =
-                        HabitatAnalysis(g,
-                                        mapnz(costfunction, g.A),
-                                        _compute_Pref(g.A),
-                                        landmarks)
+    """
+        Habitat(g::Grid,
+            costfunction::Function,
+            landmarks::AbstractVector = 1:size(g.A, 1)) =
+                Habitat(g,
+                        mapnz(costfunction, g.A),
+                        _compute_Pref(g.A),
+                        landmarks)
 
-    ```
+    Construct a Habitat from a `g::Grid` based on a `costfunction`.
+    """
+    Habitat(g::Grid,
+            costfunction::Function,
+            landmarks::AbstractVector = 1:size(g.A, 1)) =
+                Habitat(g,
+                        mapnz(costfunction, g.A),
+                        _compute_Pref(g.A),
+                        landmarks)
+
+    #=
     Compute the I - W matrix used in the free energy distance.
 
     Parameters:
@@ -207,8 +217,8 @@ module ConScape
 
     Returns:
     - I_W: I-W, where I is identity matrix and W is matrix with elements w_ij = P_ij*exp(-beta*c_ij)
-    ```
-    function _compute_W(h::HabitatAnalysis; β=nothing)
+    =#
+    function _compute_W(h::Habitat; β=nothing)
         if β === nothing
             throw(ArgumentError("β must be set to a value"))
         end
@@ -232,11 +242,13 @@ module ConScape
         return D_inv*A
     end
 
-    ```
-    Compute full RSP betweenness of all nodes weighted by quality
-    TODO: Verify that this works
-    ```
-    function RSP_full_betweenness_qweighted(h::HabitatAnalysis; β=nothing)
+    """
+        RSP_full_betweenness_qweighted(h::Habitat; β=nothing) -> Matrix
+
+    Compute full RSP betweenness of all nodes weighted by quality.
+    """
+    function RSP_full_betweenness_qweighted(h::Habitat; β=nothing)
+        # TODO: Verify that this works
         if β === nothing
             throw(ArgumentError("β must be set to a value"))
         else
@@ -261,14 +273,16 @@ module ConScape
         D_Zdiv = Diagonal(diag(Zdiv) .* q)
         bet = diag(Z * (q .* Zdiv' .* q' .- sm .* D_Zdiv) * Z)
 
-        return bet
+        return reshape(bet, reverse(size(h.g)))'
     end
 
-    ```
-    Compute full RSP betweenness of all nodes weighted with proximity
-    TODO: Verify that this works
-    ```
-    function RSP_full_betweenness_kweighted(h::HabitatAnalysis; β=nothing)
+    """
+        RSP_full_betweenness_kweighted(h::Habitat; β=nothing) -> Matrix
+
+    Compute full RSP betweenness of all nodes weighted with proximity.
+    """
+    function RSP_full_betweenness_kweighted(h::Habitat; β=nothing)
+        # TODO: Verify that this works
         if β === nothing
             throw(ArgumentError("β must be set to a value"))
         else
@@ -277,8 +291,6 @@ module ConScape
 
         Z = inv(I_W)
 
-        # if Z.min() == 0:
-        #     Z[Z < 1./1000000] = 1./1000000 #used to avoid 0 division
         Zdiv = inv.(Z)
 
         qs = qt = h.g.qualities
@@ -287,22 +299,29 @@ module ConScape
         K = map(t -> exp(-t), RSP_dissimilarities_to(h, β=β))
         K[diagind(K)] .= 0
 
-        K = qs.*(K.*qt'); return K
-        e = ones(length(qs), length(qt))
+        K = qs.*(K.*qt')
 
         # TODO: Check that this is written correctly, especially concerning the elementwise and dot products:
-        bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* diag(K' * e)) * Z )
+        bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* vec(sum(K, dims=1))) * Z )
 
-        return bet
+        return reshape(bet, reverse(size(h.g)))'
     end
 
-    ```
+    """
+        RSP_dissimilarities_to(h::Habitat;
+                               β=nothing,
+                               destinations=h.landmarks,
+                               return_mean_D_KL=true,
+                               algorithm=:batch) -> Matrix
     Compute RSP expected costs or RSP dissimilarities from all nodes to landmarks.
-
-    TODO: Not yet implemented as from_landmarks_to_all. This requires computation of the diagonal of Z, which is not trivial.
-    TODO: Do something smarter with return_mean_D_KL.
-    ```
-    function RSP_dissimilarities_to(h::HabitatAnalysis; β=nothing, destinations=h.landmarks, return_mean_D_KL=true, algorithm=:batch)
+    """
+    function RSP_dissimilarities_to(h::Habitat;
+                                    β=nothing,
+                                    destinations=h.landmarks,
+                                    return_mean_D_KL=true,
+                                    algorithm=:batch)
+        # TODO: Not yet implemented as from_landmarks_to_all. This requires computation of the diagonal of Z, which is not trivial.
+        # TODO: Do something smarter with return_mean_D_KL.
         tic = time()
 
         N = size(h.g.A, 1)
@@ -360,7 +379,7 @@ module ConScape
             D[:,inf_idx] .= Inf
 
             if return_mean_D_KL
-                @warn("Computing mean KL-divergence")
+                @info("Computing mean KL-divergence")
                 Z_diag_inv = inv(Diagonal(Z))
                 D_KL = Z*Z_diag_inv
                 D_KL .= .-log.(D_KL) .- β.*D

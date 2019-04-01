@@ -3,7 +3,7 @@ using ConScape
 
 makedocs(
     sitename = "ConScape",
-    format = :html,
+    format = Documenter.HTML(),
     modules = [ConScape]
 )
 
