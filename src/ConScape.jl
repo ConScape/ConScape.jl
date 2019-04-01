@@ -277,8 +277,6 @@ module ConScape
 
         Z = inv(I_W)
 
-        # if Z.min() == 0:
-        #     Z[Z < 1./1000000] = 1./1000000 #used to avoid 0 division
         Zdiv = inv.(Z)
 
         qs = qt = h.g.qualities
@@ -287,11 +285,10 @@ module ConScape
         K = map(t -> exp(-t), RSP_dissimilarities_to(h, β=β))
         K[diagind(K)] .= 0
 
-        K = qs.*(K.*qt'); return K
-        e = ones(length(qs), length(qt))
+        K = qs.*(K.*qt')
 
         # TODO: Check that this is written correctly, especially concerning the elementwise and dot products:
-        bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* diag(K' * e)) * Z )
+        bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* vec(sum(K, dims=1))) * Z )
 
         return bet
     end
@@ -360,7 +357,7 @@ module ConScape
             D[:,inf_idx] .= Inf
 
             if return_mean_D_KL
-                @warn("Computing mean KL-divergence")
+                @info("Computing mean KL-divergence")
                 Z_diag_inv = inv(Diagonal(Z))
                 D_KL = Z*Z_diag_inv
                 D_KL .= .-log.(D_KL) .- β.*D
