@@ -185,20 +185,20 @@ module ConScape
     end
 
 
-    struct HabitatAnalysis
+    struct Habitat
         g::Grid
         C::SparseMatrixCSC{Float64,Int}
         P_ref::SparseMatrixCSC{Float64,Int}
         landmarks::Vector{Int}
     end
 
-    HabitatAnalysis(g::Grid,
-                    costfunction::Function,
-                    landmarks::AbstractVector = 1:size(g.A, 1)) =
-                        HabitatAnalysis(g,
-                                        mapnz(costfunction, g.A),
-                                        _compute_Pref(g.A),
-                                        landmarks)
+    Habitat(g::Grid,
+            costfunction::Function,
+            landmarks::AbstractVector = 1:size(g.A, 1)) =
+                Habitat(g,
+                        mapnz(costfunction, g.A),
+                        _compute_Pref(g.A),
+                        landmarks)
 
     ```
     Compute the I - W matrix used in the free energy distance.
@@ -210,7 +210,7 @@ module ConScape
     Returns:
     - I_W: I-W, where I is identity matrix and W is matrix with elements w_ij = P_ij*exp(-beta*c_ij)
     ```
-    function _compute_W(h::HabitatAnalysis; β=nothing)
+    function _compute_W(h::Habitat; β=nothing)
         if β === nothing
             throw(ArgumentError("β must be set to a value"))
         end
@@ -238,7 +238,7 @@ module ConScape
     Compute full RSP betweenness of all nodes weighted by quality
     TODO: Verify that this works
     ```
-    function RSP_full_betweenness_qweighted(h::HabitatAnalysis; β=nothing)
+    function RSP_full_betweenness_qweighted(h::Habitat; β=nothing)
         if β === nothing
             throw(ArgumentError("β must be set to a value"))
         else
@@ -270,7 +270,7 @@ module ConScape
     Compute full RSP betweenness of all nodes weighted with proximity
     TODO: Verify that this works
     ```
-    function RSP_full_betweenness_kweighted(h::HabitatAnalysis; β=nothing)
+    function RSP_full_betweenness_kweighted(h::Habitat; β=nothing)
         if β === nothing
             throw(ArgumentError("β must be set to a value"))
         else
@@ -301,7 +301,7 @@ module ConScape
     TODO: Not yet implemented as from_landmarks_to_all. This requires computation of the diagonal of Z, which is not trivial.
     TODO: Do something smarter with return_mean_D_KL.
     ```
-    function RSP_dissimilarities_to(h::HabitatAnalysis; β=nothing, destinations=h.landmarks, return_mean_D_KL=true, algorithm=:batch)
+    function RSP_dissimilarities_to(h::Habitat; β=nothing, destinations=h.landmarks, return_mean_D_KL=true, algorithm=:batch)
         tic = time()
 
         N = size(h.g.A, 1)
