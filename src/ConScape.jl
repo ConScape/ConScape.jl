@@ -19,6 +19,8 @@ module ConScape
              qualities)
     end
 
+    Base.size(g::Grid) = g.shape
+
     """
     simulate a permeable wall
     """
@@ -261,7 +263,7 @@ module ConScape
         D_Zdiv = Diagonal(diag(Zdiv) .* q)
         bet = diag(Z * (q .* Zdiv' .* q' .- sm .* D_Zdiv) * Z)
 
-        return bet
+        return reshape(bet, reverse(size(h.g)))'
     end
 
     ```
@@ -290,7 +292,7 @@ module ConScape
         # TODO: Check that this is written correctly, especially concerning the elementwise and dot products:
         bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* vec(sum(K, dims=1))) * Z )
 
-        return bet
+        return reshape(bet, reverse(size(h.g)))'
     end
 
     ```
