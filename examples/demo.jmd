@@ -1,0 +1,53 @@
+---
+title: ConScape demo
+author: Bram Van Moorter and Andreas Noack
+---
+
+This is a small demo of the functionalty in the `ConScape` package for Julia.
+
+First we need to load the package
+
+```julia
+using ConScape
+```
+
+```julia
+g = ConScape.perm_wall_sim(cw=(3,2), qualities=collect(1800:-1:1));
+```
+
+```julia
+ConScape.plot_outdegrees(g)
+```
+
+
+```julia
+h = ConScape.Habitat(g, t -> -log(t));
+```
+
+```julia
+Cg = ConScape.SimpleWeightedGraph(h.C)
+@time distances_all2L_shortestpath = ConScape.floyd_warshall_shortest_paths(Cg).dists
+```
+
+```julia
+map!(t -> ifelse(isfinite(t) && !iszero(t), exp(-t), t), distances_all2L_shortestpath, distances_all2L_shortestpath)
+```
+
+```julia
+@time bet_shortest = ConScape.betweenness_centrality(Cg)
+ConScape.heatmap(reshape(bet_shortest, 60, 30)')
+```
+
+```julia
+bet_q = ConScape.RSP_full_betweenness_qweighted(h, β=0.2)
+ConScape.heatmap(bet_q)
+```
+
+```julia
+@time ConScape.RSP_dissimilarities_to(h, β=0.2)
+```
+
+```julia
+bet_k = ConScape.RSP_full_betweenness_kweighted(h, β=0.2);
+ConScape.heatmap(bet_k)
+```
