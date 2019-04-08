@@ -29,6 +29,7 @@ The section provides more details about the functions of this package including 
 ### Grid
 ```@docs
 ConScape.Grid
+ConScape.adjacency
 ```
 
 ### Habitat

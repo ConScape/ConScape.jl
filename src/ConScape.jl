@@ -37,19 +37,19 @@ module ConScape
     function perm_wall_sim(;grid_shape=(30,60), Q=1, A=0.5, ww=3, wp=0.5, cw=(3,3), cp=(0.35,0.7), qualities=fill(Q, prod(grid_shape)))
 
         # 1. initialize landscape
-        n_rows, n_cols = grid_shape
+        @show n_rows, n_cols = grid_shape
         N = n_rows*n_cols
         g = Grid(shape=grid_shape, qualities=qualities)
         g.A = A * g.A
 
         # # 2. compute the wall
-        wpt = floor(Int, n_cols*wp) - ceil(Int, ww/2)
-        xs = range(wpt, stop=wpt+ww)
+        wpt = round(Int, n_cols*wp - ww/2 + 1)
+        xs  = range(wpt, stop=wpt + ww - 1)
 
         # 3. compute the corridors
         ys = Int[]
         for i in 1:length(cw)
-            cpt = floor(Int, n_rows*cp[i]) - ceil(Int, cw[i]/2)
+            @show cpt = floor(Int, n_rows*cp[i]) - ceil(Int, cw[i]/2)
             if i == 1
                 append!(ys, 1:cpt)
             else
@@ -118,6 +118,60 @@ module ConScape
         A = sparse(is, js, vs, N, N)
 
         return A + A'         # Symmetrize
+    end
+
+    const N4 = (( 0, -1, 1.0),
+                (-1,  0, 1.0),
+                ( 1,  0, 1.0),
+                ( 0,  1, 1.0))
+    const N8 = ((-1, -1,  √2),
+                ( 0, -1, 1.0),
+                ( 1, -1,  √2),
+                (-1,  0, 1.0),
+                ( 1,  0, 1.0),
+                (-1,  1,  √2),
+                ( 0,  1, 1.0),
+                ( 1,  1,  √2))
+
+    """
+        adjacency(R::Matrix[, neighbors::Tuple=N8]) -> SparseMatrixCSC
+
+    Compute an adjacency matrix of the raster image `R` of the similarities/conductances
+    the cells. The similarities are computes harmonic mean of the cell values weighted
+    by the grid distance. The similarities can be computed with respect to eight
+    neighbors (`N8`) or four neighbors (`N4`).
+    """
+    function adjacency(R::Matrix, neighbors::Tuple=N8)
+        m, n = size(R)
+
+        # Initialy the buffers of the SparseMatrixCSC
+        is, js, vs = Int[], Int[], Float64[]
+
+        for j in 1:n
+            for i in 1:m
+                # Base node
+                rij = R[i, j]
+                for (ki, kj, l) in neighbors
+                    if !(1 <= i + ki <= m) || !(1 <= j + kj <= n)
+                        # Continue when computing edge out of raster image
+                        continue
+                    else
+                        # Target node
+                        rijk = R[i + ki, j + kj]
+                        if iszero(rijk)
+                            # Don't include zero similaritiers
+                            continue
+                        end
+
+                        push!(is, (j - 1)*m + i)
+                        push!(js, (j - 1)*m + i + ki + kj*m)
+                        v = 2/((inv(rij) + inv(rijk))*l)
+                        push!(vs, v)
+                    end
+                end
+            end
+        end
+        return sparse(is, js, vs)
     end
 
     function _set_id_to_grid_coordinate_list(N_grid, n_cols)
