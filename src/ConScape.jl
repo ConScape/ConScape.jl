@@ -364,12 +364,6 @@ module ConScape
         K = map(t -> exp(-t), RSP_dissimilarities_to(h, β=β))
         K[diagind(K)] .= 0
 
-        # K = qs.*(K.*qt')
-
-        # TODO: Check that this is written correctly, especially concerning the elementwise and dot products:
-        # bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* vec(sum(K, dims=1))) * Z )
-
-        # K = np.multiply(Qs, np.multiply(K, Qt.T))
         K .= qs .* K .* qt'
 
         K_colsum = vec(sum(K, dims=1))
