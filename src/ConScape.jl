@@ -7,19 +7,23 @@ module ConScape
         shape::Tuple{Int,Int}
         A::SparseMatrixCSC{Float64,Int}
         id_to_grid_coordinate_list::Vector{Tuple{Int,Int}}
-        qualities::Vector{Float64}
+        source_qualities::Matrix{Float64}
+        target_qualities::Matrix{Float64}
     end
 
     """
         Grid(;shape=nothing,
-             qualities::Vector=ones(prod(shape)),
+             source_qualities::Matrix=ones(shape),
+             target_qualities::Matrix=ones(shape),
              nhood_size::Integer=8,
              landscape=_generateA(shape..., nhood_size)) -> Grid
 
     Construct a `Grid` from a `landscape` passed a `SparseMatrixCSC`.
     """
     function Grid(;shape=nothing,
-                  qualities::Vector=ones(prod(shape)),
+                  qualities::Matrix=ones(shape),
+                  source_qualities::Matrix=qualities,
+                  target_qualities::Matrix=qualities,
                   nhood_size::Integer=8,
                   landscape=_generateA(shape..., nhood_size))
         @assert prod(shape) == LinearAlgebra.checksquare(landscape)
@@ -27,19 +31,27 @@ module ConScape
         n_cols = shape[2]
         Grid(shape,
              landscape,
-             _set_id_to_grid_coordinate_list(N_grid, n_cols),
-             qualities)
+             _id_to_grid_coordinate_list(N_grid, n_cols),
+             source_qualities,
+             target_qualities)
     end
 
     Base.size(g::Grid) = g.shape
 
     # simulate a permeable wall
-    function perm_wall_sim(;grid_shape=(30,60), Q=1, A=0.5, ww=3, wp=0.5, cw=(3,3), cp=(0.35,0.7), qualities=fill(Q, prod(grid_shape)))
+    function perm_wall_sim(;shape=(30,60),
+                            Q=1,
+                            A=0.5,
+                            ww=3,
+                            wp=0.5,
+                            cw=(3,3),
+                            cp=(0.35,0.7),
+                            kwargs...)
 
         # 1. initialize landscape
-        @show n_rows, n_cols = grid_shape
+        n_rows, n_cols = shape
         N = n_rows*n_cols
-        g = Grid(shape=grid_shape, qualities=qualities)
+        g = Grid(; shape=shape, kwargs...)
         g.A = A * g.A
 
         # # 2. compute the wall
@@ -49,7 +61,7 @@ module ConScape
         # 3. compute the corridors
         ys = Int[]
         for i in 1:length(cw)
-            @show cpt = floor(Int, n_rows*cp[i]) - ceil(Int, cw[i]/2)
+            cpt = floor(Int, n_rows*cp[i]) - ceil(Int, cw[i]/2)
             if i == 1
                 append!(ys, 1:cpt)
             else
@@ -174,8 +186,8 @@ module ConScape
         return sparse(is, js, vs)
     end
 
-    function _set_id_to_grid_coordinate_list(N_grid, n_cols)
-        id_to_grid_coordinate_list = []
+    function _id_to_grid_coordinate_list(N_grid, n_cols)
+        id_to_grid_coordinate_list = Tuple{Int,Int}[]
         for node_id in 1:N_grid
             j = (node_id - 1) % n_cols + 1
             i = div(node_id - j, n_cols) + 1
@@ -208,7 +220,10 @@ module ConScape
             A = A[nodes_to_keep,:]
             A = A[:,nodes_to_keep]
 
-            deleteat!(g.qualities, node_list_idx)
+            # FIXME! Commented out 8 April 2019 since qualities are now matrices.
+            # Check if commention out is a problem. I don't think so.
+            # deleteat!(vec(g.source_qualities), node_list_idx)
+            # deleteat!(vec(g.target_qualities), node_list_idx)
             g.id_to_grid_coordinate_list = [g.id_to_grid_coordinate_list[id] for id in 1:length(g.id_to_grid_coordinate_list) if !(id in node_list_idx)]
         end
 
@@ -299,7 +314,7 @@ module ConScape
     """
         RSP_full_betweenness_qweighted(h::Habitat; β=nothing) -> Matrix
 
-    Compute full RSP betweenness of all nodes weighted by quality.
+    Compute full RSP betweenness of all nodes weighted by source and target qualities.
     """
     function RSP_full_betweenness_qweighted(h::Habitat; β=nothing)
         # TODO: Verify that this works
@@ -310,24 +325,19 @@ module ConScape
         end
 
         Z = inv(Matrix(I_W))
-        # tol = 1/1000000 #used to avoid 0 division
-        # Zdiv = map(t -> ifelse(t > tol, inv(t), inv(tol)), Z)
         Zdiv = inv.(Z)
+        Zdiv_diag = diag(Zdiv)
 
-        # Qs = Diagonal(h.g.qualities)
-        # Qt = Qs
-        # sm = sum(h.g.qualities)
+        qs = vec(h.g.source_qualities)
+        qt = vec(h.g.target_qualities)
+        qs_sum = sum(qs)
 
-        # D_Zdiv = Diagonal(diag(Zdiv * Qt))
+        ZQZdivQ = qt .* Zdiv'
+        ZQZdivQ = ZQZdivQ .* qs'
+        ZQZdivQ -= Diagonal(qs_sum .* qt .* Zdiv_diag)
 
-        # bet = diag( Z * (Qt * Zdiv' * Qs - sm * D_Zdiv) * Z )
-
-        q = h.g.qualities
-        sm = sum(q)
-        D_Zdiv = Diagonal(diag(Zdiv) .* q)
-        bet = diag(Z * (q .* Zdiv' .* q' .- sm .* D_Zdiv) * Z)
-
-        return reshape(bet, reverse(size(h.g)))'
+        ZQZdivQ = Z*ZQZdivQ
+        return reshape(sum(ZQZdivQ .* Z', dims=2), reverse(h.g.shape))'
     end
 
     """
@@ -347,16 +357,29 @@ module ConScape
 
         Zdiv = inv.(Z)
 
-        qs = qt = h.g.qualities
+        qs = vec(h.g.source_qualities)
+        qt = vec(h.g.target_qualities)
 
         # FIXME! The python version allows for difference distance measures here. Figure out how to handle this in Julia
         K = map(t -> exp(-t), RSP_dissimilarities_to(h, β=β))
         K[diagind(K)] .= 0
 
-        K = qs.*(K.*qt')
+        # K = qs.*(K.*qt')
 
         # TODO: Check that this is written correctly, especially concerning the elementwise and dot products:
-        bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* vec(sum(K, dims=1))) * Z )
+        # bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* vec(sum(K, dims=1))) * Z )
+
+        # K = np.multiply(Qs, np.multiply(K, Qt.T))
+        K .= qs .* K .* qt'
+
+        K_colsum = vec(sum(K, dims=1))
+        D_Zdiv = diag(Zdiv)
+
+        ZKZdiv = K .* Zdiv
+        ZKZdiv -= Diagonal(K_colsum .* D_Zdiv)
+
+        ZKZdiv = Z*ZKZdiv
+        bet = sum(ZKZdiv .* Z', dims=1)
 
         return reshape(bet, reverse(size(h.g)))'
     end
@@ -439,7 +462,7 @@ module ConScape
                 D_KL .= .-log.(D_KL) .- β.*D
                 D_KL[:,inf_idx] .= 0
 
-                mean_D_KL = (h.g.qualities'*D_KL)*h.g.qualities
+                mean_D_KL = (vec(h.g.source_qualities)'*D_KL)*vec(h.g.target_qualities)
             end
 
             toc = time() - tic

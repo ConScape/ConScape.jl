@@ -12,7 +12,7 @@ using ConScape
 ```
 
 ```julia
-g = ConScape.perm_wall_sim(cw=(3,2), qualities=collect(1800:-1:1));
+g = ConScape.perm_wall_sim(cw=(3,2), qualities=reshape(collect(1800:-1:1), 30, 60));
 ```
 
 ```julia
