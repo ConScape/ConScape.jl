@@ -357,17 +357,29 @@ module ConScape
 
         Zdiv = inv.(Z)
 
-        qs = h.g.source_qualities
-        qt = h.g.target_qualities
+        qs = vec(h.g.source_qualities)
+        qt = vec(h.g.target_qualities)
 
         # FIXME! The python version allows for difference distance measures here. Figure out how to handle this in Julia
         K = map(t -> exp(-t), RSP_dissimilarities_to(h, β=β))
         K[diagind(K)] .= 0
 
-        K = qs.*(K.*qt')
+        # K = qs.*(K.*qt')
 
         # TODO: Check that this is written correctly, especially concerning the elementwise and dot products:
-        bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* vec(sum(K, dims=1))) * Z )
+        # bet = diag( Z * ((Zdiv*K)' .- diag(Zdiv) .* vec(sum(K, dims=1))) * Z )
+
+        # K = np.multiply(Qs, np.multiply(K, Qt.T))
+        K .= qs .* K .* qt'
+
+        K_colsum = vec(sum(K, dims=1))
+        D_Zdiv = diag(Zdiv)
+
+        ZKZdiv = K .* Zdiv
+        ZKZdiv -= Diagonal(K_colsum .* D_Zdiv)
+
+        ZKZdiv = Z*ZKZdiv
+        bet = sum(ZKZdiv .* Z', dims=1)
 
         return reshape(bet, reverse(size(h.g)))'
     end
