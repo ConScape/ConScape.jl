@@ -10,7 +10,7 @@ In the following, a small example of the functionality is given. First, we canst
 
 ```@example 1
 using ConScape
-g = ConScape.perm_wall_sim(cw=(3,2)) # Generate an artificial landscape
+g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2)) # Generate an artificial landscape
 ConScape.plot_outdegrees(g)
 ```
 

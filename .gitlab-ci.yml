@@ -17,6 +17,13 @@ test:
                           Pkg.build("ConScape");
                           Pkg.test("ConScape"; coverage=true);'
 
+weave:
+  script:
+    # Temporarily add Weave like this until we have a released version of ConScape to use for Weave files
+    - julia --project -e 'using Pkg;
+                          Pkg.add(PackageSpec(name="Weave"));'
+    - julia --project --color=yes examples/make.jl
+
 pages:
   stage: deploy
   script:

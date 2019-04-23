@@ -4,7 +4,8 @@ module ConScape
     using LinearAlgebra
 
     mutable struct Grid
-        shape::Tuple{Int,Int}
+        nrows::Int
+        ncols::Int
         A::SparseMatrixCSC{Float64,Int}
         id_to_grid_coordinate_list::Vector{Tuple{Int,Int}}
         source_qualities::Matrix{Float64}
@@ -12,67 +13,67 @@ module ConScape
     end
 
     """
-        Grid(;shape=nothing,
-             source_qualities::Matrix=ones(shape),
-             target_qualities::Matrix=ones(shape),
-             nhood_size::Integer=8,
-             landscape=_generateA(shape..., nhood_size)) -> Grid
-
-    Construct a `Grid` from a `landscape` passed a `SparseMatrixCSC`.
-    """
-    function Grid(;shape=nothing,
-                  qualities::Matrix=ones(shape),
+        Grid(nrows::Integer, ncols::Integer;
+                  qualities::Matrix=ones(nrows, ncols),
                   source_qualities::Matrix=qualities,
                   target_qualities::Matrix=qualities,
                   nhood_size::Integer=8,
-                  landscape=_generateA(shape..., nhood_size))
-        @assert prod(shape) == LinearAlgebra.checksquare(landscape)
-        N_grid = prod(shape)
-        n_cols = shape[2]
-        Grid(shape,
+                  landscape=_generateA(nrows, ncols, nhood_size)) -> Grid
+
+    Construct a `Grid` from a `landscape` passed a `SparseMatrixCSC`.
+    """
+    function Grid(nrows::Integer, ncols::Integer;
+                  qualities::Matrix=ones(nrows, ncols),
+                  source_qualities::Matrix=qualities,
+                  target_qualities::Matrix=qualities,
+                  nhood_size::Integer=8,
+                  landscape=_generateA(nrows, ncols, nhood_size))
+        @assert nrows*ncols == LinearAlgebra.checksquare(landscape)
+        Ngrid = nrows*ncols
+
+        Grid(nrows,
+             ncols,
              landscape,
-             _id_to_grid_coordinate_list(N_grid, n_cols),
+             _id_to_grid_coordinate_list(Ngrid, ncols),
              source_qualities,
              target_qualities)
     end
 
-    Base.size(g::Grid) = g.shape
+    Base.size(g::Grid) = (g.nrows, g.ncols)
 
     # simulate a permeable wall
-    function perm_wall_sim(;shape=(30,60),
-                            Q=1,
-                            A=0.5,
-                            ww=3,
-                            wp=0.5,
-                            cw=(3,3),
-                            cp=(0.35,0.7),
-                            kwargs...)
+    function perm_wall_sim(nrows::Integer, ncols::Integer;
+                           scaling::Float64=0.5,
+                           wallwidth::Integer=3,
+                           wallposition::Float64=0.5,
+                           corridorwidths::NTuple{<:Any,<:Integer}=(3,3),
+                           corridorpositions=(0.35,0.7),
+                           kwargs...)
 
         # 1. initialize landscape
-        n_rows, n_cols = shape
-        N = n_rows*n_cols
-        g = Grid(; shape=shape, kwargs...)
-        g.A = A * g.A
+        N = nrows*ncols
+        g = Grid(nrows, ncols; kwargs...)
+        g.A = scaling * g.A
 
         # # 2. compute the wall
-        wpt = round(Int, n_cols*wp - ww/2 + 1)
-        xs  = range(wpt, stop=wpt + ww - 1)
+        wpt = round(Int, ncols*wallposition - wallwidth/2 + 1)
+        xs  = range(wpt, stop=wpt + wallwidth - 1)
 
         # 3. compute the corridors
         ys = Int[]
-        for i in 1:length(cw)
-            cpt = floor(Int, n_rows*cp[i]) - ceil(Int, cw[i]/2)
+        for i in 1:length(corridorwidths)
+            cpt = floor(Int, nrows*corridorpositions[i]) - ceil(Int, corridorwidths[i]/2)
             if i == 1
                 append!(ys, 1:cpt)
             else
-                append!(ys, range(maximum(ys) + 1 + cw[i-1], stop=cpt))
-                append!(ys, range(maximum(ys) + 1 + cw[i], stop=n_rows))
+                append!(ys, range(maximum(ys) + 1 + corridorwidths[i-1], stop=cpt))
+                append!(ys, range(maximum(ys) + 1 + corridorwidths[i]  , stop=nrows))
             end
         end
 
         impossible_nodes = vec(collect(Iterators.product(ys,xs)))
         _set_impossible_nodes!(g, impossible_nodes)
-        # return [g]
+
         return g
     end
 
@@ -83,43 +84,43 @@ module ConScape
     Parameters:
     - nhood_size: 4 creates horizontal and vertical edges, 8 creates also diagonal edges
     =#
-    function _generateA(n_rows, n_cols, nhood_size)
+    function _generateA(nrows, ncols, nhood_size)
 
-        N = n_rows*n_cols
+        N = nrows*ncols
 
         # A = ss.dok_matrix(N, N)
         is, js, vs = Int[], Int[], Float64[]
-        for i in 1:n_rows
-            for j in 1:n_cols
-                n = (i - 1)*n_cols + j # current pixel
-                if j < n_cols
+        for i in 1:nrows
+            for j in 1:ncols
+                n = (i - 1)*ncols + j # current pixel
+                if j < ncols
                     # Add horizontal edge:
                     # A[n, n + 1] = 1
                     push!(is, n)
                     push!(js, n + 1)
                     push!(vs, 1)
                 end
-                if i < n_rows
+                if i < nrows
                     # Add vertical edge:
-                    # A[n, n + n_cols] = 1
+                    # A[n, n + ncols] = 1
                     push!(is, n)
-                    push!(js, n + n_cols)
+                    push!(js, n + ncols)
                     push!(vs, 1)
 
                     # TODO: WRITE THIS TO ALLOW OTHER VALUES OF nhood_size!
                     if nhood_size == 8
-                        if j < n_cols
+                        if j < ncols
                             # Add lower-right diagonal edge:
-                            # A[n, n + n_cols + 1] = 1 / √2
+                            # A[n, n + ncols + 1] = 1 / √2
                             push!(is, n)
-                            push!(js, n + n_cols + 1)
+                            push!(js, n + ncols + 1)
                             push!(vs, 1 / √2)
                         end
                         if j > 1
                             # Add lower-left diagonal edge:
-                            # A[n, n+n_cols-1] = 1 / √2
+                            # A[n, n+ncols-1] = 1 / √2
                             push!(is, n)
-                            push!(js, n + n_cols - 1)
+                            push!(js, n + ncols - 1)
                             push!(vs, 1 / √2)
                         end
                     end
@@ -149,7 +150,7 @@ module ConScape
         adjacency(R::Matrix[, neighbors::Tuple=N8]) -> SparseMatrixCSC
 
     Compute an adjacency matrix of the raster image `R` of the similarities/conductances
-    the cells. The similarities are computes harmonic mean of the cell values weighted
+    the cells. The similarities are computed as harmonic means of the cell values weighted
     by the grid distance. The similarities can be computed with respect to eight
     neighbors (`N8`) or four neighbors (`N4`).
     """
@@ -186,11 +187,11 @@ module ConScape
         return sparse(is, js, vs)
     end
 
-    function _id_to_grid_coordinate_list(N_grid, n_cols)
+    function _id_to_grid_coordinate_list(N_grid, ncols)
         id_to_grid_coordinate_list = Tuple{Int,Int}[]
         for node_id in 1:N_grid
-            j = (node_id - 1) % n_cols + 1
-            i = div(node_id - j, n_cols) + 1
+            j = (node_id - 1) % ncols + 1
+            i = div(node_id - j, ncols) + 1
             push!(id_to_grid_coordinate_list, (i,j))
         end
         return id_to_grid_coordinate_list
@@ -243,7 +244,7 @@ module ConScape
 
     function plot_outdegrees(g::Grid)
         values = sum(g.A, dims=2)
-        canvas = zeros(g.shape...)
+        canvas = zeros(g.nrows, g.ncols)
         for (i,v) in enumerate(values)
             canvas[g.id_to_grid_coordinate_list[i]...] = v
         end
@@ -278,14 +279,14 @@ module ConScape
                         landmarks)
 
     #=
-    Compute the I - W matrix used in the free energy distance.
+    Compute the W matrix used in the free energy distance.
 
     Parameters:
     - β: If given separately, do not change self.I_W but only return I_W according to the given beta.
             If None, then beta=self.beta and this computes and stores self.I_W
 
     Returns:
-    - I_W: I-W, where I is identity matrix and W is matrix with elements w_ij = P_ij*exp(-beta*c_ij)
+    - W: W is matrix with elements w_ij = P_ij*exp(-beta*c_ij)
     =#
     function _compute_W(h::Habitat; β=nothing)
         if β === nothing
@@ -337,7 +338,7 @@ module ConScape
         ZQZdivQ -= Diagonal(qs_sum .* qt .* Zdiv_diag)
 
         ZQZdivQ = Z*ZQZdivQ
-        return reshape(sum(ZQZdivQ .* Z', dims=2), reverse(h.g.shape))'
+        return reshape(sum(ZQZdivQ .* Z', dims=2), h.g.ncols, h.g.nrows)'
     end
 
     """
