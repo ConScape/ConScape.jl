@@ -268,7 +268,7 @@ module ConScape
             landmarks::AbstractVector = 1:size(g.A, 1)) =
                 Habitat(g,
                         mapnz(costfunction, g.A),
-                        _compute_Pref(g.A),
+                        _Pref(g.A),
                         landmarks)
 
     Construct a Habitat from a `g::Grid` based on a `costfunction`.
@@ -278,7 +278,7 @@ module ConScape
             landmarks::AbstractVector = 1:size(g.A, 1)) =
                 Habitat(g,
                         mapnz(costfunction, g.A),
-                        _compute_Pref(g.A),
+                        _Pref(g.A),
                         landmarks)
 
     #=
@@ -308,12 +308,7 @@ module ConScape
         return W
     end
 
-    function _compute_Pref(A::SparseMatrixCSC)
-        inv_degrees = vec(sum(A, dims=1))
-        map!(t -> ifelse(t > 0, inv(t), t), inv_degrees, inv_degrees)
-        D_inv = spdiagm(0 => inv_degrees)
-        return D_inv*A
-    end
+    _Pref(A::SparseMatrixCSC) = sum(A, dims=2) .\ A
 
     """
         RSP_full_betweenness_qweighted(h::Habitat; β=nothing) -> Matrix
