@@ -21,7 +21,7 @@ ConScape.plot_outdegrees(g)
 
 
 ```julia
-h = ConScape.Habitat(g, t -> -log(t));
+h = ConScape.Habitat(g, ConScape.MinusLog());
 ```
 
 ```julia
@@ -44,7 +44,7 @@ ConScape.heatmap(bet_q)
 ```
 
 ```julia
-@time ConScape.RSP_dissimilarities_to(h, β=0.2)
+@time ConScape.RSP_dissimilarities(h, β=0.2)
 ```
 
 ```julia

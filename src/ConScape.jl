@@ -111,22 +111,22 @@ module ConScape
                     push!(vs, 1)
 
                     # TODO: WRITE THIS TO ALLOW OTHER VALUES OF nhood_size!
-                    # if nhood_size == 8
-                    #     if j < ncols
-                    #         # Add lower-right diagonal edge:
-                    #         # A[n, n + ncols + 1] = 1 / √2
-                    #         push!(is, n)
-                    #         push!(js, n + ncols + 1)
-                    #         push!(vs, 1 / √2)
-                    #     end
-                    #     if j > 1
-                    #         # Add lower-left diagonal edge:
-                    #         # A[n, n+ncols-1] = 1 / √2
-                    #         push!(is, n)
-                    #         push!(js, n + ncols - 1)
-                    #         push!(vs, 1 / √2)
-                    #     end
-                    # end
+                    if nhood_size == 8
+                        if j < ncols
+                            # Add lower-right diagonal edge:
+                            # A[n, n + ncols + 1] = 1 / √2
+                            push!(is, n)
+                            push!(js, n + ncols + 1)
+                            push!(vs, 1 / √2)
+                        end
+                        if j > 1
+                            # Add lower-left diagonal edge:
+                            # A[n, n+ncols-1] = 1 / √2
+                            push!(is, n)
+                            push!(js, n + ncols - 1)
+                            push!(vs, 1 / √2)
+                        end
+                    end
                 end
             end
         end
@@ -254,81 +254,70 @@ module ConScape
         heatmap(canvas)
     end
 
+    abstract type Cost end
+    struct MinusLog <: Cost end
+    struct ExpMinus <: Cost end
+    struct Inv      <: Cost end
+
+    (::MinusLog)(x::Number) = -log(x)
+    (::ExpMinus)(x::Number) = exp(-x)
+    (::Inv)(x::Number)      = inv(x)
+
+    Base.inv(::MinusLog) = ExpMinus()
+    Base.inv(::ExpMinus) = MinusLog()
+    Base.inv(::Inv)      = Inv()
 
     struct Habitat
         g::Grid
+        cost::Cost
         C::SparseMatrixCSC{Float64,Int}
-        P_ref::SparseMatrixCSC{Float64,Int}
-        landmarks::Vector{Int}
+        Pref::SparseMatrixCSC{Float64,Int}
+        # landmarks::Vector{Int}
     end
 
     """
-        Habitat(g::Grid,
-            costfunction::Function,
-            landmarks::AbstractVector = 1:size(g.A, 1)) =
-                Habitat(g,
-                        mapnz(costfunction, g.A),
-                        _Pref(g.A),
-                        landmarks)
+        Habitat(g::Grid, cost::Cost) -> Habitat
 
     Construct a Habitat from a `g::Grid` based on a `costfunction`.
     """
     Habitat(g::Grid,
-            costfunction::Function,
-            landmarks::AbstractVector = 1:size(g.A, 1)) =
+            cost::Cost) =
                 Habitat(g,
-                        mapnz(costfunction, g.A),
-                        _Pref(g.A),
-                        landmarks)
-
-    #=
-    Compute the W matrix used in the free energy distance.
-
-    Parameters:
-    - β: If given separately, do not change self.I_W but only return I_W according to the given beta.
-            If None, then beta=self.beta and this computes and stores self.I_W
-
-    Returns:
-    - W: W is matrix with elements w_ij = P_ij*exp(-beta*c_ij)
-    =#
-    function _compute_W(h::Habitat; β=nothing)
-        if β === nothing
-            throw(ArgumentError("β must be set to a value"))
-        end
-
-        A = h.g.A
-        C = h.C
-        P_ref = h.P_ref
-        N = LinearAlgebra.checksquare(A)
-
-        # Compute W:
-        expbC = mapnz(t -> exp(-β*t), C)
-        W = P_ref .* expbC
-
-        return W
-    end
+                        cost,
+                        mapnz(cost, g.A),
+                        _Pref(g.A))
 
     _Pref(A::SparseMatrixCSC) = sum(A, dims=2) .\ A
 
+    function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
+
+        n = LinearAlgebra.checksquare(Pref)
+        if LinearAlgebra.checksquare(C) != n
+            throw(DimensionMismatch("Pref and C must have same size"))
+        end
+
+        return Pref .* exp.((-).(β) .* C)
+    end
+
+    _W(h::Habitat; β=nothing) = _W(h.Pref, β, h.C)
+
     """
-        RSP_full_betweenness_qweighted(h::Habitat; β=nothing) -> Matrix
+        RSP_full_betweenness_qweighted(h::Habitat) -> Matrix
 
     Compute full RSP betweenness of all nodes weighted by source and target qualities.
     """
-    function RSP_full_betweenness_qweighted(h::Habitat; β=nothing)
-        # TODO: Verify that this works
-        if β === nothing
-            throw(ArgumentError("β must be set to a value"))
-        else
-            I_W = I - _compute_W(h, β=β)
-        end
+    RSP_full_betweenness_qweighted(h::Habitat; β=nothing) =
+        RSP_full_betweenness_qweighted(inv(Matrix(I - _W(h, β=β))), h.g.source_qualities, h.g.target_qualities)
 
-        Z = inv(Matrix(I_W))
+    function RSP_full_betweenness_qweighted(Z::AbstractMatrix,
+                                            source_qualities::AbstractMatrix,
+                                            target_qualities::AbstractMatrix)
+
         Zdiv = inv.(Z)
         Zdiv_diag = diag(Zdiv)
 
-        qs = vec(h.g.source_qualities)
-        qt = vec(h.g.target_qualities)
+        qs = vec(source_qualities)
+        qt = vec(target_qualities)
         qs_sum = sum(qs)
 
         ZQZdivQ = qt .* Zdiv'
@@ -336,177 +325,59 @@ module ConScape
         ZQZdivQ -= Diagonal(qs_sum .* qt .* Zdiv_diag)
 
         ZQZdivQ = Z*ZQZdivQ
-        return reshape(sum(ZQZdivQ .* Z', dims=2), h.g.ncols, h.g.nrows)'
+
+        return reshape(sum(ZQZdivQ .* Z', dims=2), reverse(size(source_qualities))...)'
     end
 
     """
-        RSP_full_betweenness_kweighted(h::Habitat; β=nothing) -> Matrix
+        RSP_full_betweenness_kweighted(h::Habitat) -> Matrix
 
     Compute full RSP betweenness of all nodes weighted with proximity.
     """
     function RSP_full_betweenness_kweighted(h::Habitat; β=nothing)
-        # TODO: Verify that this works
-        if β === nothing
-            throw(ArgumentError("β must be set to a value"))
-        else
-            I_W = Matrix(I - _compute_W(h, β=β))
-        end
+        W = _W(h, β=β)
+        Z = inv(Matrix(I - W))
+        similarities = map(inv(h.cost), RSP_dissimilarities(W, h.C, Z))
+        similarities[diagind(similarities)] .= 0
+        return RSP_full_betweenness_kweighted(Z, h.g.source_qualities, h.g.target_qualities, similarities)
+    end
 
-        Z = inv(I_W)
+    function RSP_full_betweenness_kweighted(Z::AbstractMatrix,
+                                            source_qualities::AbstractMatrix,
+                                            target_qualities::AbstractMatrix,
+                                            similarities::AbstractMatrix)
 
         Zdiv = inv.(Z)
 
-        qs = vec(h.g.source_qualities)
-        qt = vec(h.g.target_qualities)
+        qs = vec(source_qualities)
+        qt = vec(target_qualities)
 
-        # FIXME! The python version allows for difference distance measures here. Figure out how to handle this in Julia
-        K = map(t -> exp(-t), RSP_dissimilarities_to(h, β=β))
-        K[diagind(K)] .= 0
-
-        K .= qs .* K .* qt'
+        K = qs .* similarities .* qt'
 
         K_colsum = vec(sum(K, dims=1))
-        D_Zdiv = diag(Zdiv)
+        d_Zdiv = diag(Zdiv)
 
         ZKZdiv = K .* Zdiv
-        ZKZdiv -= Diagonal(K_colsum .* D_Zdiv)
+        ZKZdiv -= Diagonal(K_colsum .* d_Zdiv)
 
         ZKZdiv = Z*ZKZdiv
         bet = sum(ZKZdiv .* Z', dims=1)
 
-        return reshape(bet, reverse(size(h.g)))'
+        return reshape(bet, reverse(size(source_qualities)))'
     end
 
     """
-        RSP_dissimilarities_to(h::Habitat;
-                               β=nothing,
-                               destinations=h.landmarks,
-                               return_mean_D_KL=true,
-                               algorithm=:batch) -> Matrix
-    Compute RSP expected costs or RSP dissimilarities from all nodes to landmarks.
+        RSP_dissimilarities(h::Habitat) -> Matrix
+    Compute RSP expected costs or RSP dissimilarities from all nodes
     """
-    function RSP_dissimilarities_to(h::Habitat;
-                                    β=nothing,
-                                    destinations=h.landmarks,
-                                    return_mean_D_KL=true,
-                                    algorithm=:batch)
-        # TODO: Not yet implemented as from_landmarks_to_all. This requires computation of the diagonal of Z, which is not trivial.
-        # TODO: Do something smarter with return_mean_D_KL.
-        tic = time()
+    RSP_dissimilarities(h::Habitat; β=nothing) = RSP_dissimilarities(_W(h, β=β), h.C)
 
-        N = size(h.g.A, 1)
-
-        N_destinations = length(destinations)
-
-        W = _compute_W(h, β=β)
-
-        CW = h.C .* W
-
-        if length(destinations) == N
-            # Compute all distances.
-            #
-            # TODO: Remove consideration of 0-quality nodes as they may cause unnecessary inf-problems
-            #
-            @info("Computing Z...")
-            Z   = inv(Matrix(I - W))
-
-            # TODO (maybe):
-            # if self.return_mean_D_KL
-
-            if any(iszero, Z)
-                Z_has_zeros = true
-                inf_idx = sparse(Z.==0)
-                @warn("Z contains zeros! This will cause some distances to become infinite.")
-            else
-                Z_has_zeros = false
-            end
-
-            @info("Computing (C*W)Z...")
-            D = Matrix(CW)
-            D = D*Z
-
-            @info("Computing Z(C*W)Z...")
-            D = Z*D
-
-            @info("Computing Z(C*W)Z/Z...")
-            D ./= Z
-
-            @info("Computing D - e*diag(D).T")
-            if Z_has_zeros
-                D[Matrix(inf_idx)] .= Inf
-            end
-
-            # D above actually gives the expected costs of non-hitting paths
-            # from i to j.
-
-            # Expected costs of hitting paths avoiding possible 'Inf-Inf':
-            diag_vec = diag(D)
-            inf_idx = isinf.(diag_vec)
-
-            diag_vec = reshape(diag_vec, 1, length(diag_vec)) # Make into a 1xN-vector
-            D .-= diag_vec
-
-            D[:,inf_idx] .= Inf
-
-            if return_mean_D_KL
-                @info("Computing mean KL-divergence")
-                Z_diag_inv = inv(Diagonal(Z))
-                D_KL = Z*Z_diag_inv
-                D_KL .= .-log.(D_KL) .- β.*D
-                D_KL[:,inf_idx] .= 0
-
-                mean_D_KL = (vec(h.g.source_qualities)'*D_KL)*vec(h.g.target_qualities)
-            end
-
-            toc = time() - tic
-            @info("RSP expected costs computed in $toc seconds")
-
-
-        elseif algorithm == :batch
-            I_dest = zeros(N, N_destinations)
-            I_dest[destinations, 1:N_destinations] .= 1
-
-            Z_dest = I_W\I_dest
-
-            unconnected_pairs = Z_dest .== 0
-            if any(unconnected_pairs)
-                @warn("Some values of Z_dest are zero either because of unconnected nodes or a high value of beta, which may lead to infinite distances.")
-            end
-            Q_dest = CW*Z_dest
-
-            D = I_W\Q_dest
-
-            D ./= Z_dest
-            D[unconnected_pairs] .= 0
-            D_dest = D[destinations, 1:N_destinations]
-            D -= D_dest
-            D[unconnected_pairs] .= Inf
-
-        elseif algorithm == :sequential
-            D = zeros(N, N_destinations)
-            for (i,t) in enumerate(destinations)
-                # I_W_t = I_W
-                # I_W_t[t,:] = 0  Not really needed
-
-                e_t = zeros(N)
-                e_t[t] = 1
-                z_t = I_W\e_t
-                unconnected_nodes = z_t .== 0
-                if any(unconnected_nodes)
-                    @warn("Some values of z_t are zero either because of unconnected nodes or a high value of beta, which may lead to infinite distances.")
-                end
-                z_t_2d = reshape(z_t, 1, length(z_t))
-                q_t = CW*z_t_2d
-                c_t = I_W\q_t
-                c_t ./= z_t
-                c_t[unconnected_nodes] .= 0
-                c_t -= c_t[t]
-
-                D[:,i] = c_t
-                D[unconnected_nodes,i] .= Inf
-            end
-        end
-
-        return D
+    function RSP_dissimilarities(W::SparseMatrixCSC, C::SparseMatrixCSC, Z::AbstractMatrix = inv(Matrix(I - W)))
+        n   = LinearAlgebra.checksquare(W)
+        CW  = C .* W
+        S   = (Z*(C .* W)*Z) ./ Z
+        d_s = diag(S)
+        C̄   = S .- d_s
+        return C̄
     end
 end
