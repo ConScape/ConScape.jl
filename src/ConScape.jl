@@ -3,6 +3,9 @@ module ConScape
     using SparseArrays, Plots, LightGraphs, SimpleWeightedGraphs
     using LinearAlgebra
 
+    # Special matrix for efficient inverse
+    include("blocktridiagonal.jl")
+
     mutable struct Grid
         nrows::Int
         ncols::Int
@@ -108,22 +111,22 @@ module ConScape
                     push!(vs, 1)
 
                     # TODO: WRITE THIS TO ALLOW OTHER VALUES OF nhood_size!
-                    if nhood_size == 8
-                        if j < ncols
-                            # Add lower-right diagonal edge:
-                            # A[n, n + ncols + 1] = 1 / √2
-                            push!(is, n)
-                            push!(js, n + ncols + 1)
-                            push!(vs, 1 / √2)
-                        end
-                        if j > 1
-                            # Add lower-left diagonal edge:
-                            # A[n, n+ncols-1] = 1 / √2
-                            push!(is, n)
-                            push!(js, n + ncols - 1)
-                            push!(vs, 1 / √2)
-                        end
-                    end
+                    # if nhood_size == 8
+                    #     if j < ncols
+                    #         # Add lower-right diagonal edge:
+                    #         # A[n, n + ncols + 1] = 1 / √2
+                    #         push!(is, n)
+                    #         push!(js, n + ncols + 1)
+                    #         push!(vs, 1 / √2)
+                    #     end
+                    #     if j > 1
+                    #         # Add lower-left diagonal edge:
+                    #         # A[n, n+ncols-1] = 1 / √2
+                    #         push!(is, n)
+                    #         push!(js, n + ncols - 1)
+                    #         push!(vs, 1 / √2)
+                    #     end
+                    # end
                 end
             end
         end
