@@ -38,6 +38,7 @@ ConScape.Habitat
 ConScape.RSP_dissimilarities
 ConScape.RSP_full_betweenness_qweighted
 ConScape.RSP_full_betweenness_kweighted
+ConScape.mean_kl_distance
 ```
 
 ### Utility functions

@@ -278,7 +278,7 @@ module ConScape
     """
         Habitat(g::Grid, cost::Cost) -> Habitat
 
-    Construct a Habitat from a `g::Grid` based on a `costfunction`.
+    Construct a Habitat from a `g::Grid` based on a `cost::Cost` type.
     """
     Habitat(g::Grid,
             cost::Cost) =
@@ -302,7 +302,7 @@ module ConScape
     _W(h::Habitat; β=nothing) = _W(h.Pref, β, h.C)
 
     """
-        RSP_full_betweenness_qweighted(h::Habitat) -> Matrix
+        RSP_full_betweenness_qweighted(h::Habitat; β=nothing) -> Matrix
 
     Compute full RSP betweenness of all nodes weighted by source and target qualities.
     """
@@ -330,7 +330,7 @@ module ConScape
     end
 
     """
-        RSP_full_betweenness_kweighted(h::Habitat) -> Matrix
+        RSP_full_betweenness_kweighted(h::Habitat; β=nothing) -> Matrix
 
     Compute full RSP betweenness of all nodes weighted with proximity.
     """
@@ -366,8 +366,9 @@ module ConScape
     end
 
     """
-        RSP_dissimilarities(h::Habitat) -> Matrix
-    Compute RSP expected costs or RSP dissimilarities from all nodes
+        RSP_dissimilarities(h::Habitat; β=nothing) -> Matrix
+
+    Compute RSP expected costs or RSP dissimilarities from all nodes.
     """
     RSP_dissimilarities(h::Habitat; β=nothing) = RSP_dissimilarities(_W(h, β=β), h.C)
 
@@ -383,6 +384,12 @@ module ConScape
     RSP_free_energy_distance(Z::AbstractMatrix, β::Real) = -log.(Z*Diagonal(inv.(diag(Z))))/β
     RSP_free_energy_distance(h::Habitat; β=nothing) = RSP_free_energy_distance(inv(Matrix(I - _W(h, β=β))), β)
 
+
+    """
+        mean_kl_distance(h::Habitat; β=nothing) -> Real
+
+    Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP dissimilarities for `h::Habitat` at the temperature `β`.
+    """
     function mean_kl_distance(h::Habitat; β=nothing)
         W = _W(h, β=β)
         Z = inv(Matrix(I - W))
