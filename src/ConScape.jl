@@ -287,7 +287,7 @@ module ConScape
                         mapnz(cost, g.A),
                         _Pref(g.A))
 
-    _Pref(A::SparseMatrixCSC) = sum(A, dims=2) .\ A
+    _Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
 
     function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
 
@@ -337,8 +337,7 @@ module ConScape
     function RSP_full_betweenness_kweighted(h::Habitat; β=nothing)
         W = _W(h, β=β)
         Z = inv(Matrix(I - W))
-        similarities = map(inv(h.cost), RSP_dissimilarities(W, h.C, Z))
-        similarities[diagind(similarities)] .= 0
+        similarities = map(t -> iszero(t) ? t : inv(h.cost)(t), RSP_dissimilarities(W, h.C, Z))
         return RSP_full_betweenness_kweighted(Z, h.g.source_qualities, h.g.target_qualities, similarities)
     end
 
@@ -379,5 +378,14 @@ module ConScape
         d_s = diag(S)
         C̄   = S .- d_s
         return C̄
+    end
+
+    RSP_free_energy_distance(Z::AbstractMatrix, β::Real) = -log.(Z*Diagonal(inv.(diag(Z))))/β
+    RSP_free_energy_distance(h::Habitat; β=nothing) = RSP_free_energy_distance(inv(Matrix(I - _W(h, β=β))), β)
+
+    function mean_kl_distance(h::Habitat; β=nothing)
+        W = _W(h, β=β)
+        Z = inv(Matrix(I - W))
+        return vec(h.g.source_qualities)'*(RSP_free_energy_distance(Z, β) - RSP_dissimilarities(W, h.C, Z))*vec(h.g.target_qualities)*β
     end
 end
