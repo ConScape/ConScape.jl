@@ -3,6 +3,9 @@ module ConScape
     using SparseArrays, Plots, LightGraphs, SimpleWeightedGraphs
     using LinearAlgebra
 
+    # IO
+    include("io.jl")
+
     # Special matrix for efficient inverse
     include("blocktridiagonal.jl")
 
@@ -187,7 +190,7 @@ module ConScape
                 end
             end
         end
-        return sparse(is, js, vs)
+        return sparse(is, js, vs, m*n, m*n)
     end
 
     function _id_to_grid_coordinate_list(N_grid, ncols)
