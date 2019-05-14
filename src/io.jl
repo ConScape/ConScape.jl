@@ -8,10 +8,11 @@ Read asc file of raster data.
 
 readasc(fn::String; kwargs...) = open(t -> readasc(t; kwargs...), fn, "r")
 
-function readasc(io::IOStream; metadatalines=6, nodatavalue=0.0) # FIXME! is it always six lines?
+function readasc(io::IOStream; nodatavalue=0.0)
+
+    metadatalines = 6
 
     d = Dict()
-
     for i in 1:metadatalines
         s = split(readline(io))
         push!(d, lowercase(first(s))=>parse(Int, last(s)))
