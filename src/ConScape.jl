@@ -40,7 +40,7 @@ module ConScape
         Grid(nrows,
              ncols,
              landscape,
-             _id_to_grid_coordinate_list(Ngrid, ncols),
+             vec(CartesianIndices((nrows, ncols))),
              source_qualities,
              target_qualities)
     end
@@ -191,16 +191,6 @@ module ConScape
             end
         end
         return sparse(is, js, vs, m*n, m*n)
-    end
-
-    function _id_to_grid_coordinate_list(N_grid, ncols)
-        id_to_grid_coordinate_list = Tuple{Int,Int}[]
-        for node_id in 1:N_grid
-            j = (node_id - 1) % ncols + 1
-            i = div(node_id - j, ncols) + 1
-            push!(id_to_grid_coordinate_list, (i,j))
-        end
-        return id_to_grid_coordinate_list
     end
 
     #=
