@@ -12,7 +12,8 @@ using ConScape
 ```
 
 ```julia
-g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2), qualities=reshape(collect(1800:-1:1), 30, 60));
+g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2),
+                           qualities=copy(reshape(collect(1800:-1:1), 60, 30)'));
 ```
 
 ```julia
@@ -35,7 +36,7 @@ map!(t -> ifelse(isfinite(t) && !iszero(t), exp(-t), t), distances_all2L_shortes
 
 ```julia
 @time bet_shortest = ConScape.betweenness_centrality(Cg)
-ConScape.heatmap(reshape(bet_shortest, 60, 30)')
+ConScape.heatmap(reshape(bet_shortest, 30, 60))
 ```
 
 ```julia

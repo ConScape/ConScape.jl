@@ -1,10 +1,12 @@
 using DelimitedFiles
 
 """
-    readasc(::Union{String,IO}; metadatalines=6, nodatavalue=0.0) -> Matrix{Float64}, Dict
+    readasc(::Union{String,IO}; nodatavalue=0.0) -> Matrix{Float64}, Dict
 
-Read asc file of raster data.
+Read asc file of raster data and return tuple of a raster matrix and a dictionary
+containing the metadata information.
 """
+readasc
 
 readasc(fn::String; kwargs...) = open(t -> readasc(t; kwargs...), fn, "r")
 
