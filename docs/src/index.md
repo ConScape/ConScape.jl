@@ -44,4 +44,5 @@ ConScape.mean_kl_distance
 ### Utility functions
 ```@docs
 ConScape.mapnz
+ConScape.readasc
 ```
