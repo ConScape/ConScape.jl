@@ -83,6 +83,7 @@ module ConScape
         return g
     end
 
+    ⊗ = kron
     #=
     Generate the affinity matrix of a grid graph, where each
     pixel is connected to its vertical and horizontal neighbors.
@@ -92,51 +93,19 @@ module ConScape
     =#
     function _generateA(nrows, ncols, nhood_size)
 
-        N = nrows*ncols
-
-        # A = ss.dok_matrix(N, N)
-        is, js, vs = Int[], Int[], Float64[]
-        for i in 1:nrows
-            for j in 1:ncols
-                n = (i - 1)*ncols + j # current pixel
-                if j < ncols
-                    # Add horizontal edge:
-                    # A[n, n + 1] = 1
-                    push!(is, n)
-                    push!(js, n + 1)
-                    push!(vs, 1)
-                end
-                if i < nrows
-                    # Add vertical edge:
-                    # A[n, n + ncols] = 1
-                    push!(is, n)
-                    push!(js, n + ncols)
-                    push!(vs, 1)
-
-                    # TODO: WRITE THIS TO ALLOW OTHER VALUES OF nhood_size!
-                    if nhood_size == 8
-                        if j < ncols
-                            # Add lower-right diagonal edge:
-                            # A[n, n + ncols + 1] = 1 / √2
-                            push!(is, n)
-                            push!(js, n + ncols + 1)
-                            push!(vs, 1 / √2)
-                        end
-                        if j > 1
-                            # Add lower-left diagonal edge:
-                            # A[n, n+ncols-1] = 1 / √2
-                            push!(is, n)
-                            push!(js, n + ncols - 1)
-                            push!(vs, 1 / √2)
-                        end
-                    end
-                end
-            end
+        if !(nhood_size ∈ (4, 8))
+            throw(ArgumentError("nhood_size must be either 4 or 8"))
         end
 
-        A = sparse(is, js, vs, N, N)
+        A = spdiagm(0=>ones(ncols)) ⊗ spdiagm(-1=>ones(nrows - 1), 1=>ones(nrows - 1)) +
+            spdiagm(-1=>ones(ncols - 1), 1=>ones(ncols - 1)) ⊗ spdiagm(0=>ones(nrows))
 
-        return A + A'         # Symmetrize
+        if nhood_size == 8
+            A .+= spdiagm(-1=>ones(ncols - 1), 1=>ones(ncols - 1)) ⊗
+                  spdiagm(-1=>fill(1/√2, nrows - 1), 1=>fill(1/√2, nrows - 1))
+        end
+
+        return A
     end
 
     const N4 = (( 0, -1, 1.0),
@@ -319,7 +288,7 @@ module ConScape
 
         ZQZdivQ = Z*ZQZdivQ
 
-        return reshape(sum(ZQZdivQ .* Z', dims=2), reverse(size(source_qualities))...)'
+        return reshape(sum(ZQZdivQ .* Z', dims=2), size(source_qualities)...)
     end
 
     """
@@ -355,7 +324,7 @@ module ConScape
         ZKZdiv = Z*ZKZdiv
         bet = sum(ZKZdiv .* Z', dims=1)
 
-        return reshape(bet, reverse(size(source_qualities)))'
+        return reshape(bet, size(source_qualities))
     end
 
     """
