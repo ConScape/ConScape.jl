@@ -1,7 +1,7 @@
 module ConScape
 
-    using SparseArrays, Plots, LightGraphs, SimpleWeightedGraphs
-    using LinearAlgebra
+    using SparseArrays, LinearAlgebra
+    using LightGraphs, Plots, SimpleWeightedGraphs
 
     # IO
     include("io.jl")
@@ -34,18 +34,48 @@ module ConScape
                   target_qualities::Matrix=qualities,
                   nhood_size::Integer=8,
                   landscape=_generateA(nrows, ncols, nhood_size))
+
         @assert nrows*ncols == LinearAlgebra.checksquare(landscape)
         Ngrid = nrows*ncols
+
+        if source_qualities === target_qualities
+            _source_qualities = _target_qualities = convert(Matrix{Float64}, source_qualities)
+        else
+            _source_qualities = convert(Matrix{Float64}, source_qualities)
+            _target_qualities = convert(Matrix{Float64}, target_qualities)
+        end
 
         Grid(nrows,
              ncols,
              landscape,
              vec(CartesianIndices((nrows, ncols))),
-             source_qualities,
-             target_qualities)
+             _source_qualities,
+             _target_qualities)
     end
 
     Base.size(g::Grid) = (g.nrows, g.ncols)
+
+    function Base.show(io::IO, ::MIME"text/plain", g::Grid)
+        print(io, summary(g), " of size ", g.nrows, "x", g.ncols)
+    end
+
+    function Base.show(io::IO, ::MIME"text/html", g::Grid)
+        t = string(summary(g), " of size ", g.nrows, "x", g.ncols)
+        write(io, "<h4>$t</h4>")
+        write(io, "<table><tr><td>Affinities</br>")
+        show(io, MIME"text/html"(), plot_outdegrees(g))
+        write(io, "</td></tr></table>")
+        if g.source_qualities === g.target_qualities
+            write(io, "<table><tr><td>Qualities</td></tr></table>")
+            show(io, MIME"text/html"(), heatmap(g.source_qualities))
+        else
+            write(io, "<table><tr><td>Source qualities")
+            show(io, MIME"text/html"(), heatmap(g.source_qualities))
+            write(io, "</td><td>Target qualities")
+            show(io, MIME"text/html"(), heatmap(g.target_qualities))
+            write(io, "</td></tr></table>")
+        end
+    end
 
     # simulate a permeable wall
     function perm_wall_sim(nrows::Integer, ncols::Integer;
@@ -207,14 +237,16 @@ module ConScape
         return B
     end
 
-    function plot_outdegrees(g::Grid)
+    function _outdegrees(g::Grid)
         values = sum(g.A, dims=2)
         canvas = zeros(g.nrows, g.ncols)
         for (i,v) in enumerate(values)
             canvas[g.id_to_grid_coordinate_list[i]...] = v
         end
-        heatmap(canvas)
+        canvas
     end
+
+    plot_outdegrees(g::Grid) = heatmap(_outdegrees(g))
 
     abstract type Cost end
     struct MinusLog <: Cost end
