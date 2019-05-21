@@ -70,12 +70,12 @@ function Base.show(io::IO, ::MIME"text/html", g::Grid)
     write(io, "</td></tr></table>")
     if g.source_qualities === g.target_qualities
         write(io, "<table><tr><td>Qualities</td></tr></table>")
-        show(io, MIME"text/html"(), heatmap(g.source_qualities))
+        show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
     else
         write(io, "<table><tr><td>Source qualities")
-        show(io, MIME"text/html"(), heatmap(g.source_qualities))
+        show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
         write(io, "</td><td>Target qualities")
-        show(io, MIME"text/html"(), heatmap(g.target_qualities))
+        show(io, MIME"text/html"(), heatmap(g.target_qualities, yflip=true))
         write(io, "</td></tr></table>")
     end
 end
@@ -86,5 +86,5 @@ function plot_outdegrees(g::Grid)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
-    heatmap(canvas)
+    heatmap(canvas, yflip=true)
 end

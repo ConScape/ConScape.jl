@@ -19,7 +19,7 @@ From a `Grid` and a `costfunction`, we can now create a `Habitat` which we can u
 ```@example 1
 h = ConScape.Habitat(g, ConScape.MinusLog());
 bet_q = ConScape.RSP_full_betweenness_qweighted(h, β=0.2)
-ConScape.heatmap(bet_q)
+ConScape.heatmap(bet_q, yflip=true)
 ```
 
 ## Details
