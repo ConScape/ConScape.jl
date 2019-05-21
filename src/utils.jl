@@ -30,7 +30,7 @@ function perm_wall_sim(
         end
     end
 
-    impossible_nodes = vec(collect(Iterators.product(ys,xs)))
+    impossible_nodes = vec(CartesianIndex.(collect(Iterators.product(ys, xs))))
     _set_impossible_nodes!(g, impossible_nodes)
 
     return g
@@ -131,7 +131,7 @@ Make pixels impossible to move to by changing the affinities to them to zero.
 Input:
     - node_list: list of nodes (either node_ids or coordinate-tuples) to be made impossible
 =#
-function _set_impossible_nodes!(g::Grid, node_list::Vector{<:Tuple}, impossible_affinity=1e-20)
+function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, impossible_affinity=1e-20)
     # Find the indices of the coordinates in the id_to_grid_coordinate_list vector
     node_list_idx = [findfirst(isequal(n), g.id_to_grid_coordinate_list) for n in node_list]
 

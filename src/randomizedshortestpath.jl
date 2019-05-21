@@ -12,36 +12,31 @@ Base.inv(::ExpMinus) = MinusLog()
 Base.inv(::Inv)      = Inv()
 
 function RSP_full_betweenness_qweighted(Z::AbstractMatrix,
-                                        source_qualities::AbstractMatrix,
-                                        target_qualities::AbstractMatrix)
+                                        source_qualities::AbstractVector,
+                                        target_qualities::AbstractVector)
 
     Zdiv = inv.(Z)
     Zdiv_diag = diag(Zdiv)
 
-    qs = vec(source_qualities)
-    qt = vec(target_qualities)
-    qs_sum = sum(qs)
+    qs_sum = sum(source_qualities)
 
-    ZQZdivQ = qt .* Zdiv'
-    ZQZdivQ = ZQZdivQ .* qs'
-    ZQZdivQ -= Diagonal(qs_sum .* qt .* Zdiv_diag)
+    ZQZdivQ = target_qualities .* Zdiv'
+    ZQZdivQ = ZQZdivQ .* source_qualities'
+    ZQZdivQ -= Diagonal(qs_sum .* target_qualities .* Zdiv_diag)
 
     ZQZdivQ = Z*ZQZdivQ
 
-    return reshape(sum(ZQZdivQ .* Z', dims=2), size(source_qualities)...)
+    return sum(ZQZdivQ .* Z', dims=2)
 end
 
 function RSP_full_betweenness_kweighted(Z::AbstractMatrix,
-                                        source_qualities::AbstractMatrix,
-                                        target_qualities::AbstractMatrix,
+                                        source_qualities::AbstractVector,
+                                        target_qualities::AbstractVector,
                                         similarities::AbstractMatrix)
 
     Zdiv = inv.(Z)
 
-    qs = vec(source_qualities)
-    qt = vec(target_qualities)
-
-    K = qs .* similarities .* qt'
+    K = source_qualities .* similarities .* target_qualities'
 
     K_colsum = vec(sum(K, dims=1))
     d_Zdiv = diag(Zdiv)
@@ -52,7 +47,7 @@ function RSP_full_betweenness_kweighted(Z::AbstractMatrix,
     ZKZdiv = Z*ZKZdiv
     bet = sum(ZKZdiv .* Z', dims=1)
 
-    return reshape(bet, size(source_qualities))
+    return bet
 end
 
 function RSP_dissimilarities(W::SparseMatrixCSC, C::SparseMatrixCSC, Z::AbstractMatrix = inv(Matrix(I - W)))
