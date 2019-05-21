@@ -17,8 +17,8 @@ ConScape.plot_outdegrees(g)
 From a `Grid` and a `costfunction`, we can now create a `Habitat` which we can use to compute the randomized shortest path based quality weighted betweenness with the temperature parameter `β=0.2`.
 
 ```@example 1
-h = ConScape.Habitat(g, ConScape.MinusLog());
-bet_q = ConScape.RSP_full_betweenness_qweighted(h, β=0.2)
+h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
+bet_q = ConScape.RSP_full_betweenness_qweighted(h)
 ConScape.heatmap(bet_q, yflip=true)
 ```
 

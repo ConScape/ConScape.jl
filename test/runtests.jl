@@ -8,9 +8,9 @@ datadir = joinpath(@__DIR__(), "..", "data")
                                # Qualities decrease by row
                                qualities=copy(reshape(collect(1800:-1:1), 60, 30)')
                                )
-    h = ConScape.Habitat(g, ConScape.MinusLog())
+    h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
 
-    @test ConScape.mean_kl_distance(h, β=0.2) ≈ 31104209170543.438
+    @test ConScape.mean_kl_distance(h) ≈ 31104209170543.438
 end
 
 @testset "Read asc data..." begin
