@@ -74,15 +74,20 @@ const N8 = ((-1, -1,  √2),
             ( 0,  1, 1.0),
             ( 1,  1,  √2))
 
+@enum AdjacencyWeight begin
+    TargetWeight
+    AverageWeight
+end
+
 """
-    adjacency(R::Matrix[, neighbors::Tuple=N8]) -> SparseMatrixCSC
+    adjacency(R::Matrix[, neighbors::Tuple=N8, weight=TargetWeight]) -> SparseMatrixCSC
 
 Compute an adjacency matrix of the raster image `R` of the similarities/conductances
-the cells. The similarities are computed as harmonic means of the cell values weighted
-by the grid distance. The similarities can be computed with respect to eight
-neighbors (`N8`) or four neighbors (`N4`).
+the cells. The similarities are computed as either the value of the target cell (TargetWeight)
+or as harmonic means of the cell values weighted by the grid distance (AverageWeight). The similarities
+can be computed with respect to eight neighbors (`N8`) or four neighbors (`N4`).
 """
-function adjacency(R::Matrix, neighbors::Tuple=N8)
+function adjacency(R::Matrix; neighbors::Tuple=N8, weight=TargetWeight)
     m, n = size(R)
 
     # Initialy the buffers of the SparseMatrixCSC
@@ -106,8 +111,14 @@ function adjacency(R::Matrix, neighbors::Tuple=N8)
 
                     push!(is, (j - 1)*m + i)
                     push!(js, (j - 1)*m + i + ki + kj*m)
-                    v = 2/((inv(rij) + inv(rijk))*l)
-                    push!(vs, v)
+                    if weight == TargetWeight
+                        push!(vs, rijk)
+                    elseif weight == AverageWeight
+                        v = 2/((inv(rij) + inv(rijk))*l)
+                        push!(vs, v)
+                    else
+                        throw(ArgumentError("weight mode not implemented"))
+                    end
                 end
             end
         end
