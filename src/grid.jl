@@ -2,7 +2,7 @@ mutable struct Grid
     nrows::Int
     ncols::Int
     A::SparseMatrixCSC{Float64,Int}
-    id_to_grid_coordinate_list::Vector{Tuple{Int,Int}}
+    id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
     source_qualities::Matrix{Float64}
     target_qualities::Matrix{Float64}
 end
@@ -17,12 +17,14 @@ end
 
 Construct a `Grid` from a `landscape` passed a `SparseMatrixCSC`.
 """
-function Grid(nrows::Integer, ncols::Integer;
+function Grid(nrows::Integer,
+              ncols::Integer;
               qualities::Matrix=ones(nrows, ncols),
               source_qualities::Matrix=qualities,
               target_qualities::Matrix=qualities,
               nhood_size::Integer=8,
-              landscape=_generateA(nrows, ncols, nhood_size))
+              landscape=_generateA(nrows, ncols, nhood_size),
+              prune=true)
 
     @assert nrows*ncols == LinearAlgebra.checksquare(landscape)
     Ngrid = nrows*ncols
@@ -34,11 +36,21 @@ function Grid(nrows::Integer, ncols::Integer;
         _target_qualities = convert(Matrix{Float64}, target_qualities)
     end
 
+    # Prune
+    if prune
+        nonzerocells = findall(!iszero, vec(sum(landscape, dims=1)))
+        _landscape = landscape[nonzerocells, nonzerocells]
+        _id_to_grid_coordinate_list = vec(CartesianIndices((nrows, ncols)))[nonzerocells]
+    else
+        _landscape = landscape
+        _id_to_grid_coordinate_list = vec(CartesianIndices((nrows, ncols)))
+    end
+
     Grid(
         nrows,
         ncols,
-        landscape,
-        vec(CartesianIndices((nrows, ncols))),
+        _landscape,
+        _id_to_grid_coordinate_list,
         _source_qualities,
         _target_qualities
     )
@@ -72,7 +84,7 @@ function plot_outdegrees(g::Grid)
     values = sum(g.A, dims=2)
     canvas = zeros(g.nrows, g.ncols)
     for (i,v) in enumerate(values)
-        canvas[g.id_to_grid_coordinate_list[i]...] = v
+        canvas[g.id_to_grid_coordinate_list[i]] = v
     end
     heatmap(canvas)
 end

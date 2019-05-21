@@ -37,8 +37,19 @@ _W(h::Habitat; β=nothing) = _W(h.Pref, β, h.C)
 
 Compute full RSP betweenness of all nodes weighted by source and target qualities.
 """
-RSP_full_betweenness_qweighted(h::Habitat; β=nothing) =
-    RSP_full_betweenness_qweighted(inv(Matrix(I - _W(h, β=β))), h.g.source_qualities, h.g.target_qualities)
+function RSP_full_betweenness_qweighted(h::Habitat; β=nothing)
+    betvec = RSP_full_betweenness_qweighted(
+        inv(Matrix(I - _W(h, β=β))),
+        h.g.source_qualities[h.g.id_to_grid_coordinate_list],
+        h.g.target_qualities[h.g.id_to_grid_coordinate_list])
+
+    bet = zeros(h.g.nrows, h.g.ncols)
+    for (i, v) in enumerate(betvec)
+        bet[h.g.id_to_grid_coordinate_list[i]] = v
+    end
+
+    return bet
+end
 
 
 """
@@ -50,7 +61,16 @@ function RSP_full_betweenness_kweighted(h::Habitat; β=nothing)
     W = _W(h, β=β)
     Z = inv(Matrix(I - W))
     similarities = map(t -> iszero(t) ? t : inv(h.cost)(t), RSP_dissimilarities(W, h.C, Z))
-    return RSP_full_betweenness_kweighted(Z, h.g.source_qualities, h.g.target_qualities, similarities)
+    betvec = RSP_full_betweenness_kweighted(Z,
+                                            h.g.source_qualities[h.g.id_to_grid_coordinate_list],
+                                            h.g.target_qualities[h.g.id_to_grid_coordinate_list],
+                                            similarities)
+    bet = zeros(h.g.nrows, h.g.ncols)
+    for (i, v) in enumerate(betvec)
+        bet[h.g.id_to_grid_coordinate_list[i]] = v
+    end
+
+    return bet
 end
 
 """
@@ -70,5 +90,7 @@ Compute the mean Kullback–Leibler divergence between the free energy distances
 function mean_kl_distance(h::Habitat; β=nothing)
     W = _W(h, β=β)
     Z = inv(Matrix(I - W))
-    return vec(h.g.source_qualities)'*(RSP_free_energy_distance(Z, β) - RSP_dissimilarities(W, h.C, Z))*vec(h.g.target_qualities)*β
+    qs = h.g.source_qualities[h.g.id_to_grid_coordinate_list]
+    qt = h.g.target_qualities[h.g.id_to_grid_coordinate_list]
+    return qs'*(RSP_free_energy_distance(Z, β) - RSP_dissimilarities(W, h.C, Z))*qt*β
 end
