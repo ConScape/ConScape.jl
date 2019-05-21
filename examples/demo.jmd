@@ -36,12 +36,12 @@ map!(t -> ifelse(isfinite(t) && !iszero(t), exp(-t), t), distances_all2L_shortes
 
 ```julia
 @time bet_shortest = ConScape.betweenness_centrality(Cg)
-ConScape.heatmap(reshape(bet_shortest, 30, 60))
+ConScape.heatmap(reshape(bet_shortest, 30, 60), yflip=true)
 ```
 
 ```julia
 bet_q = ConScape.RSP_full_betweenness_qweighted(h, β=0.2)
-ConScape.heatmap(bet_q)
+ConScape.heatmap(bet_q, yflip=true)
 ```
 
 ```julia
@@ -50,5 +50,5 @@ ConScape.heatmap(bet_q)
 
 ```julia
 bet_k = ConScape.RSP_full_betweenness_kweighted(h, β=0.2);
-ConScape.heatmap(bet_k)
+ConScape.heatmap(bet_k, yflip=true)
 ```
