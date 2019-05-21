@@ -80,7 +80,7 @@ const N8 = ((-1, -1,  √2),
 end
 
 """
-    adjacency(R::Matrix[, neighbors::Tuple=N8, weight=TargetWeight]) -> SparseMatrixCSC
+    adjacency(R::Matrix[, neighbors::Tuple=N8, weight=TargetWeight])::SparseMatrixCSC
 
 Compute an adjacency matrix of the raster image `R` of the similarities/conductances
 the cells. The similarities are computed as either the value of the target cell (TargetWeight)
@@ -161,7 +161,7 @@ function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, i
 end
 
 """
-    mapnz(f, A::SparseMatrixCSC) -> SparseMatrixCSC
+    mapnz(f, A::SparseMatrixCSC)::SparseMatrixCSC
 
 Map the non-zero values of a sparse matrix `A` with the function `f`.
 """

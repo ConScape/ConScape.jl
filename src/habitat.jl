@@ -1,45 +1,36 @@
 struct Habitat
     g::Grid
     cost::Cost
+    β::Float64
     C::SparseMatrixCSC{Float64,Int}
     Pref::SparseMatrixCSC{Float64,Int}
-    # landmarks::Vector{Int}
+    W::SparseMatrixCSC{Float64,Int}
+    Z::Matrix{Float64}
 end
 
 """
-    Habitat(g::Grid, cost::Cost) -> Habitat
+    Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)::Habitat
 
-Construct a Habitat from a `g::Grid` based on a `cost::Cost` type.
+Construct a Habitat from a `g::Grid` based on a `cost::Cost` type and the temperature `β::Real`.
 """
-Habitat(g::Grid,
-        cost::Cost) =
-            Habitat(g,
-                    cost,
-                    mapnz(cost, g.A),
-                    _Pref(g.A))
-
-_Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
-
-function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
-
-    n = LinearAlgebra.checksquare(Pref)
-    if LinearAlgebra.checksquare(C) != n
-        throw(DimensionMismatch("Pref and C must have same size"))
-    end
-
-    return Pref .* exp.((-).(β) .* C)
+function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
+    C    = mapnz(cost, g.A)
+    Pref = _Pref(g.A)
+    W    = _W(Pref, β, C)
+    @info("Compututing fundamental matrix of non-absorbing paths (Z). Please be patient...")
+    Z    = inv(Matrix(I - W))
+    return Habitat(g, cost, β, C, Pref, W, Z)
 end
 
-_W(h::Habitat; β=nothing) = _W(h.Pref, β, h.C)
-
 """
-    RSP_full_betweenness_qweighted(h::Habitat; β=nothing) -> Matrix
+    RSP_full_betweenness_qweighted(h::Habitat)::Matrix{Float64}
 
 Compute full RSP betweenness of all nodes weighted by source and target qualities.
 """
-function RSP_full_betweenness_qweighted(h::Habitat; β=nothing)
+function RSP_full_betweenness_qweighted(h::Habitat)
+
     betvec = RSP_full_betweenness_qweighted(
-        inv(Matrix(I - _W(h, β=β))),
+        h.Z,
         h.g.source_qualities[h.g.id_to_grid_coordinate_list],
         h.g.target_qualities[h.g.id_to_grid_coordinate_list])
 
@@ -53,15 +44,14 @@ end
 
 
 """
-    RSP_full_betweenness_kweighted(h::Habitat; β=nothing) -> Matrix
+    RSP_full_betweenness_kweighted(h::Habitat)::Matrix{Float64}
 
 Compute full RSP betweenness of all nodes weighted with proximity.
 """
-function RSP_full_betweenness_kweighted(h::Habitat; β=nothing)
-    W = _W(h, β=β)
-    Z = inv(Matrix(I - W))
-    similarities = map(t -> iszero(t) ? t : inv(h.cost)(t), RSP_dissimilarities(W, h.C, Z))
-    betvec = RSP_full_betweenness_kweighted(Z,
+function RSP_full_betweenness_kweighted(h::Habitat)
+
+    similarities = map(t -> iszero(t) ? t : inv(h.cost)(t), RSP_dissimilarities(h))
+    betvec = RSP_full_betweenness_kweighted(h.Z,
                                             h.g.source_qualities[h.g.id_to_grid_coordinate_list],
                                             h.g.target_qualities[h.g.id_to_grid_coordinate_list],
                                             similarities)
@@ -74,23 +64,21 @@ function RSP_full_betweenness_kweighted(h::Habitat; β=nothing)
 end
 
 """
-    RSP_dissimilarities(h::Habitat; β=nothing) -> Matrix
+    RSP_dissimilarities(h::Habitat)::Matrix{Float64}
 
 Compute RSP expected costs or RSP dissimilarities from all nodes.
 """
-RSP_dissimilarities(h::Habitat; β=nothing) = RSP_dissimilarities(_W(h, β=β), h.C)
+RSP_dissimilarities(h::Habitat) = RSP_dissimilarities(h.W, h.C, h.Z)
 
-RSP_free_energy_distance(h::Habitat; β=nothing) = RSP_free_energy_distance(inv(Matrix(I - _W(h, β=β))), β)
+RSP_free_energy_distance(h::Habitat) = RSP_free_energy_distance(h.Z, h.β)
 
 """
-    mean_kl_distance(h::Habitat; β=nothing) -> Real
+    mean_kl_distance(h::Habitat)::Float64
 
-Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP dissimilarities for `h::Habitat` at the temperature `β`.
+Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP dissimilarities for `h::Habitat`.
 """
-function mean_kl_distance(h::Habitat; β=nothing)
-    W = _W(h, β=β)
-    Z = inv(Matrix(I - W))
+function mean_kl_distance(h::Habitat)
     qs = h.g.source_qualities[h.g.id_to_grid_coordinate_list]
     qt = h.g.target_qualities[h.g.id_to_grid_coordinate_list]
-    return qs'*(RSP_free_energy_distance(Z, β) - RSP_dissimilarities(W, h.C, Z))*qt*β
+    return qs'*(RSP_free_energy_distance(h.Z, h.β) - RSP_dissimilarities(h))*qt*h.β
 end

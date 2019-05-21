@@ -11,6 +11,18 @@ Base.inv(::MinusLog) = ExpMinus()
 Base.inv(::ExpMinus) = MinusLog()
 Base.inv(::Inv)      = Inv()
 
+_Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
+
+function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
+
+    n = LinearAlgebra.checksquare(Pref)
+    if LinearAlgebra.checksquare(C) != n
+        throw(DimensionMismatch("Pref and C must have same size"))
+    end
+
+    return Pref .* exp.((-).(β) .* C)
+end
+
 function RSP_full_betweenness_qweighted(Z::AbstractMatrix,
                                         source_qualities::AbstractVector,
                                         target_qualities::AbstractVector)

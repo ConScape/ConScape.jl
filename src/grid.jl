@@ -13,7 +13,7 @@ end
               source_qualities::Matrix=qualities,
               target_qualities::Matrix=qualities,
               nhood_size::Integer=8,
-              landscape=_generateA(nrows, ncols, nhood_size)) -> Grid
+              landscape=_generateA(nrows, ncols, nhood_size))::Grid
 
 Construct a `Grid` from a `landscape` passed a `SparseMatrixCSC`.
 """
