@@ -117,7 +117,7 @@ function adjacency(R::Matrix; neighbors::Tuple=N8, weight=TargetWeight)
                         v = 2/((inv(rij) + inv(rijk))*l)
                         push!(vs, v)
                     else
-                        throw(ArgumentError("weight mode not implemented"))
+                        throw(ArgumentError("weight mode $weight not implemented"))
                     end
                 end
             end

@@ -88,3 +88,36 @@ function plot_outdegrees(g::Grid)
     end
     heatmap(canvas, yflip=true)
 end
+
+"""
+    is_connected(g::Grid)::Bool
+
+Test if graph defined by Grid is fully connected.
+"""
+LightGraphs.is_connected(g::Grid) = is_connected(SimpleWeightedDiGraph(g.A))
+
+"""
+    largest_subgraph(g::Grid)::Grid
+
+Extract the largest fully connected subgraph of the `Grid`. The returned `Grid`
+will have the same size as the input `Grid` but only nodes associated with the
+largest subgraph of the landscape will be active.
+"""
+function largest_subgraph(g::Grid)
+    # Convert adjacency matrix to graph
+    graph = SimpleWeightedDiGraph(g.A, permute=false)
+
+    # Find the subgraphs
+    scc = strongly_connected_components(graph)
+
+    # Find the largest subgraph
+    i = argmax(length.(scc))
+
+    # extract node list and sort it
+    scci = sort(scc[i])
+
+    # Extract the adjacency matrix of the largest subgraph
+    newA = graph[scci]
+
+    return Grid(g.nrows, g.ncols, newA, g.id_to_grid_coordinate_list[scci], g.source_qualities, g.target_qualities)
+end

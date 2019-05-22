@@ -30,6 +30,8 @@ The section provides more details about the functions of this package including 
 ```@docs
 ConScape.Grid
 ConScape.adjacency
+ConScape.is_connected
+ConScape.largest_subgraph
 ```
 
 ### Habitat
