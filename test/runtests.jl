@@ -32,3 +32,24 @@ end
         @test ConScape.adjacency(affinities, neighbors=nn, weight=w) isa ConScape.SparseMatrixCSC
     end
 end
+
+@testset "graph splitting" begin
+    l1 = [1/4 0 1/4 1/4
+          1/4 0 1/4 1/4
+          1/4 0 1/4 1/4
+          1/4 0 1/4 1/4]
+
+    l2 = [0   0 1/4 1/4
+          0   0 1/4 1/4
+          0   0 1/4 1/4
+          0   0 1/4 1/4]
+
+    g1 = ConScape.Grid(size(l1)..., landscape=ConScape.adjacency(l1))
+    g2 = ConScape.Grid(size(l2)..., landscape=ConScape.adjacency(l2))
+
+    @test !ConScape.is_connected(g1)
+    @test ConScape.is_connected(g2)
+    for f in fieldnames(typeof(g1))
+        @test getfield(ConScape.largest_subgraph(g1), f) == getfield(g2, f)
+    end
+end
