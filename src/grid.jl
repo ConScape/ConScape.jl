@@ -93,6 +93,21 @@ end
     is_connected(g::Grid)::Bool
 
 Test if graph defined by Grid is fully connected.
+
+# Examples
+
+```jldoctests
+julia> landscape = [1/4 0 1/4 1/4
+                    1/4 0 1/4 1/4
+                    1/4 0 1/4 1/4
+                    1/4 0 1/4 1/4];
+
+julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.adjacency(landscape))
+ConScape.Grid of size 4x4
+
+julia> ConScape.is_connected(grid)
+false
+```
 """
 LightGraphs.is_connected(g::Grid) = is_connected(SimpleWeightedDiGraph(g.A))
 
@@ -120,4 +135,38 @@ function largest_subgraph(g::Grid)
     newA = graph[scci]
 
     return Grid(g.nrows, g.ncols, newA, g.id_to_grid_coordinate_list[scci], g.source_qualities, g.target_qualities)
+end
+
+"""
+    least_cost_distance(g::Grid, target::Tuple{Int,Int})::Matrix{Float64}
+
+Compute the least cost distance from all the cells in the grid to the the `target` cell.
+
+# Examples
+```jldoctests
+julia> landscape = [1/4 0 1/4 1/4
+                    1/4 0 1/4 1/4
+                    1/4 0 1/4 1/4
+                    1/4 0 1/4 1/4];
+
+julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.adjacency(landscape))
+ConScape.Grid of size 4x4
+
+julia> ConScape.least_cost_distance(grid, (4,4))
+4×4 Array{Float64,2}:
+ Inf  NaN  0.75  0.75
+ Inf  NaN  0.5   0.5
+ Inf  NaN  0.25  0.25
+ Inf  NaN  0.25  0.0
+```
+"""
+function least_cost_distance(g::Grid, target::Tuple{Int,Int})
+    graph = SimpleWeightedDiGraph(g.A)
+    node = findfirst(isequal(CartesianIndex(target)), g.id_to_grid_coordinate_list)
+    distvec = dijkstra_shortest_paths(graph, node).dists
+    distgrid = fill(NaN, g.nrows, g.ncols)
+    for (i, c) in enumerate(g.id_to_grid_coordinate_list)
+        distgrid[c] = distvec[i]
+    end
+    return distgrid
 end
