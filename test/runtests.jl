@@ -53,3 +53,17 @@ end
         @test getfield(ConScape.largest_subgraph(g1), f) == getfield(g2, f)
     end
 end
+
+@testset "least cost distance" begin
+    l = [1/4 0 1/4 1/4
+         1/4 0 1/4 1/4
+         1/4 0 1/4 1/4
+         1/4 0 1/4 1/4]
+
+    g = ConScape.Grid(size(l)..., landscape=ConScape.adjacency(l))
+
+    @test all(ConScape.least_cost_distance(g, (4,4)) .=== [Inf  NaN  0.75  0.75
+                                                           Inf  NaN  0.5   0.5
+                                                           Inf  NaN  0.25  0.25
+                                                           Inf  NaN  0.25  0.0])
+end

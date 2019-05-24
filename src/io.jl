@@ -1,7 +1,7 @@
 using DelimitedFiles
 
 """
-    readasc(::Union{String,IO}; nodatavalue=0.0) -> Matrix{Float64}, Dict
+    readasc(::Union{String,IO}; nodatavalue=0.0)::Tuple{Matrix{Float64}, Dict{String,Int}}
 
 Read asc file of raster data and return tuple of a raster matrix and a dictionary
 containing the metadata information.

@@ -26,12 +26,19 @@ ConScape.heatmap(bet_q, yflip=true)
 
 The section provides more details about the functions of this package including exact call signatures.
 
+```@meta
+DocTestSetup = quote
+    using ConScape
+end
+```
+
 ### Grid
 ```@docs
 ConScape.Grid
 ConScape.adjacency
 ConScape.is_connected
 ConScape.largest_subgraph
+ConScape.least_cost_distance
 ```
 
 ### Habitat
