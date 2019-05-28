@@ -67,3 +67,13 @@ end
                                                            Inf  NaN  0.25  0.25
                                                            Inf  NaN  0.25  0.0])
 end
+
+@testset "custom scaling function in k-weighted betweenness" begin
+    l = rand(4, 4)
+    q = rand(4, 4)
+
+    g = ConScape.Grid(size(l)..., landscape=ConScape.adjacency(l))
+    h = ConScape.Habitat(g, β=0.2)
+
+    @test ConScape.RSP_full_betweenness_kweighted(h) == ConScape.RSP_full_betweenness_kweighted(h; invcost=t -> exp(-t))
+end
