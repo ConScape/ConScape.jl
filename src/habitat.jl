@@ -44,13 +44,16 @@ end
 
 
 """
-    RSP_full_betweenness_kweighted(h::Habitat)::Matrix{Float64}
+    RSP_full_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost)])::Matrix{Float64}
 
-Compute full RSP betweenness of all nodes weighted with proximity.
+Compute full RSP betweenness of all nodes weighted with proximity. Optionally, an inverse
+cost function can be passed. The function will be applied elementwise to the matrix of
+dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
+passed the the inverse of the cost function is used for the conversion of the dissimilarities.
 """
-function RSP_full_betweenness_kweighted(h::Habitat)
+function RSP_full_betweenness_kweighted(h::Habitat; invcost=inv(h.cost))
 
-    similarities = map(t -> iszero(t) ? t : inv(h.cost)(t), RSP_dissimilarities(h))
+    similarities = map(t -> iszero(t) ? t : invcost(t), RSP_dissimilarities(h))
     betvec = RSP_full_betweenness_kweighted(h.Z,
                                             h.g.source_qualities[h.g.id_to_grid_coordinate_list],
                                             h.g.target_qualities[h.g.id_to_grid_coordinate_list],
