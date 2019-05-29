@@ -33,3 +33,25 @@ function readasc(io::IOStream; nodatavalue=0.0)
 
     return m, d
 end
+
+writeasc(fn::String, m::Matrix{<:Real}; kwargs...) = open(t -> writeasc(t, m; kwargs...), fn, "w")
+
+function writeasc(io::IOStream, m::Matrix{<:Real}; xllcorner::Integer=0, yllcorner::Integer=0, cellsize::Union{Nothing,Integer}=nothing, nodatavalue::Integer=-9999)
+    if cellsize === missing
+        throw(ArgumentError("please provide a cell size"))
+    end
+
+    mcopy = copy(m)
+    replace!(m, NaN => nodatavalue)
+
+    write(io, string("NCOLS "       , size(m, 2) , "\n"))
+    write(io, string("NROWS "       , size(m, 1) , "\n"))
+    write(io, string("XLLCORNER "   , xllcorner  , "\n"))
+    write(io, string("YLLCORNER "   , yllcorner  , "\n"))
+    write(io, string("CELLSIZE "    , cellsize   , "\n"))
+    write(io, string("NODATA_VALUE ", nodatavalue, "\n"))
+
+    writedlm(io, m, ' ')
+
+    return nothing
+end
