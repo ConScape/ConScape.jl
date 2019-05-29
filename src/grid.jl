@@ -162,8 +162,8 @@ julia> ConScape.least_cost_distance(grid, (4,4))
 """
 function least_cost_distance(g::Grid, target::Tuple{Int,Int})
     graph = SimpleWeightedDiGraph(g.A)
-    node = findfirst(isequal(CartesianIndex(target)), g.id_to_grid_coordinate_list)
-    distvec = dijkstra_shortest_paths(graph, node).dists
+    targetnode = findfirst(isequal(CartesianIndex(target)), g.id_to_grid_coordinate_list)
+    distvec = dijkstra_shortest_paths(graph, targetnode).dists
     distgrid = fill(NaN, g.nrows, g.ncols)
     for (i, c) in enumerate(g.id_to_grid_coordinate_list)
         distgrid[c] = distvec[i]
