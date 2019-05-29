@@ -76,12 +76,77 @@ RSP_dissimilarities(h::Habitat) = RSP_dissimilarities(h.W, h.C, h.Z)
 RSP_free_energy_distance(h::Habitat) = RSP_free_energy_distance(h.Z, h.β)
 
 """
-    mean_kl_distance(h::Habitat)::Float64
+    mean_kl_divergence(h::Habitat)::Float64
 
 Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP dissimilarities for `h::Habitat`.
 """
-function mean_kl_distance(h::Habitat)
+function mean_kl_divergence(h::Habitat)
     qs = h.g.source_qualities[h.g.id_to_grid_coordinate_list]
     qt = h.g.target_qualities[h.g.id_to_grid_coordinate_list]
     return qs'*(RSP_free_energy_distance(h.Z, h.β) - RSP_dissimilarities(h))*qt*h.β
+end
+
+
+function least_cost_kl_divergence(C::SparseMatrixCSC, Pref::SparseMatrixCSC, targetnode::Integer)
+
+    n = size(C, 1)
+    graph = SimpleWeightedDiGraph(C)
+    if !(1 <= targetnode <= n)
+        throw(ArgumentError("target node not found"))
+    end
+
+    dsp = dijkstra_shortest_paths(graph, targetnode)
+    parents = dsp.parents
+    parents[targetnode] = targetnode
+
+    # from = LinearIndices((h.g.nrows, h.g.ncols))[h.g.id_to_grid_coordinate_list]
+    from = collect(1:n)
+    to   = copy(parents)
+
+    kl_div = zeros(n)
+
+    while true
+        notdone = false
+
+        for i in 1:n
+            fromᵢ = from[i]
+            toᵢ   = to[i]
+            notdone |= fromᵢ != toᵢ
+            if fromᵢ == toᵢ
+                continue
+            end
+            v = Pref[fromᵢ, toᵢ]
+            # v = h.Pref[toᵢ, fromᵢ]
+            kl_div[i] += -log(v)
+            from[i] = parents[toᵢ]
+        end
+        if !notdone
+            break
+        end
+
+        # Pointer swap
+        tmp  = from
+        from = to
+        to   = tmp
+    end
+
+    return kl_div
+end
+
+"""
+    least_cost_kl_divergence(h::Habitat, target::Tuple{Int,Int})
+
+Compute the least cost Kullback-Leibler divergence from each cell in the g in
+`h` to the `target` cell.
+"""
+function least_cost_kl_divergence(h::Habitat, target::Tuple{Int,Int})
+
+    targetnode = findfirst(isequal(CartesianIndex(target)), h.g.id_to_grid_coordinate_list)
+    if targetnode === nothing
+        throw(ArgumentError("target cell not found"))
+    end
+
+    div = least_cost_kl_divergence(h.C, h.Pref, targetnode)
+
+    return reshape(div, h.g.nrows, h.g.ncols)
 end
