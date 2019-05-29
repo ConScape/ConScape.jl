@@ -20,7 +20,15 @@ function readasc(io::IOStream; nodatavalue=0.0)
         push!(d, lowercase(first(s))=>parse(Int, last(s)))
     end
 
-    m = readdlm(io, skipstart=metadatalines)
+    m = readdlm(io)
+
+    if d["nrows"] != size(m, 1)
+        throw(ErrorException("Metadata number of rows doesn't match read number of rows"))
+    end
+    if d["ncols"] != size(m, 2)
+        throw(ErrorException("Metadata number of columns doesn't match read number of columns"))
+    end
+
     replace!(m, d["nodata_value"] => nodatavalue)
 
     return m, d
