@@ -33,6 +33,23 @@ end
     end
 end
 
+@testset "Test kweighted betweenness" begin
+    affinities, _ = ConScape.readasc(joinpath(datadir, "affinities_sno_2000.asc"))
+    qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_sno_2000.asc"))
+
+    g = ConScape.Grid(size(affinities)...,
+                          landscape=ConScape.adjacency(affinities),
+                          qualities=qualities
+                      )
+    h = ConScape.Habitat(g, β=0.1)
+    bet = ConScape.RSP_full_betweenness_kweighted(h)
+
+    # Values computed with the Python version
+    @test bet[21:23,31:33] ≈ [0.05114502499801492 0.08767394092499003 0.12384427784502292
+                              0.04614224098242184 0.139328274120473   0.1716364219931652
+                              0.03943743881273478 0.1898434934226994  0.28115205872657184]
+end
+
 @testset "graph splitting" begin
     l1 = [1/4 0 1/4 1/4
           1/4 0 1/4 1/4
