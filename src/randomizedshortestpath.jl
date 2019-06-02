@@ -57,17 +57,15 @@ function RSP_full_betweenness_kweighted(Z::AbstractMatrix,
     ZKZdiv -= Diagonal(K_colsum .* d_Zdiv)
 
     ZKZdiv = Z*ZKZdiv
-    bet = sum(ZKZdiv .* Z', dims=1)
+    bet = sum(ZKZdiv .* Z', dims=2)
 
     return bet
 end
 
 function RSP_dissimilarities(W::SparseMatrixCSC, C::SparseMatrixCSC, Z::AbstractMatrix = inv(Matrix(I - W)))
-    n   = LinearAlgebra.checksquare(W)
-    CW  = C .* W
     S   = (Z*(C .* W)*Z) ./ Z
     d_s = diag(S)
-    C̄   = S .- d_s
+    C̄   = S .- d_s'
     return C̄
 end
 
