@@ -34,7 +34,7 @@ function RSP_full_betweenness_qweighted(h::Habitat)
         h.g.source_qualities[h.g.id_to_grid_coordinate_list],
         h.g.target_qualities[h.g.id_to_grid_coordinate_list])
 
-    bet = zeros(h.g.nrows, h.g.ncols)
+    bet = fill(NaN, h.g.nrows, h.g.ncols)
     for (i, v) in enumerate(betvec)
         bet[h.g.id_to_grid_coordinate_list[i]] = v
     end

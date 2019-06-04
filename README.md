@@ -1,6 +1,6 @@
 # ConScape
 
-[![][pipeline-status-img]][pipeline-status-url] [![][docs-dev-img]][docs-dev-url]
+[![][pipeline-status-img]][pipeline-status-url] [![][docs-dev-img]][docs-dev-url] [![][codecov-img]][codecov-url]
 
 Repository for the ConScape project
 
@@ -9,3 +9,6 @@ Repository for the ConScape project
 
 [docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
 [docs-dev-url]: https://conscape.gitlab.io/ConScape.jl/
+
+[codecov-img]: https://codecov.io/gl/ConScape/ConScape.jl/branch/master/graph/badge.svg?token=qVMzC5XABw
+[codecov-url]: https://codecov.io/gl/ConScape/ConScape.jl

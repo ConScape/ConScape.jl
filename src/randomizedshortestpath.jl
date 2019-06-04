@@ -28,17 +28,13 @@ function RSP_full_betweenness_qweighted(Z::AbstractMatrix,
                                         target_qualities::AbstractVector)
 
     Zdiv = inv.(Z)
-    Zdiv_diag = diag(Zdiv)
 
-    qs_sum = sum(source_qualities)
+    ZQZdivQt = target_qualities .* Zdiv .* source_qualities'
+    ZQZdivQt .-= Diagonal(sum(source_qualities) .* target_qualities .* diag(Zdiv))
 
-    ZQZdivQ = target_qualities .* Zdiv'
-    ZQZdivQ = ZQZdivQ .* source_qualities'
-    ZQZdivQ -= Diagonal(qs_sum .* target_qualities .* Zdiv_diag)
+    ZQZdivQt = Z*ZQZdivQt'
 
-    ZQZdivQ = Z*ZQZdivQ
-
-    return sum(ZQZdivQ .* Z', dims=2)
+    return sum(ZQZdivQt' .* Z, dims=1)
 end
 
 function RSP_full_betweenness_kweighted(Z::AbstractMatrix,
@@ -50,16 +46,12 @@ function RSP_full_betweenness_kweighted(Z::AbstractMatrix,
 
     K = source_qualities .* similarities .* target_qualities'
 
-    K_colsum = vec(sum(K, dims=1))
-    d_Zdiv = diag(Zdiv)
-
     ZKZdiv = K .* Zdiv
-    ZKZdiv -= Diagonal(K_colsum .* d_Zdiv)
+    ZKZdiv -= Diagonal(vec(sum(K, dims=1)) .* diag(Zdiv))
 
-    ZKZdiv = Z*ZKZdiv
-    bet = sum(ZKZdiv .* Z', dims=2)
+    ZKZdiv = Z*ZKZdiv'
 
-    return bet
+    return sum(ZKZdiv' .* Z, dims=1)
 end
 
 function RSP_dissimilarities(W::SparseMatrixCSC, C::SparseMatrixCSC, Z::AbstractMatrix = inv(Matrix(I - W)))

@@ -16,6 +16,9 @@ test:
                           Pkg.instantiate();
                           Pkg.build("ConScape");
                           Pkg.test("ConScape"; coverage=true);'
+    - julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Codecov.submit_local(process_folder())'
+  variables:
+    CODECOV_TOKEN: "0c79cb5b-3787-4892-9d2b-7131a41c35d4"
 
 weave:
   script:
