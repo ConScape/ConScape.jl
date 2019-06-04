@@ -33,7 +33,7 @@ end
     end
 end
 
-@testset "Test kweighted betweenness" begin
+@testset "Test betweenness" begin
     affinities, _ = ConScape.readasc(joinpath(datadir, "affinities_sno_2000.asc"))
     qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_sno_2000.asc"))
 
@@ -42,12 +42,21 @@ end
                           qualities=qualities
                       )
     h = ConScape.Habitat(g, β=0.1)
-    bet = ConScape.RSP_full_betweenness_kweighted(h)
 
-    # Values computed with the Python version
-    @test bet[21:23,31:33] ≈ [0.05114502499801492 0.08767394092499003 0.12384427784502292
-                              0.04614224098242184 0.139328274120473   0.1716364219931652
-                              0.03943743881273478 0.1898434934226994  0.28115205872657184]
+    # This is a regression test based on values that we currently believe to be correct
+    bet = ConScape.RSP_full_betweenness_kweighted(h)
+    @test bet[21:23, 31:33] ≈ [0.056248647745559356 0.09283682744933167 0.13009655005263085
+                               0.051749956522989624 0.15070574694066693 0.18103463182904647
+                               0.0468241782430599   0.2081201353658689  0.29892394108578946]
+
+    # This is a regression test based on values that we currently believe to be correct
+    bet = ConScape.RSP_full_betweenness_kweighted(h, invcost=t -> exp(-t/50))
+    @test bet[21:23, 31:33] ≈ [1108.2090427345915 1456.7519912636426 1908.1917725150054
+                                870.9372313404992 2147.3483997180106 2226.8165679274825
+                                770.5051274960429 2573.3261638421927 3434.4832928490296]
+
+    @test ConScape.RSP_full_betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
+          ConScape.RSP_full_betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
 end
 
 @testset "graph splitting" begin
