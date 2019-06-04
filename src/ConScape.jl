@@ -11,8 +11,6 @@ module ConScape
     include("habitat.jl")
     # IO
     include("io.jl")
-    # Special matrix for efficient inverse
-    include("blocktridiagonal.jl")
     # Utilities
     include("utils.jl")
 
