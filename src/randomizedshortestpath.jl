@@ -24,34 +24,35 @@ function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
 end
 
 function RSP_full_betweenness_qweighted(Z::AbstractMatrix,
-                                        source_qualities::AbstractVector,
-                                        target_qualities::AbstractVector)
+                                        qˢ::AbstractVector,
+                                        qᵗ::AbstractVector)
 
-    Zdiv = inv.(Z)
+    Zⁱ = inv.(Z)
 
-    ZQZdivQt = target_qualities .* Zdiv .* source_qualities'
-    ZQZdivQt .-= Diagonal(sum(source_qualities) .* target_qualities .* diag(Zdiv))
+    qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
+    qˢZⁱqᵗ .-= Diagonal(sum(qˢ) .* qᵗ .* diag(Zⁱ))
 
-    ZQZdivQt = Z*ZQZdivQt'
+    ZqˢZⁱqᵗ = Z*qˢZⁱqᵗ'
 
-    return sum(ZQZdivQt' .* Z, dims=1)
+    return sum(ZqˢZⁱqᵗ' .* Z, dims=1) # diag(ZqˢZⁱqᵗ * Z)
 end
 
-function RSP_full_betweenness_kweighted(Z::AbstractMatrix,
-                                        source_qualities::AbstractVector,
-                                        target_qualities::AbstractVector,
-                                        similarities::AbstractMatrix)
+function RSP_full_betweenness_kweighted(Z::AbstractMatrix,  # Fundamental matrix of non-absorbing paths
+                                        qˢ::AbstractVector, # Tource qualities
+                                        qᵗ::AbstractVector, # Target qualities
+                                        S::AbstractMatrix)  # Matrix of similarities
 
-    Zdiv = inv.(Z)
 
-    K = source_qualities .* similarities .* target_qualities'
+    Zⁱ = inv.(Z)
 
-    ZKZdiv = K .* Zdiv
-    ZKZdiv -= Diagonal(vec(sum(K, dims=1)) .* diag(Zdiv))
+    K = qˢ .* S .* qᵗ'
 
-    ZKZdiv = Z*ZKZdiv'
+    KZⁱ = K .* Zⁱ
+    KZⁱ -= Diagonal(vec(sum(K, dims=1)) .* diag(Zⁱ))
 
-    return sum(ZKZdiv' .* Z, dims=1)
+    ZKZⁱ = Z*KZⁱ'
+
+    return sum(ZKZⁱ' .* Z, dims=1) # diag(KZⁱ * Z)
 end
 
 function RSP_dissimilarities(W::SparseMatrixCSC, C::SparseMatrixCSC, Z::AbstractMatrix = inv(Matrix(I - W)))

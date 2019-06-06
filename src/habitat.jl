@@ -22,6 +22,16 @@ function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
     return Habitat(g, cost, β, C, Pref, W, Z)
 end
 
+function Base.show(io::IO, ::MIME"text/plain", h::Habitat)
+    print(io, summary(h), " of size ", h.g.nrows, "x", h.g.ncols)
+end
+
+function Base.show(io::IO, ::MIME"text/html", h::Habitat)
+    t = string(summary(h), " of size ", h.g.nrows, "x", h.g.ncols)
+    write(io, "<h4>$t</h4>")
+    show(io, MIME"text/html"(), plot_outdegrees(h.g))
+end
+
 """
     RSP_full_betweenness_qweighted(h::Habitat)::Matrix{Float64}
 
