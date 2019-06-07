@@ -62,3 +62,10 @@ function RSP_dissimilarities(W::SparseMatrixCSC, C::SparseMatrixCSC, Z::Abstract
 end
 
 RSP_free_energy_distance(Z::AbstractMatrix, β::Real) = -log.(Z*Diagonal(inv.(diag(Z))))/β
+
+function RSP_functionality(source_qualities::AbstractVector,
+                                        target_qualities::AbstractVector,
+                                        similarities::AbstractMatrix)
+    functionality = source_qualities .* similarities .* target_qualities'
+    return vec(sum(functionality, dims=1))
+end

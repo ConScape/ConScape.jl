@@ -131,3 +131,13 @@ end
     h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
     @test ConScape.least_cost_kl_divergence(h, (25,50))[10,10] ≈ 80.63375074079197
 end
+
+@testset "RSP_functionality" begin
+    g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2),
+                               qualities=copy(reshape(collect(1800:-1:1), 60, 30)'))
+    h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
+
+    @test ConScape.ConScape.RSP_functionality(h)[28:30,58:60] ≈ [11230.00960154365 3089.464044624814 77.98295374964728
+                                                                12455.993924751103 3512.5483842548506 57.130439979758414
+                                                                10677.051974719087 2937.2668774187628 26.29414517656454]'
+end

@@ -150,3 +150,25 @@ function least_cost_kl_divergence(h::Habitat, target::Tuple{Int,Int})
 
     return reshape(div, h.g.nrows, h.g.ncols)
 end
+
+"""
+    RSP_functionality(h::Habitat; [invcost=inv(h.cost)])::Matrix{Float64}
+
+Compute RSP functionality of all nodes. Optionally, an inverse
+cost function can be passed. The function will be applied elementwise to the matrix of
+dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
+passed the the inverse of the cost function is used for the conversion of the dissimilarities.
+"""
+function RSP_functionality(h::Habitat; invcost=inv(h.cost))
+
+    similarities = map(t -> iszero(t) ? t : invcost(t), RSP_dissimilarities(h))
+    funvec = RSP_functionality(h.g.source_qualities[h.g.id_to_grid_coordinate_list],
+                                            h.g.target_qualities[h.g.id_to_grid_coordinate_list],
+                                            similarities)
+    func = fill(NaN, h.g.nrows, h.g.ncols)
+    for (i, v) in enumerate(funvec)
+        func[h.g.id_to_grid_coordinate_list[i]] = v
+    end
+
+    return func
+end
