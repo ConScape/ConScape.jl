@@ -48,6 +48,7 @@ ConScape.RSP_dissimilarities
 ConScape.RSP_full_betweenness_qweighted
 ConScape.RSP_full_betweenness_kweighted
 ConScape.mean_kl_divergence
+ConScape.mean_lc_kl_divergence
 ConScape.least_cost_kl_divergence
 ConScape.RSP_functionality
 ```
