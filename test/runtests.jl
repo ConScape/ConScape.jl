@@ -149,3 +149,25 @@ end
 
     @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.1901061703319367e14
 end
+
+@testset "Show methods" begin
+    g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2),
+                               qualities=copy(reshape(collect(1800:-1:1), 60, 30)'))
+    h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
+
+    b = IOBuffer()
+    show(b, "text/plain", g)
+    @test occursin("Grid", String(take!(b)))
+
+    b = IOBuffer()
+    show(b, "text/plain", h)
+    @test occursin("Habitat", String(take!(b)))
+
+    b = IOBuffer()
+    show(b, "text/html", g)
+    @test occursin("Grid", String(take!(b)))
+
+    b = IOBuffer()
+    show(b, "text/html", h)
+    @test occursin("Habitat", String(take!(b)))
+end
