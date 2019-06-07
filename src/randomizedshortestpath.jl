@@ -32,41 +32,49 @@ function RSP_full_betweenness_qweighted(Z::AbstractMatrix,
     qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
     qˢZⁱqᵗ .-= Diagonal(sum(qˢ) .* qᵗ .* diag(Zⁱ))
 
-    ZqˢZⁱqᵗ = Z*qˢZⁱqᵗ'
+    ZqˢZⁱqᵗZ = Zⁱ # reuse Zⁱ memory
+    mul!(ZqˢZⁱqᵗZ, Z, qˢZⁱqᵗ')
+    ZqˢZⁱqᵗZ .*= Z'
 
-    return sum(ZqˢZⁱqᵗ' .* Z, dims=1) # diag(ZqˢZⁱqᵗ * Z)
+    return sum(ZqˢZⁱqᵗZ, dims=2) # diag(ZqˢZⁱqᵗ * Z)
 end
 
 function RSP_full_betweenness_kweighted(Z::AbstractMatrix,  # Fundamental matrix of non-absorbing paths
-                                        qˢ::AbstractVector, # Tource qualities
+                                        qˢ::AbstractVector, # Source qualities
                                         qᵗ::AbstractVector, # Target qualities
                                         S::AbstractMatrix)  # Matrix of similarities
 
 
     Zⁱ = inv.(Z)
 
-    K = qˢ .* S .* qᵗ'
+    KZⁱ = qˢ .* S .* qᵗ'
+    k = vec(sum(KZⁱ, dims=1))
 
-    KZⁱ = K .* Zⁱ
-    KZⁱ -= Diagonal(vec(sum(K, dims=1)) .* diag(Zⁱ))
+    KZⁱ .*= Zⁱ
+    for i in 1:size(KZⁱ, 1)
+        KZⁱ[i, i] -= k[i] .* Zⁱ[i, i]
+    end
 
-    ZKZⁱ = Z*KZⁱ'
+    ZKZⁱ = Zⁱ # reuse Zⁱ memory
+    mul!(ZKZⁱ, Z, KZⁱ')
+    ZKZⁱ .*= Z'
 
-    return sum(ZKZⁱ' .* Z, dims=1) # diag(KZⁱ * Z)
+    return sum(ZKZⁱ, dims=2) # diag(KZⁱ * Z)
 end
 
 function RSP_dissimilarities(W::SparseMatrixCSC, C::SparseMatrixCSC, Z::AbstractMatrix = inv(Matrix(I - W)))
-    S   = (Z*(C .* W)*Z) ./ Z
-    d_s = diag(S)
-    C̄   = S .- d_s'
+    C̄   = Z*(C .* W)*Z
+    C̄ ./= Z
+    dˢ  = diag(C̄)
+    C̄ .-= dˢ'
     return C̄
 end
 
 RSP_free_energy_distance(Z::AbstractMatrix, β::Real) = -log.(Z*Diagonal(inv.(diag(Z))))/β
 
-function RSP_functionality(source_qualities::AbstractVector,
-                                        target_qualities::AbstractVector,
-                                        similarities::AbstractMatrix)
-    functionality = source_qualities .* similarities .* target_qualities'
-    return vec(sum(functionality, dims=1))
+function RSP_functionality(qˢ::AbstractVector, # Source qualities
+                           qᵗ::AbstractVector, # Target qualities
+                           S::AbstractMatrix)  # Matrix of similarities
+
+    return (S'*qˢ) .* qᵗ
 end
