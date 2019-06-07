@@ -87,6 +87,18 @@ function mean_kl_divergence(h::Habitat)
 end
 
 
+"""
+    mean_lc_kl_divergence(h::Habitat)::Float64
+
+Compute the mean Kullback–Leibler divergence between the least-cost path and the random path distribution for `h::Habitat`, weighted by the qualities of the source and target node.
+"""
+function mean_lc_kl_divergence(h::Habitat)
+    div = hcat([least_cost_kl_divergence(h.C, h.Pref, i) for i in 1:size(h.C, 1)]...)
+    qs = h.g.source_qualities[h.g.id_to_grid_coordinate_list]
+    qt = h.g.target_qualities[h.g.id_to_grid_coordinate_list]
+    return qs'*div*qt
+end
+
 function least_cost_kl_divergence(C::SparseMatrixCSC, Pref::SparseMatrixCSC, targetnode::Integer)
 
     n = size(C, 1)
