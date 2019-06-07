@@ -183,10 +183,11 @@ passed the the inverse of the cost function is used for the conversion of the di
 """
 function RSP_functionality(h::Habitat; invcost=inv(h.cost))
 
-    similarities = map(t -> iszero(t) ? t : invcost(t), RSP_dissimilarities(h))
+    S = RSP_dissimilarities(h)
+    map!(t -> iszero(t) ? t : invcost(t), S, S)
     funvec = RSP_functionality(h.g.source_qualities[h.g.id_to_grid_coordinate_list],
-                                            h.g.target_qualities[h.g.id_to_grid_coordinate_list],
-                                            similarities)
+                               h.g.target_qualities[h.g.id_to_grid_coordinate_list],
+                               S)
     func = fill(NaN, h.g.nrows, h.g.ncols)
     for (i, v) in enumerate(funvec)
         func[h.g.id_to_grid_coordinate_list[i]] = v
