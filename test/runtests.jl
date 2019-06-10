@@ -171,3 +171,39 @@ end
     show(b, "text/html", h)
     @test occursin("Habitat", String(take!(b)))
 end
+
+@testset "Landmark approach" begin
+    sq = copy(reshape(collect(1800:-1:1), 60, 30)')
+    g = ConScape.perm_wall_sim(
+        30,
+        60,
+        corridorwidths=(3,2),
+        source_qualities=sq,
+        target_qualities=sparse(
+            [10, 20, 10, 20],
+            [15, 15, 45, 45],
+            [sq[10, 15], sq[20, 15], sq[10, 45], sq[20, 45]]))
+    h = ConScape.Habitat(g, β=0.2)
+
+    # Just a regression test but result looks visually correct
+    @test ConScape.RSP_full_betweenness_qweighted(h)[9:11, 30:32] ≈
+            [1.4012984154363496e9 1.3576613474599123e9 1.4013548293211923e9
+             1.7902650081599138e9 2.016569666682126e9  1.790379360572362e9
+             1.3937127669128556e9 1.3505349580912094e9 1.3934168377493184e9]
+
+    tmpgrid = [CartesianIndex((i,j)) for i in 1:2:30, j in 1:2:60]
+    landmarks = sparse([i[1] for i in tmpgrid][:],
+                       [i[2] for i in tmpgrid][:],
+                       [g.source_qualities[i] for i in tmpgrid][:], 30, 60)
+    g = ConScape.perm_wall_sim(
+        30,
+        60,
+        corridorwidths=(3,2),
+        source_qualities=sq,
+        target_qualities=landmarks)
+    h = ConScape.Habitat(g, β=0.2)
+    @test ConScape.RSP_full_betweenness_kweighted(h)[9:11, 30:32] ≈
+            [1.6153674943888483e6 693690.2564610258    1.6097137526944755e6
+             1.8168095466336345e6 1.8166090537379407e6 1.8108940319968446e6
+             1.41753770380708e6   668884.5700736387    1.412290291817482e6 ]
+end

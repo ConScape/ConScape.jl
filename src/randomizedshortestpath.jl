@@ -23,27 +23,50 @@ function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
     return Pref .* exp.((-).(β) .* C)
 end
 
-function RSP_full_betweenness_qweighted(Z::AbstractMatrix,
+function RSP_full_betweenness_qweighted(W::SparseMatrixCSC,
+                                        Z::AbstractMatrix,
                                         qˢ::AbstractVector,
-                                        qᵗ::AbstractVector)
+                                        qᵗ::AbstractVector,
+                                        targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
 
     qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
-    qˢZⁱqᵗ .-= Diagonal(sum(qˢ) .* qᵗ .* diag(Zⁱ))
+    sumqˢ = sum(qˢ)
+    for j in axes(Z, 2)
+        qˢZⁱqᵗ[targetnodes[j], j] -=  sumqˢ * qᵗ[j] * Zⁱ[targetnodes[j], j]
+    end
 
-    ZqˢZⁱqᵗZ = Zⁱ # reuse Zⁱ memory
-    mul!(ZqˢZⁱqᵗZ, Z, qˢZⁱqᵗ')
-    ZqˢZⁱqᵗZ .*= Z'
+    # ZqˢZⁱqᵗZ = Zⁱ # reuse Zⁱ memory
+    # mul!(ZqˢZⁱqᵗZ, qˢZⁱqᵗ', Z)
+    # ZqˢZⁱqᵗZ .*= Z'
+    ZqˢZⁱqᵗZt = (I - W)'\qˢZⁱqᵗ
+    ZqˢZⁱqᵗZt .*= Z
 
-    return sum(ZqˢZⁱqᵗZ, dims=2) # diag(ZqˢZⁱqᵗ * Z)
+    return sum(ZqˢZⁱqᵗZt, dims=2) # diag(Z * ZqˢZⁱqᵗ')
 end
 
-function RSP_full_betweenness_kweighted(Z::AbstractMatrix,  # Fundamental matrix of non-absorbing paths
+function RSP_full_betweenness_kweighted(W::SparseMatrixCSC,
+                                        Z::AbstractMatrix,  # Fundamental matrix of non-absorbing paths
                                         qˢ::AbstractVector, # Source qualities
                                         qᵗ::AbstractVector, # Target qualities
-                                        S::AbstractMatrix)  # Matrix of similarities
+                                        S::AbstractMatrix,  # Matrix of similarities
+                                        landmarks::AbstractVector)
 
+
+    axis1, axis2 = axes(Z)
+    if axis1 != axes(qˢ, 1)
+        throw(DimensionMismatch(""))
+    end
+    if axis2 != axes(qᵗ, 1)
+        throw(DimensionMismatch(""))
+    end
+    if axes(S) != (axis1, axis2)
+        throw(DimensionMismatch(""))
+    end
+    if axis2 != axes(landmarks, 1)
+        throw(DimensionMismatch(""))
+    end
 
     Zⁱ = inv.(Z)
 
@@ -51,21 +74,37 @@ function RSP_full_betweenness_kweighted(Z::AbstractMatrix,  # Fundamental matrix
     k = vec(sum(KZⁱ, dims=1))
 
     KZⁱ .*= Zⁱ
-    for i in 1:size(KZⁱ, 1)
-        KZⁱ[i, i] -= k[i] .* Zⁱ[i, i]
+    for j in axis2
+        KZⁱ[landmarks[j], j] -= k[j] .* Zⁱ[landmarks[j], j]
     end
 
-    ZKZⁱ = Zⁱ # reuse Zⁱ memory
-    mul!(ZKZⁱ, Z, KZⁱ')
-    ZKZⁱ .*= Z'
+    # ZKZⁱt = Zⁱ # reuse Zⁱ memory
+    # mul!(ZKZⁱ, Z, KZⁱ')
+    # ZKZⁱ .*= Z'
+    ZKZⁱt = (I - W)'\KZⁱ
+    ZKZⁱt .*= Z
 
-    return sum(ZKZⁱ, dims=2) # diag(KZⁱ * Z)
+    return vec(sum(ZKZⁱt, dims=2)) # diag(Z * KZⁱ')
 end
 
-function RSP_dissimilarities(W::SparseMatrixCSC, C::SparseMatrixCSC, Z::AbstractMatrix = inv(Matrix(I - W)))
-    C̄   = Z*(C .* W)*Z
+function RSP_dissimilarities(W::SparseMatrixCSC,
+                             C::SparseMatrixCSC,
+                             Z::AbstractMatrix,
+                             landmarks::AbstractVector)
+
+    if axes(W) != axes(C)
+        throw(DimensionMismatch(""))
+    end
+    if axes(Z, 1) != axes(W, 1)
+        throw(DimensionMismatch(""))
+    end
+    if axes(Z, 2) != axes(landmarks, 1)
+        throw(DimensionMismatch(""))
+    end
+
+    C̄   = (I - W)\((C .* W)*Z)
     C̄ ./= Z
-    dˢ  = diag(C̄)
+    dˢ  = [C̄[landmarks[j], j] for j in axes(Z, 2)]
     C̄ .-= dˢ'
     return C̄
 end

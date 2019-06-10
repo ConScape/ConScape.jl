@@ -4,7 +4,7 @@ mutable struct Grid
     A::SparseMatrixCSC{Float64,Int}
     id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
     source_qualities::Matrix{Float64}
-    target_qualities::Matrix{Float64}
+    target_qualities::SparseMatrixCSC{Float64,Int}
 end
 
 """
@@ -21,7 +21,7 @@ function Grid(nrows::Integer,
               ncols::Integer;
               qualities::Matrix=ones(nrows, ncols),
               source_qualities::Matrix=qualities,
-              target_qualities::Matrix=qualities,
+              target_qualities::AbstractMatrix=qualities,
               nhood_size::Integer=8,
               landscape=_generateA(nrows, ncols, nhood_size),
               prune=true)
@@ -29,12 +29,8 @@ function Grid(nrows::Integer,
     @assert nrows*ncols == LinearAlgebra.checksquare(landscape)
     Ngrid = nrows*ncols
 
-    if source_qualities === target_qualities
-        _source_qualities = _target_qualities = convert(Matrix{Float64}, source_qualities)
-    else
-        _source_qualities = convert(Matrix{Float64}, source_qualities)
-        _target_qualities = convert(Matrix{Float64}, target_qualities)
-    end
+    _source_qualities = convert(Matrix{Float64}, source_qualities)
+    _target_qualities = convert(SparseMatrixCSC{Float64,Int}, target_qualities)
 
     # Prune
     if prune
@@ -52,7 +48,7 @@ function Grid(nrows::Integer,
         _landscape,
         _id_to_grid_coordinate_list,
         _source_qualities,
-        _target_qualities
+        _target_qualities,
     )
 end
 
@@ -134,7 +130,13 @@ function largest_subgraph(g::Grid)
     # Extract the adjacency matrix of the largest subgraph
     newA = graph[scci]
 
-    return Grid(g.nrows, g.ncols, newA, g.id_to_grid_coordinate_list[scci], g.source_qualities, g.target_qualities)
+    return Grid(
+        g.nrows,
+        g.ncols,
+        newA,
+        g.id_to_grid_coordinate_list[scci],
+        g.source_qualities,
+        g.target_qualities)
 end
 
 """
