@@ -23,11 +23,11 @@ function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
     return Pref .* exp.((-).(β) .* C)
 end
 
-function RSP_full_betweenness_qweighted(W::SparseMatrixCSC,
-                                        Z::AbstractMatrix,
-                                        qˢ::AbstractVector,
-                                        qᵗ::AbstractVector,
-                                        targetnodes::AbstractVector)
+function RSP_betweenness_qweighted(W::SparseMatrixCSC,
+                                   Z::AbstractMatrix,
+                                   qˢ::AbstractVector,
+                                   qᵗ::AbstractVector,
+                                   targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
 
@@ -37,21 +37,18 @@ function RSP_full_betweenness_qweighted(W::SparseMatrixCSC,
         qˢZⁱqᵗ[targetnodes[j], j] -=  sumqˢ * qᵗ[j] * Zⁱ[targetnodes[j], j]
     end
 
-    # ZqˢZⁱqᵗZ = Zⁱ # reuse Zⁱ memory
-    # mul!(ZqˢZⁱqᵗZ, qˢZⁱqᵗ', Z)
-    # ZqˢZⁱqᵗZ .*= Z'
     ZqˢZⁱqᵗZt = (I - W)'\qˢZⁱqᵗ
     ZqˢZⁱqᵗZt .*= Z
 
     return sum(ZqˢZⁱqᵗZt, dims=2) # diag(Z * ZqˢZⁱqᵗ')
 end
 
-function RSP_full_betweenness_kweighted(W::SparseMatrixCSC,
-                                        Z::AbstractMatrix,  # Fundamental matrix of non-absorbing paths
-                                        qˢ::AbstractVector, # Source qualities
-                                        qᵗ::AbstractVector, # Target qualities
-                                        S::AbstractMatrix,  # Matrix of similarities
-                                        landmarks::AbstractVector)
+function RSP_betweenness_kweighted(W::SparseMatrixCSC,
+                                   Z::AbstractMatrix,  # Fundamental matrix of non-absorbing paths
+                                   qˢ::AbstractVector, # Source qualities
+                                   qᵗ::AbstractVector, # Target qualities
+                                   S::AbstractMatrix,  # Matrix of similarities
+                                   landmarks::AbstractVector)
 
 
     axis1, axis2 = axes(Z)
@@ -78,9 +75,6 @@ function RSP_full_betweenness_kweighted(W::SparseMatrixCSC,
         KZⁱ[landmarks[j], j] -= k[j] .* Zⁱ[landmarks[j], j]
     end
 
-    # ZKZⁱt = Zⁱ # reuse Zⁱ memory
-    # mul!(ZKZⁱ, Z, KZⁱ')
-    # ZKZⁱ .*= Z'
     ZKZⁱt = (I - W)'\KZⁱ
     ZKZⁱt .*= Z
 

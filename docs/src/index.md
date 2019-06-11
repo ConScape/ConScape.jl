@@ -18,7 +18,7 @@ From a `Grid` and a `costfunction`, we can now create a `Habitat` which we can u
 
 ```@example 1
 h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
-bet_q = ConScape.RSP_full_betweenness_qweighted(h)
+bet_q = ConScape.RSP_betweenness_qweighted(h)
 ConScape.heatmap(bet_q, yflip=true)
 ```
 
@@ -45,8 +45,8 @@ ConScape.least_cost_distance
 ```@docs
 ConScape.Habitat
 ConScape.RSP_dissimilarities
-ConScape.RSP_full_betweenness_qweighted
-ConScape.RSP_full_betweenness_kweighted
+ConScape.RSP_betweenness_qweighted
+ConScape.RSP_betweenness_kweighted
 ConScape.mean_kl_divergence
 ConScape.mean_lc_kl_divergence
 ConScape.least_cost_kl_divergence
