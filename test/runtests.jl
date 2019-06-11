@@ -207,3 +207,20 @@ end
              1.8168095466336345e6 1.8166090537379407e6 1.8108940319968446e6
              1.41753770380708e6   668884.5700736387    1.412290291817482e6 ]
 end
+
+@testset "Coarse graining: merging pixels to landmarks" begin
+    g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2),
+                               # Qualities decrease by row
+                               qualities=copy(reshape(collect(1800:-1:1), 60, 30)')
+                               )
+    g_coarse = ConScape.Grid(size(g)...,
+                             landscape=g.A,
+                             source_qualities=g.source_qualities,
+                             target_qualities=ConScape.coarse_graining(g, 3))
+
+    @test g_coarse.target_qualities[1:5, 1:5] ≈ [0.0     0.0 0.0 0.0     0.0
+                                                 0.0 15651.0 0.0 0.0 15624.0
+                                                 0.0     0.0 0.0 0.0     0.0
+                                                 0.0     0.0 0.0 0.0     0.0
+                                                 0.0 14031.0 0.0 0.0 14004.0]
+end
