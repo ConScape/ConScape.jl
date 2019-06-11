@@ -40,7 +40,7 @@ ConScape.heatmap(reshape(bet_shortest, 30, 60), yflip=true)
 ```
 
 ```julia
-bet_q = ConScape.RSP_full_betweenness_qweighted(h)
+bet_q = ConScape.RSP_betweenness_qweighted(h)
 ConScape.heatmap(bet_q, yflip=true)
 ```
 
@@ -49,6 +49,6 @@ ConScape.heatmap(bet_q, yflip=true)
 ```
 
 ```julia
-bet_k = ConScape.RSP_full_betweenness_kweighted(h);
+bet_k = ConScape.RSP_betweenness_kweighted(h);
 ConScape.heatmap(bet_k, yflip=true)
 ```

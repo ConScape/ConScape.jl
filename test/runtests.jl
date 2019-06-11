@@ -44,19 +44,19 @@ end
     h = ConScape.Habitat(g, β=0.1)
 
     # This is a regression test based on values that we currently believe to be correct
-    bet = ConScape.RSP_full_betweenness_kweighted(h)
+    bet = ConScape.RSP_betweenness_kweighted(h)
     @test bet[21:23, 31:33] ≈ [0.056248647745559356 0.09283682744933167 0.13009655005263085
                                0.051749956522989624 0.15070574694066693 0.18103463182904647
                                0.0468241782430599   0.2081201353658689  0.29892394108578946]
 
     # This is a regression test based on values that we currently believe to be correct
-    bet = ConScape.RSP_full_betweenness_kweighted(h, invcost=t -> exp(-t/50))
+    bet = ConScape.RSP_betweenness_kweighted(h, invcost=t -> exp(-t/50))
     @test bet[21:23, 31:33] ≈ [1108.2090427345915 1456.7519912636426 1908.1917725150054
                                 870.9372313404992 2147.3483997180106 2226.8165679274825
                                 770.5051274960429 2573.3261638421927 3434.4832928490296]
 
-    @test ConScape.RSP_full_betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
-          ConScape.RSP_full_betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
+    @test ConScape.RSP_betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
+          ConScape.RSP_betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
 end
 
 @testset "graph splitting" begin
@@ -101,7 +101,7 @@ end
     g = ConScape.Grid(size(l)..., landscape=ConScape.adjacency(l))
     h = ConScape.Habitat(g, β=0.2)
 
-    @test ConScape.RSP_full_betweenness_kweighted(h) == ConScape.RSP_full_betweenness_kweighted(h; invcost=t -> exp(-t))
+    @test ConScape.RSP_betweenness_kweighted(h) == ConScape.RSP_betweenness_kweighted(h; invcost=t -> exp(-t))
 end
 
 @testset "least cost kl divergence" begin
@@ -170,4 +170,40 @@ end
     b = IOBuffer()
     show(b, "text/html", h)
     @test occursin("Habitat", String(take!(b)))
+end
+
+@testset "Landmark approach" begin
+    sq = copy(reshape(collect(1800:-1:1), 60, 30)')
+    g = ConScape.perm_wall_sim(
+        30,
+        60,
+        corridorwidths=(3,2),
+        source_qualities=sq,
+        target_qualities=sparse(
+            [10, 20, 10, 20],
+            [15, 15, 45, 45],
+            [sq[10, 15], sq[20, 15], sq[10, 45], sq[20, 45]]))
+    h = ConScape.Habitat(g, β=0.2)
+
+    # Just a regression test but result looks visually correct
+    @test ConScape.RSP_betweenness_qweighted(h)[9:11, 30:32] ≈
+            [1.4012984154363496e9 1.3576613474599123e9 1.4013548293211923e9
+             1.7902650081599138e9 2.016569666682126e9  1.790379360572362e9
+             1.3937127669128556e9 1.3505349580912094e9 1.3934168377493184e9]
+
+    tmpgrid = [CartesianIndex((i,j)) for i in 1:2:30, j in 1:2:60]
+    landmarks = sparse([i[1] for i in tmpgrid][:],
+                       [i[2] for i in tmpgrid][:],
+                       [g.source_qualities[i] for i in tmpgrid][:], 30, 60)
+    g = ConScape.perm_wall_sim(
+        30,
+        60,
+        corridorwidths=(3,2),
+        source_qualities=sq,
+        target_qualities=landmarks)
+    h = ConScape.Habitat(g, β=0.2)
+    @test ConScape.RSP_betweenness_kweighted(h)[9:11, 30:32] ≈
+            [1.6153674943888483e6 693690.2564610258    1.6097137526944755e6
+             1.8168095466336345e6 1.8166090537379407e6 1.8108940319968446e6
+             1.41753770380708e6   668884.5700736387    1.412290291817482e6 ]
 end

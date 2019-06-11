@@ -18,7 +18,15 @@ function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
     Pref = _Pref(g.A)
     W    = _W(Pref, β, C)
     @info("Compututing fundamental matrix of non-absorbing paths (Z). Please be patient...")
-    Z    = inv(Matrix(I - W))
+    targetidx = findall(!iszero, g.target_qualities)
+    targetnodes = findall(
+        t -> t ∈ targetidx,
+        g.id_to_grid_coordinate_list)
+    Z    = (I - W)\Matrix(sparse(targetnodes,
+                                 1:length(targetidx),
+                                 1.0,
+                                 size(C, 1),
+                                 length(targetidx)))
     return Habitat(g, cost, β, C, Pref, W, Z)
 end
 
@@ -33,16 +41,23 @@ function Base.show(io::IO, ::MIME"text/html", h::Habitat)
 end
 
 """
-    RSP_full_betweenness_qweighted(h::Habitat)::Matrix{Float64}
+    RSP_betweenness_qweighted(h::Habitat)::Matrix{Float64}
 
 Compute full RSP betweenness of all nodes weighted by source and target qualities.
 """
-function RSP_full_betweenness_qweighted(h::Habitat)
+function RSP_betweenness_qweighted(h::Habitat)
 
-    betvec = RSP_full_betweenness_qweighted(
+    targetidx = findall(!iszero, h.g.target_qualities)
+    targetnodes = findall(
+        t -> t ∈ targetidx,
+        h.g.id_to_grid_coordinate_list)
+
+    betvec = RSP_betweenness_qweighted(
+        h.W,
         h.Z,
-        h.g.source_qualities[h.g.id_to_grid_coordinate_list],
-        h.g.target_qualities[h.g.id_to_grid_coordinate_list])
+        [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
+        [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
+        targetnodes)
 
     bet = fill(NaN, h.g.nrows, h.g.ncols)
     for (i, v) in enumerate(betvec)
@@ -54,20 +69,28 @@ end
 
 
 """
-    RSP_full_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost)])::Matrix{Float64}
+    RSP_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost)])::Matrix{Float64}
 
 Compute full RSP betweenness of all nodes weighted with proximity. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
 dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the dissimilarities.
 """
-function RSP_full_betweenness_kweighted(h::Habitat; invcost=inv(h.cost))
+function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost))
 
     similarities = map(t -> iszero(t) ? t : invcost(t), RSP_dissimilarities(h))
-    betvec = RSP_full_betweenness_kweighted(h.Z,
-                                            h.g.source_qualities[h.g.id_to_grid_coordinate_list],
-                                            h.g.target_qualities[h.g.id_to_grid_coordinate_list],
-                                            similarities)
+
+    targetidx = findall(!iszero, h.g.target_qualities)
+    targetnodes = findall(
+        t -> t ∈ targetidx,
+        h.g.id_to_grid_coordinate_list)
+
+    betvec = RSP_betweenness_kweighted(h.W,
+                                       h.Z,
+                                       [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
+                                       [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
+                                            similarities,
+                                            targetnodes)
     bet = fill(NaN, h.g.nrows, h.g.ncols)
     for (i, v) in enumerate(betvec)
         bet[h.g.id_to_grid_coordinate_list[i]] = v
@@ -81,7 +104,13 @@ end
 
 Compute RSP expected costs or RSP dissimilarities from all nodes.
 """
-RSP_dissimilarities(h::Habitat) = RSP_dissimilarities(h.W, h.C, h.Z)
+function RSP_dissimilarities(h::Habitat)
+    targetidx = findall(!iszero, h.g.target_qualities)
+    targetnodes = findall(
+        t -> t ∈ targetidx,
+        h.g.id_to_grid_coordinate_list)
+    return RSP_dissimilarities(h.W, h.C, h.Z, targetnodes)
+end
 
 RSP_free_energy_distance(h::Habitat) = RSP_free_energy_distance(h.Z, h.β)
 
@@ -91,8 +120,8 @@ RSP_free_energy_distance(h::Habitat) = RSP_free_energy_distance(h.Z, h.β)
 Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP dissimilarities for `h::Habitat`.
 """
 function mean_kl_divergence(h::Habitat)
-    qs = h.g.source_qualities[h.g.id_to_grid_coordinate_list]
-    qt = h.g.target_qualities[h.g.id_to_grid_coordinate_list]
+    qs = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+    qt = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list]
     return qs'*(RSP_free_energy_distance(h.Z, h.β) - RSP_dissimilarities(h))*qt*h.β
 end
 
@@ -104,8 +133,8 @@ Compute the mean Kullback–Leibler divergence between the least-cost path and t
 """
 function mean_lc_kl_divergence(h::Habitat)
     div = hcat([least_cost_kl_divergence(h.C, h.Pref, i) for i in 1:size(h.C, 1)]...)
-    qs = h.g.source_qualities[h.g.id_to_grid_coordinate_list]
-    qt = h.g.target_qualities[h.g.id_to_grid_coordinate_list]
+    qs = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+    qt = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ findall(!iszero, h.g.target_qualities)]
     return qs'*div*qt
 end
 
@@ -185,8 +214,14 @@ function RSP_functionality(h::Habitat; invcost=inv(h.cost))
 
     S = RSP_dissimilarities(h)
     map!(t -> iszero(t) ? t : invcost(t), S, S)
-    funvec = RSP_functionality(h.g.source_qualities[h.g.id_to_grid_coordinate_list],
-                               h.g.target_qualities[h.g.id_to_grid_coordinate_list],
+
+    targetidx = findall(!iszero, h.g.target_qualities)
+    targetnodes = findall(
+        t -> t ∈ targetidx,
+        h.g.id_to_grid_coordinate_list)
+
+    funvec = RSP_functionality([h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
+                               [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
                                S)
     func = fill(NaN, h.g.nrows, h.g.ncols)
     for (i, v) in enumerate(funvec)
