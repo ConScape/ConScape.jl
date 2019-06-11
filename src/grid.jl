@@ -172,3 +172,43 @@ function least_cost_distance(g::Grid, target::Tuple{Int,Int})
     end
     return distgrid
 end
+
+
+"""
+    sum_neighborhood(g::Grid, rc::Tuple{Int,Int}, npix::Integer)::Float64
+
+A helper-function, used by coarse_graining, that computes the sum of pixels within a npix neighborhood around the target rc.
+"""
+function sum_neighborhood(g::Grid, rc::Tuple{Int,Int}, npix::Integer)
+
+    getrows = (rc[1] - ceil(Int, npix/2) + 1):(rc[1] + floor(Int, npix/2))
+    getcols = (rc[2] - ceil(Int, npix/2) + 1):(rc[2] + floor(Int, npix/2))
+    neigh_rc = Base.product(getrows, getcols)
+
+    return tr(g.target_qualities[vec(first.(neigh_rc)), vec(last.(neigh_rc))])
+end
+
+
+
+"""
+    coarse_graining(g::Grid, npix::Integer)::Array
+
+Creates a sparse matrix of target qualities for the landmarks based on merging npix pixels into the center pixel.
+"""
+
+function coarse_graining(g::Grid, npix::Integer)
+
+    getrows = ceil(Int, npix/2):npix:g.nrows
+    getcols = ceil(Int, npix/2):npix:g.ncols
+    coarse_target_rc = Base.product(getrows, getcols)
+    coarse_target_ids = vec([findfirst(isequal(CartesianIndex(ij)),
+                                       g.id_to_grid_coordinate_list) for ij in coarse_target_rc])
+    coarse_target_rc = [ij for ij in coarse_target_rc if !ismissing(ij)]
+    filter!(!ismissing, coarse_target_ids)
+    V = [sum_neighborhood(g, ij, npix) for ij in coarse_target_rc]
+    I = first.(coarse_target_rc)
+    J = last.(coarse_target_rc)
+    target_mat = sparse(I, J, V, g.nrows, g.ncols)
+
+    return target_mat
+end
