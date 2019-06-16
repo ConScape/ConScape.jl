@@ -76,6 +76,16 @@ function Base.show(io::IO, ::MIME"text/html", g::Grid)
     end
 end
 
+# Compute a vector of the cartesian indicese of nonzero target qualities and
+# the corresponding node id corresponding to the indices
+function _targetidx_and_nodes(g::Grid)
+    targetidx = findall(!iszero, g.target_qualities)
+    targetnodes = findall(
+        t -> t ∈ targetidx,
+        g.id_to_grid_coordinate_list)
+    return targetidx, targetnodes
+end
+
 function plot_outdegrees(g::Grid)
     values = sum(g.A, dims=2)
     canvas = zeros(g.nrows, g.ncols)

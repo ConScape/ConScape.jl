@@ -9,8 +9,16 @@ datadir = joinpath(@__DIR__(), "..", "data")
                                qualities=copy(reshape(collect(1800:-1:1), 60, 30)')
                                )
     h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
-
     @test ConScape.mean_kl_divergence(h) ≈ 31104209170543.438
+
+    affinities, _ = ConScape.readasc(joinpath(datadir, "affinities_sno_2000.asc"))
+    qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_sno_2000.asc"))
+    g = ConScape.Grid(size(affinities)...,
+                          landscape=ConScape.adjacency(affinities),
+                          qualities=qualities
+                      )
+    h = ConScape.Habitat(g, β=0.1)
+    @test ConScape.mean_kl_divergence(h) ≈ 298539.4404998081
 end
 
 @testset "Read asc data..." begin
@@ -146,8 +154,16 @@ end
     g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2),
                                qualities=copy(reshape(collect(1800:-1:1), 60, 30)'))
     h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
-
     @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.1901061703319367e14
+
+    affinities, _ = ConScape.readasc(joinpath(datadir, "affinities_sno_2000.asc"))
+    qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_sno_2000.asc"))
+    g = ConScape.Grid(size(affinities)...,
+                          landscape=ConScape.adjacency(affinities),
+                          qualities=qualities
+                      )
+    h = ConScape.Habitat(g, β=0.1)
+    @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.5335659790160232e6
 end
 
 @testset "Show methods" begin

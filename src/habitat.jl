@@ -18,10 +18,7 @@ function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
     Pref = _Pref(g.A)
     W    = _W(Pref, β, C)
     @info("Compututing fundamental matrix of non-absorbing paths (Z). Please be patient...")
-    targetidx = findall(!iszero, g.target_qualities)
-    targetnodes = findall(
-        t -> t ∈ targetidx,
-        g.id_to_grid_coordinate_list)
+    targetidx, targetnodes = _targetidx_and_nodes(g)
     Z    = (I - W)\Matrix(sparse(targetnodes,
                                  1:length(targetidx),
                                  1.0,
@@ -47,10 +44,7 @@ Compute full RSP betweenness of all nodes weighted by source and target qualitie
 """
 function RSP_betweenness_qweighted(h::Habitat)
 
-    targetidx = findall(!iszero, h.g.target_qualities)
-    targetnodes = findall(
-        t -> t ∈ targetidx,
-        h.g.id_to_grid_coordinate_list)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
     betvec = RSP_betweenness_qweighted(
         h.W,
@@ -67,7 +61,6 @@ function RSP_betweenness_qweighted(h::Habitat)
     return bet
 end
 
-
 """
     RSP_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost)])::Matrix{Float64}
 
@@ -80,10 +73,7 @@ function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost))
 
     similarities = map(t -> iszero(t) ? t : invcost(t), RSP_dissimilarities(h))
 
-    targetidx = findall(!iszero, h.g.target_qualities)
-    targetnodes = findall(
-        t -> t ∈ targetidx,
-        h.g.id_to_grid_coordinate_list)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
     betvec = RSP_betweenness_kweighted(h.W,
                                        h.Z,
@@ -105,10 +95,7 @@ end
 Compute RSP expected costs or RSP dissimilarities from all nodes.
 """
 function RSP_dissimilarities(h::Habitat)
-    targetidx = findall(!iszero, h.g.target_qualities)
-    targetnodes = findall(
-        t -> t ∈ targetidx,
-        h.g.id_to_grid_coordinate_list)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
     return RSP_dissimilarities(h.W, h.C, h.Z, targetnodes)
 end
 
@@ -120,9 +107,10 @@ RSP_free_energy_distance(h::Habitat) = RSP_free_energy_distance(h.Z, h.β)
 Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP dissimilarities for `h::Habitat`.
 """
 function mean_kl_divergence(h::Habitat)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
     qs = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
-    qt = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list]
-    return qs'*(RSP_free_energy_distance(h.Z, h.β) - RSP_dissimilarities(h))*qt*h.β
+    qt = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx]
+    return qs'*(RSP_free_energy_distance(h.Z, h.β, targetnodes) - RSP_dissimilarities(h))*qt*h.β
 end
 
 
@@ -132,9 +120,10 @@ end
 Compute the mean Kullback–Leibler divergence between the least-cost path and the random path distribution for `h::Habitat`, weighted by the qualities of the source and target node.
 """
 function mean_lc_kl_divergence(h::Habitat)
-    div = hcat([least_cost_kl_divergence(h.C, h.Pref, i) for i in 1:size(h.C, 1)]...)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+    div = hcat([least_cost_kl_divergence(h.C, h.Pref, i) for i in targetnodes]...)
     qs = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
-    qt = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ findall(!iszero, h.g.target_qualities)]
+    qt = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx]
     return qs'*div*qt
 end
 
@@ -215,10 +204,7 @@ function RSP_functionality(h::Habitat; invcost=inv(h.cost))
     S = RSP_dissimilarities(h)
     map!(t -> iszero(t) ? t : invcost(t), S, S)
 
-    targetidx = findall(!iszero, h.g.target_qualities)
-    targetnodes = findall(
-        t -> t ∈ targetidx,
-        h.g.id_to_grid_coordinate_list)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
     funvec = RSP_functionality([h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
                                [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
