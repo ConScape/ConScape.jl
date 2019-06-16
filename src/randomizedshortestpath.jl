@@ -103,7 +103,8 @@ function RSP_dissimilarities(W::SparseMatrixCSC,
     return C̄
 end
 
-RSP_free_energy_distance(Z::AbstractMatrix, β::Real) = -log.(Z*Diagonal(inv.(diag(Z))))/β
+RSP_free_energy_distance(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
+    -log.(Z .* inv.([Z[i, j] for (j, i) in enumerate(landmarks)])')./β
 
 function RSP_functionality(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities
