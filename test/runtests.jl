@@ -3,7 +3,8 @@ using ConScape, Test, SparseArrays
 datadir = joinpath(@__DIR__(), "..", "data")
 
 @testset "test landscale: $landscape" for
-    landscape in ("wall_full", "wall_landmark1", "wall_landmark2", "sno_2000", "sno_1000"),
+    # FIXME! Enable testing of sno_1000 landscape with landmarks. The full landscape is too large for CI
+    landscape in ("wall_full", "wall_landmark1", "wall_landmark2", "sno_2000",#= "sno_1000"=#),
         β in (0.1, 0.2)
 
     if landscape == "wall_full"
