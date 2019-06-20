@@ -110,5 +110,5 @@ function RSP_functionality(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities
                            S::AbstractMatrix)  # Matrix of similarities
 
-    return (S'*qˢ) .* qᵗ
+    return qˢ .* (S*qᵗ)
 end
