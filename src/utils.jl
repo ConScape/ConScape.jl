@@ -5,12 +5,11 @@ function perm_wall_sim(
     scaling::Float64=0.5,
     wallwidth::Integer=3,
     wallposition::Float64=0.5,
-    corridorwidths::NTuple{<:Any,<:Integer}=(3,3),
+    corridorwidths::NTuple{N,Int}=(3,3),
     corridorpositions=(0.35,0.7),
-    kwargs...)
+    kwargs...) where N
 
     # 1. initialize landscape
-    N = nrows*ncols
     g = Grid(nrows, ncols; kwargs...)
     g.A = scaling * g.A
 
@@ -26,9 +25,9 @@ function perm_wall_sim(
             append!(ys, 1:cpt)
         else
             append!(ys, range(maximum(ys) + 1 + corridorwidths[i-1], stop=cpt))
-            append!(ys, range(maximum(ys) + 1 + corridorwidths[i]  , stop=nrows))
         end
     end
+    append!(ys, range(maximum(ys) + 1 + corridorwidths[end]  , stop=nrows))
 
     impossible_nodes = vec(CartesianIndex.(collect(Iterators.product(ys, xs))))
     _set_impossible_nodes!(g, impossible_nodes)

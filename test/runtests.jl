@@ -91,7 +91,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
     @testset "RSP_functionality" begin
         # FIXME Enable all combinations
         if landscape == "wall_full" && β == 0.2
-            @test ConScape.ConScape.RSP_functionality(h)[28:30,58:60]' ≈
+            @test ConScape.ConScape.RSP_functionality(h, diagvalue=0.0)[28:30,58:60]' ≈
                 [11082.654882969266 2664.916100189486 89.420910249988
                  10340.977912804196 2465.918728844169 56.970111157896
                  11119.132467660969 2662.969749775032 33.280379014217]
@@ -230,4 +230,15 @@ end
     g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2))
     h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
     @test ConScape.least_cost_kl_divergence(h, (25,50))[10,10] ≈ 80.63375074079197
+end
+
+# FIXME! Computation is currently very slow so we have to use a reduced landscape
+@testset "Criticality" begin
+    m, n = 10, 15
+    g = ConScape.perm_wall_sim(m, n, corridorwidths=(2,2),
+                               # Qualities decrease by row
+                               qualities=copy(reshape(collect(m*n:-1:1), n, m)')
+                               )
+    h = ConScape.Habitat(g, β=0.2)
+    @test sum(ConScape.RSP_criticality(h).nzval .< 0) == 0
 end

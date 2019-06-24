@@ -20,7 +20,9 @@ function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
         throw(DimensionMismatch("Pref and C must have same size"))
     end
 
-    return Pref .* exp.((-).(β) .* C)
+    W = Pref .* exp.((-).(β) .* C)
+    replace!(W, NaN => 0.0)
+    return W
 end
 
 function RSP_betweenness_qweighted(W::SparseMatrixCSC,
@@ -96,8 +98,15 @@ function RSP_dissimilarities(W::SparseMatrixCSC,
         throw(DimensionMismatch(""))
     end
 
-    C̄   = (I - W)\((C .* W)*Z)
+    if size(Z, 1) == size(Z, 2)
+        C̄   = Z*((C .* W)*Z)
+    else
+        C̄   = (I - W)\((C .* W)*Z)
+    end
+
     C̄ ./= Z
+    # Zeros in Z can cause NaNs in C̄ ./= Z computation but the limit
+    replace!(C̄, NaN => Inf)
     dˢ  = [C̄[landmarks[j], j] for j in axes(Z, 2)]
     C̄ .-= dˢ'
     return C̄
@@ -111,4 +120,14 @@ function RSP_functionality(qˢ::AbstractVector, # Source qualities
                            S::AbstractMatrix)  # Matrix of similarities
 
     return qˢ .* (S*qᵗ)
+end
+
+# Compute a (column subset of a) dense identity matrix where the subset corresponds
+# to the landsmarks
+function _Imn(n::Integer, landmarks::AbstractVector)
+    Imn = zeros(n, length(landmarks))
+    for (j, i) in enumerate(landmarks)
+        Imn[i, j] = 1
+    end
+    return Imn
 end
