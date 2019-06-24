@@ -1,7 +1,7 @@
 module ConScape
 
     using SparseArrays, LinearAlgebra
-    using LightGraphs, Plots, SimpleWeightedGraphs
+    using LightGraphs, Plots, SimpleWeightedGraphs, ProgressMeter
 
     # Randomized shortest path dissimilarities and betweenness
     include("randomizedshortestpath.jl")

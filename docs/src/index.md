@@ -51,6 +51,7 @@ ConScape.mean_kl_divergence
 ConScape.mean_lc_kl_divergence
 ConScape.least_cost_kl_divergence
 ConScape.RSP_functionality
+ConScape.RSP_criticality
 ```
 
 ### Utility functions

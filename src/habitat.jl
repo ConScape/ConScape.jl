@@ -17,13 +17,13 @@ function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
     C    = mapnz(cost, g.A)
     Pref = _Pref(g.A)
     W    = _W(Pref, β, C)
-    @info("Compututing fundamental matrix of non-absorbing paths (Z). Please be patient...")
+    @debug("Compututing fundamental matrix of non-absorbing paths (Z). Please be patient...")
     targetidx, targetnodes = _targetidx_and_nodes(g)
     Z    = (I - W)\Matrix(sparse(targetnodes,
-                                 1:length(targetidx),
+                                 1:length(targetnodes),
                                  1.0,
                                  size(C, 1),
-                                 length(targetidx)))
+                                 length(targetnodes)))
     return Habitat(g, cost, β, C, Pref, W, Z)
 end
 
@@ -71,7 +71,7 @@ passed the the inverse of the cost function is used for the conversion of the di
 """
 function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost))
 
-    similarities = map(t -> iszero(t) ? t : invcost(t), RSP_dissimilarities(h))
+    similarities = map(invcost, RSP_dissimilarities(h))
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
@@ -192,27 +192,124 @@ function least_cost_kl_divergence(h::Habitat, target::Tuple{Int,Int})
 end
 
 """
-    RSP_functionality(h::Habitat; [invcost=inv(h.cost)])::Matrix{Float64}
+    RSP_functionality(h::Habitat; [invcost=inv(h.cost), diagvalue=nothing])::Matrix{Float64}
 
 Compute RSP functionality of all nodes. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
 dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the dissimilarities.
+
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
+of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
+When nothing is specified, the diagonal elements won't be adjusted.
 """
-function RSP_functionality(h::Habitat; invcost=inv(h.cost))
+function RSP_functionality(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
 
     S = RSP_dissimilarities(h)
-    map!(t -> iszero(t) ? t : invcost(t), S, S)
+    map!(invcost, S, S)
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
-    funvec = RSP_functionality([h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
-                               [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
-                               S)
-    func = fill(NaN, h.g.nrows, h.g.ncols)
-    for (i, v) in enumerate(funvec)
-        func[h.g.id_to_grid_coordinate_list[i]] = v
+    if diagvalue !== nothing
+        for (j, i) in enumerate(targetnodes)
+            S[i, j] = diagvalue
+        end
     end
 
+    qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+    qᵗ = [h.g.target_qualities[i] for i in targetidx]
+
+    funvec = RSP_functionality(qˢ, qᵗ, S)
+
+    func = sparse([ij[1] for ij in targetidx],
+                  [ij[2] for ij in targetidx],
+                  funvec)
+
     return func
+end
+
+function RSP_functionality(h::Habitat,
+                           cell::CartesianIndex{2};
+                           invcost=inv(h.cost),
+                           diagvalue=nothing,
+                           avalue=floatmin(), # smallest non-zero value
+                           qˢvalue=0.0,
+                           qᵗvalue=0.0)
+
+    if avalue <= 0.0
+        throw("Affinity value has to be positive. Otherwise the graph will become disconnected.")
+    end
+
+    # Compute (linear) node indices from (cartesian) grid indices
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+    node = findfirst(isequal(cell), h.g.id_to_grid_coordinate_list)
+
+    # Check that cell is in targetidx
+    if cell ∉ targetidx
+        throw(ArgumentError("Computing adjusted functionality is only supported for target cells"))
+    end
+
+    newA = copy(h.g.A)
+    newA[:, node] .= ifelse.(iszero.(newA[:, node]), 0, avalue)
+    newA[node, :] .= ifelse.(iszero.(newA[node, :]), 0, avalue)
+
+    newsource_qualities = copy(h.g.source_qualities)
+    newsource_qualities[cell] = qˢvalue
+    newtarget_qualities = copy(h.g.target_qualities)
+    newtarget_qualities[cell] = qᵗvalue
+
+    newg = Grid(h.g.nrows,
+                h.g.ncols,
+                newA,
+                h.g.id_to_grid_coordinate_list,
+                newsource_qualities,
+                newtarget_qualities)
+
+    newh = Habitat(newg, β=h.β, cost=h.cost)
+
+    return RSP_functionality(newh)
+end
+
+"""
+    RSP_criticality(h::Habitat[;
+                    invcost=inv(h.cost),
+                    diagvalue=nothing,
+                    avalue=floatmin(),
+                    qˢvalue=0.0,
+                    qᵗvalue=0.0])
+
+Compute the landscape criticality for each target cell by setting setting affinities
+for the cell to `avalue` as well as the source and target qualities associated with
+the cell to `qˢvalue` and `qᵗvalue` respectively. It is required that `avalue` is
+positive to avoid that the graph becomes disconnected. See `RSP_functionality`(@ref)
+for the remaining arguments.
+"""
+function RSP_criticality(h::Habitat;
+                         invcost=inv(h.cost),
+                         diagvalue=nothing,
+                         avalue=floatmin(),
+                         qˢvalue=0.0,
+                         qᵗvalue=0.0)
+
+    targetidx = CartesianIndex.(findnz(h.g.target_qualities)[1:2]...)
+    nl = length(targetidx)
+    reference_functionality = sum(RSP_functionality(h, invcost=invcost, diagvalue=diagvalue))
+    critvec = fill(reference_functionality, nl)
+
+    @showprogress 1 "Computing criticality..." for i in 1:nl
+        critvec[i] -= sum(RSP_functionality(
+                            h,
+                            targetidx[i];
+                            invcost=invcost,
+                            diagvalue=diagvalue,
+                            avalue=avalue,
+                            qˢvalue=qˢvalue,
+                            qᵗvalue=qᵗvalue))
+    end
+
+    return SparseMatrixCSC(h.g.target_qualities.m,
+                           h.g.target_qualities.n,
+                           copy(h.g.target_qualities.colptr),
+                           copy(h.g.target_qualities.rowval),
+                           critvec)
 end

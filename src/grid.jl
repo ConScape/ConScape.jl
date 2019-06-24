@@ -79,7 +79,7 @@ end
 # Compute a vector of the cartesian indicese of nonzero target qualities and
 # the corresponding node id corresponding to the indices
 function _targetidx_and_nodes(g::Grid)
-    targetidx = findall(!iszero, g.target_qualities)
+    targetidx = CartesianIndex.(findnz(g.target_qualities)[1:2]...) ∩ g.id_to_grid_coordinate_list
     targetnodes = findall(
         t -> t ∈ targetidx,
         g.id_to_grid_coordinate_list)
