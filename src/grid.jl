@@ -76,7 +76,7 @@ function Base.show(io::IO, ::MIME"text/html", g::Grid)
     end
 end
 
-# Compute a vector of the cartesian indicese of nonzero target qualities and
+# Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices
 function _targetidx_and_nodes(g::Grid)
     targetidx = CartesianIndex.(findnz(g.target_qualities)[1:2]...) ∩ g.id_to_grid_coordinate_list

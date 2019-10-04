@@ -221,9 +221,11 @@ function RSP_functionality(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
 
     funvec = RSP_functionality(qˢ, qᵗ, S)
 
-    func = sparse([ij[1] for ij in targetidx],
-                  [ij[2] for ij in targetidx],
-                  funvec)
+    func = sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                  [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                  funvec,
+                  h.g.nrows,
+                  h.g.ncols)
 
     return func
 end
