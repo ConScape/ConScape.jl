@@ -95,6 +95,10 @@ datadir = joinpath(@__DIR__(), "..", "data")
                 [11082.654882969266 2664.916100189486 89.420910249988
                  10340.977912804196 2465.918728844169 56.970111157896
                  11119.132467660969 2662.969749775032 33.280379014217]
+        elseif landscape == "sno_2000" && β == 0.1
+            hf = ConScape.RSP_functionality(h)
+            @test hf isa SparseMatrixCSC
+            @test size(hf) == size(h.g.source_qualities)
         end
     end
 
