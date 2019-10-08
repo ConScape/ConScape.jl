@@ -316,15 +316,58 @@ function RSP_criticality(h::Habitat;
                            critvec)
 end
 
-function LF_sensitivity(h::Habitat)
+function LF_sensitivity(h::Habitat, invcost=inv(h.cost))
+    # Now assumes h.cost = MinusLog
+    # TODO: Implement the derivatives of a2c and d2k transformations
+
+    expC = RSP_dissimilarities(h)
+    K = map(invcost, expC)
+
+    g = h.g
+    A = g.A
+    C = h.C
+    W = h.W
+    Z = h.Z
+
+    edge_sensitivities = copy(g.A)
+    n = length(g.id_to_grid_coordinate_list)
+
+    CW  = C.*W;
+    CWZ =   CW*Z;
+    ZCW = Z*CW;
+
+    Idx = g.A.>0;
+
+    diff_C_A = -mapnz(inv, g.A);
+    # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
+    # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
+
+    for i = 1:n
+        Z_ii = Z[:,i]*Z[i,:]'
+        Ni_non = Z_ii./Z
+
+        Ni_hit = Ni_non - diag(Ni_non)'
+
+        C_terms_i = (Ni_non.*Cbar - Ni_hit.*Cbar[i,:])./rowsums[i];
+
+        ZCWZ_i = ZCW*Z[:,i]
+        last_term_Ai = (ZCWZ_i*Z[i,:])./Z./rowsums[i]
+        # Z_ii = Z_ii./rowsums(i)
+
+        i_idx = findall(A[i,:].>0)
+
+        for j in i_idx
+        end
+
+    end
+
+
 
 end
 
-function LF_sensitivity_simulation(h::Habitat, invcost=inv(h.cost))
+function LF_sensitivity_simulation(h::Habitat)
 
-    expC_orig = RSP_dissimilarities(h)
-    K_orig = map(invcost,expC_orig);
-
+    LF_orig = ConScape.RSP_functionality(h)
     g = h.g
 
     epsi = 1e-5
@@ -334,20 +377,14 @@ function LF_sensitivity_simulation(h::Habitat, invcost=inv(h.cost))
     n = length(g.id_to_grid_coordinate_list)
     for i in 1:n
         Succ_i = findall(g.A[i,:].>0)
-        K_orig_i = copy(K_orig)
-        K_orig_i[:,i] .= 0
 
         for j in Succ_i
             gnew = deepcopy(g)
             gnew.A[i,j] += epsi
 
             hnew = ConScape.Habitat(gnew, β=h.β)
-            expC_new = RSP_dissimilarities(hnew)
-
-            Knew = map(invcost, expC_new)
-            Knew[:,i] .= 0
-
-            edge_sensitivities[i,j] = sum(sum(Knew - K_orig_i))/epsi
+            LF_new = ConScape.RSP_functionality(hnew)
+            edge_sensitivities[i,j] = sum(LF_new-LF_orig)/epsi
         end
     end
 
