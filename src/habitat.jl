@@ -315,3 +315,49 @@ function RSP_criticality(h::Habitat;
                            copy(h.g.target_qualities.rowval),
                            critvec)
 end
+
+function LF_sensitivity(h::Habitat)
+
+end
+
+function LF_sensitivity_simulation(h::Habitat, invcost=inv(h.cost))
+
+    expC_orig = RSP_dissimilarities(h)
+    K_orig = map(invcost,expC_orig);
+
+    g = h.g
+
+    epsi = 1e-5
+
+    edge_sensitivities = copy(g.A)
+
+    n = length(g.id_to_grid_coordinate_list)
+    for i in 1:n
+        Succ_i = findall(g.A[i,:].>0)
+        K_orig_i = copy(K_orig)
+        K_orig_i[:,i] .= 0
+
+        for j in Succ_i
+            gnew = deepcopy(g)
+            gnew.A[i,j] += epsi
+
+            hnew = ConScape.Habitat(gnew, β=h.β)
+            expC_new = RSP_dissimilarities(hnew)
+
+            Knew = map(invcost, expC_new)
+            Knew[:,i] .= 0
+
+            edge_sensitivities[i,j] = sum(sum(Knew - K_orig_i))/epsi
+        end
+    end
+
+    node_sensitivities = vec(sum(edge_sensitivities, dims=1))
+
+
+    return sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                  [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                  node_sensitivities,
+                  h.g.nrows,
+                  h.g.ncols)
+
+end
