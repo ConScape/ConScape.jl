@@ -255,7 +255,8 @@ end
                                # qualities=copy(reshape(collect(m*n:-1:1), n, m)')
                                # )
 
-    g = ConScape.Grid(m, n, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+    # g = ConScape.Grid(m, n, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+    g = ConScape.Grid(m, n) #, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
     # g.A = 0.35 * g.A
 
     h = ConScape.Habitat(g, β=0.2)
@@ -264,5 +265,5 @@ end
     S_simu = ConScape.LF_sensitivity_simulation(h)
 
 
-    @test cor(S_comp[:], S_simu[:]) ≈ 1 atol=1e-5
+    @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
 end
