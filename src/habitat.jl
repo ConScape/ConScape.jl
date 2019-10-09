@@ -320,14 +320,19 @@ function LF_sensitivity(h::Habitat, invcost=inv(h.cost))
     # Now assumes h.cost = MinusLog
     # TODO: Implement the derivatives of a2c and d2k transformations
 
-    expC = RSP_dissimilarities(h)
-    K = map(invcost, expC)
-
     g = h.g
     A = g.A
     C = h.C
     W = h.W
     Z = h.Z
+
+    qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+    qᵗ = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+
+
+    rowsums = sum(g.A,dims=2)
+    EC = RSP_dissimilarities(h) # Expected cost matrix
+    K = map(invcost, EC)
 
     edge_sensitivities = copy(g.A)
     n = length(g.id_to_grid_coordinate_list)
@@ -335,8 +340,6 @@ function LF_sensitivity(h::Habitat, invcost=inv(h.cost))
     CW  = C.*W;
     CWZ =   CW*Z;
     ZCW = Z*CW;
-
-    Idx = g.A.>0;
 
     diff_C_A = -mapnz(inv, g.A);
     # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
@@ -346,22 +349,56 @@ function LF_sensitivity(h::Habitat, invcost=inv(h.cost))
         Z_ii = Z[:,i]*Z[i,:]'
         Ni_non = Z_ii./Z
 
-        Ni_hit = Ni_non - diag(Ni_non)'
+        Ni_hit = Ni_non .- diag(Ni_non)'
 
-        C_terms_i = (Ni_non.*Cbar - Ni_hit.*Cbar[i,:])./rowsums[i];
+        C_terms_i = (Ni_non.*EC - Ni_hit.*EC[i,:]')./rowsums[i];
 
         ZCWZ_i = ZCW*Z[:,i]
-        last_term_Ai = (ZCWZ_i*Z[i,:])./Z./rowsums[i]
+        last_term_Ai = ((ZCWZ_i*Z[i,:]')./Z)./rowsums[i]
         # Z_ii = Z_ii./rowsums(i)
 
         i_idx = findall(A[i,:].>0)
 
         for j in i_idx
+            Z_ij = Z[:,i]*Z[j,:]'
+            Wij_Zi_Zj = W[i,j] .* Z_ij
+
+            Nij_non = Wij_Zi_Zj./Z
+            Nij_hit = Nij_non .- diag(Nij_non)'
+
+            C_terms_ij = Nij_non .* EC - Nij_hit .* (EC[j,:] .+ C[i,j])'
+
+
+            last_term_cij = ((ZCWZ_i*Z[j,:]')./Z).*W[i,j]
+
+            last_term_aij = last_term_cij./A[i,j] - last_term_Ai
+
+            last_term_cij = last_term_cij .- diag(last_term_cij)'
+            last_term_aij = last_term_aij .- diag(last_term_aij)'
+
+            pdiffEC_cij = Nij_hit + h.β*(C_terms_ij - last_term_cij)
+            pdiffEC_aij = C_terms_i - C_terms_ij./A[i,j] + last_term_aij
+
+            diffEC_aij = pdiffEC_aij + pdiffEC_cij.*diff_C_A[i,j]
+            diffEC_aij[:,i] .= 0
+
+            # diffEC_cij = pdiffEC_cij + pdiffEC_aij.*diff_A_C[i,j]
+            # diffEC_cij[:,i] .= 0
+
+            edge_sensitivities[i,j] = -qˢ'*(K.*diffEC_aij)*qᵗ # A[i,j].*(-qˢ'*(K.*diffEC_aij)*qᵗ)
+
         end
 
     end
 
+    node_sensitivities = vec(sum(edge_sensitivities, dims=1))
 
+
+    return sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                  [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                  node_sensitivities,
+                  h.g.nrows,
+                  h.g.ncols)
 
 end
 
@@ -370,7 +407,7 @@ function LF_sensitivity_simulation(h::Habitat)
     LF_orig = ConScape.RSP_functionality(h)
     g = h.g
 
-    epsi = 1e-5
+    epsi = 1e-8
 
     edge_sensitivities = copy(g.A)
 
@@ -381,10 +418,11 @@ function LF_sensitivity_simulation(h::Habitat)
         for j in Succ_i
             gnew = deepcopy(g)
             gnew.A[i,j] += epsi
+            # gnew.A[i,j] *= (1+epsi)
 
             hnew = ConScape.Habitat(gnew, β=h.β)
             LF_new = ConScape.RSP_functionality(hnew)
-            edge_sensitivities[i,j] = sum(LF_new-LF_orig)/epsi
+            edge_sensitivities[i,j] = sum(LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
         end
     end
 
