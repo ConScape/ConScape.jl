@@ -246,3 +246,23 @@ end
     h = ConScape.Habitat(g, β=0.2)
     @test sum(ConScape.RSP_criticality(h).nzval .< 0) == 0
 end
+
+
+@testset "Sensitivity" begin
+    m, n = 6,8
+    # g = ConScape.perm_wall_sim(m, n, scaling=0.35, corridorwidths=(3,), corridorpositions=(0.55,))#,
+                               # Qualities decrease by row
+                               # qualities=copy(reshape(collect(m*n:-1:1), n, m)')
+                               # )
+
+    g = ConScape.Grid(m, n, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+    # g.A = 0.35 * g.A
+
+    h = ConScape.Habitat(g, β=0.2)
+
+    S_comp = ConScape.LF_sensitivity(h)
+    S_simu = ConScape.LF_sensitivity_simulation(h)
+
+
+    @test cor(S_comp[:], S_simu[:]) ≈ 1 atol=1e-5
+end
