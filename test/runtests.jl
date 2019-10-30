@@ -85,6 +85,17 @@ datadir = joinpath(@__DIR__(), "..", "data")
 
             @test ConScape.RSP_betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
                     ConScape.RSP_betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
+
+        elseif landscape == "wall_full"
+            # Check that summed edge betweennesses corresponds to node betweennesses:
+            bet_node = ConScape.RSP_betweenness_qweighted(h)
+            bet_edge = ConScape.RSP_edge_betweenness_qweighted(h)
+            bet = fill(NaN, h.g.nrows, h.g.ncols)
+            for (i, v) in enumerate(sum(bet_edge,dims=2))
+                bet[h.g.id_to_grid_coordinate_list[i]] = v
+            end
+
+            @test bet ≈ bet_node
         end
     end
 
@@ -264,6 +275,11 @@ end
     S_comp = ConScape.LF_sensitivity(h)
     S_simu = ConScape.LF_sensitivity_simulation(h)
 
+    @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
+
+
+    S_comp = ConScape.LF_power_mean_sensitivity(h)
+    S_simu = ConScape.LF_power_mean_sensitivity_simulation(h)
 
     @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
 end

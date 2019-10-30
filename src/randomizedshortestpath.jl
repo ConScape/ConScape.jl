@@ -45,6 +45,8 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
     return sum(ZqˢZⁱqᵗZt, dims=2) # diag(Z * ZqˢZⁱqᵗ')
 end
 
+
+
 function RSP_betweenness_kweighted(W::SparseMatrixCSC,
                                    Z::AbstractMatrix,  # Fundamental matrix of non-absorbing paths
                                    qˢ::AbstractVector, # Source qualities
@@ -82,6 +84,77 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
 
     return vec(sum(ZKZⁱt, dims=2)) # diag(Z * KZⁱ')
 end
+
+function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
+                                   Z::AbstractMatrix,
+                                   qˢ::AbstractVector,
+                                   qᵗ::AbstractVector,
+                                   targetnodes::AbstractVector)
+
+    Zⁱ = inv.(Z)
+
+    qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
+
+    edge_betweennesses = copy(W)
+
+    sumqˢ = sum(qˢ)
+
+    n = size(W,1)
+
+    ZᵀZⁱ = Vector{Float64}(undef,n)
+
+    for i in axes(W, 1)
+        ZᵀZⁱ_minus_diag = Z[:,i]'*qˢZⁱqᵗ .- sumqˢ.* (Z[:,i].*diag(Zⁱ).*qᵗ)'
+
+        i_idx = findall(W[i,:].>0)
+        for j in i_idx
+
+            edge_betweennesses[i,j] = W[i,j] .* (ZᵀZⁱ_minus_diag * Z[j,:])[1]
+        end
+    end
+
+    return edge_betweennesses
+end
+
+function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
+                                        Z::AbstractMatrix,
+                                        qˢ::AbstractVector,
+                                        qᵗ::AbstractVector,
+                                        K::AbstractMatrix,  # Matrix of similarities
+                                        targetnodes::AbstractVector)
+
+    Zⁱ = inv.(Z)
+
+    KZⁱ = qˢ .* K .* qᵗ'
+    k = vec(sum(KZⁱ, dims=1))
+
+    qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
+
+    bet_matrix = copy(W)
+
+    sumqˢ = sum(qˢ)
+
+    n = size(W,1)
+
+    ZᵀZⁱ = Vector{Float64}(undef,n)
+
+    KZⁱ .*= Zⁱ
+
+    for i in axes(W, 1)
+        ZᵀZⁱ_minus_diag = Z[:,i]'*KZⁱ .- (k.*Z[:,i].*diag(Zⁱ))'
+
+        i_idx = findall(W[i,:].>0)
+        for j in i_idx
+
+            bet_matrix[i,j] = W[i,j] .* (ZᵀZⁱ_minus_diag * Z[j,:])[1]
+        end
+    end
+
+    return bet_matrix
+end
+
+
+
 
 function RSP_dissimilarities(W::SparseMatrixCSC,
                              C::SparseMatrixCSC,
@@ -121,6 +194,116 @@ function RSP_functionality(qˢ::AbstractVector, # Source qualities
 
     return qˢ .* (S*qᵗ)
 end
+
+function LF_sensitivity(qˢ::AbstractVector, # Source qualities
+                        qᵗ::AbstractVector, # Target qualities
+                        A::SparseMatrixCSC,
+                        C::SparseMatrixCSC,
+                        β::Real,
+                        diff_C_A::SparseMatrixCSC,
+                        W::SparseMatrixCSC,
+                        Z::AbstractMatrix,
+                        invcost::Any,
+                        landmarks::AbstractVector)
+
+
+    n = size(A,1)
+    # Preallocations:
+    Ni_non = Matrix{Float64}(undef,n,n)
+    Ni_hit = Matrix{Float64}(undef,n,n)
+    Qi = Matrix{Float64}(undef,n,n)
+    Γi_div = Matrix{Float64}(undef,n,n)
+
+    Nij_non = Matrix{Float64}(undef,n,n)
+    Nij_hit = Matrix{Float64}(undef,n,n)
+    Qij = Matrix{Float64}(undef,n,n)
+    Γij = Matrix{Float64}(undef,n,n)
+    pdiffEC_cij = Matrix{Float64}(undef,n,n)
+    pdiffEC_aij = Matrix{Float64}(undef,n,n)
+    diffEC_aij = Matrix{Float64}(undef,n,n)
+    K_diff = Matrix{Float64}(undef,n,n)
+
+
+    rowsums = sum(A,dims=2)
+
+
+    CW  = C.*W
+    ZCW = Z*CW
+    ZCWZ = ZCW*Z
+
+    EC = ZCWZ./Z
+    EC .-= diag(EC)'
+    K = map(invcost, EC)
+
+    edge_sensitivities = copy(A)
+    @showprogress for i = 1:n
+        Ni_non .= (Z[:,i].*Z[i,:]')./Z
+
+        Ni_hit .= Ni_non .- diag(Ni_non)'
+
+        Qi .= (ZCWZ[:,i].*Z[i,:]')./Z
+        Qi .-= diag(Qi)'
+
+        Γi_div .= (Ni_non.*EC .- Ni_hit.*EC[i,:]' .- Qi)./rowsums[i];
+
+        i_idx = findall(A[i,:].>0)
+
+        for j in i_idx
+            Nij_non .= W[i,j] .* (Z[:,i].*Z[j,:]')./Z
+
+            Nij_hit .= Nij_non .- diag(Nij_non)'
+
+            Qij .= W[i,j] .* (ZCWZ[:,i].*Z[j,:]')./Z
+            Qij .-= diag(Qij)'
+
+
+            Γij .= Nij_non .* EC .- Nij_hit .* (EC[j,:] .+ C[i,j])' .- Qij
+
+            pdiffEC_cij .= Nij_hit .+ β.*Γij
+            pdiffEC_aij .= Γi_div .- Γij./A[i,j]
+
+            diffEC_aij .= pdiffEC_aij .+ pdiffEC_cij.*diff_C_A[i,j]
+            diffEC_aij[:,i] .= 0
+
+            # diffEC_cij = pdiffEC_cij + pdiffEC_aij.*diff_A_C[i,j]
+            # diffEC_cij[:,i] .= 0
+            K_diff .= K.*diffEC_aij
+            edge_sensitivities[i,j] = -(qˢ'*K_diff)*qᵗ # A[i,j].*(-qˢ'*(K.*diffEC_aij)*qᵗ)
+
+        end
+
+    end
+
+    return vec(sum(edge_sensitivities, dims=1))
+
+end
+
+function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
+                                   qᵗ::AbstractVector, # Target qualities
+                                   A::SparseMatrixCSC,
+                                   β::Real,
+                                   diff_C_A::SparseMatrixCSC,
+                                   W::SparseMatrixCSC,
+                                   Z::AbstractMatrix,
+                                   landmarks::AbstractVector)
+
+    K = copy(Z)
+    K ./= diag(Z)'
+    K .^= inv(β) # \mathcal{Z}^{1/β}
+
+    rowsums = sum(A,dims=2)
+
+    bet_node_k = RSP_betweenness_kweighted(W, Z, qˢ, qᵗ, K, landmarks)
+    bet_edge_k = RSP_edge_betweenness_kweighted(W, Z, qˢ, qᵗ, K, landmarks)
+
+    Idx = A.>0
+    edge_sensitivities = copy(A)
+    edge_sensitivities[Idx] = bet_edge_k[Idx]./(β.*A[Idx]) .- bet_edge_k[Idx].*diff_C_A[Idx] .- (Idx.*(bet_node_k./(β.*rowsums)))[Idx]
+
+    return vec(sum(edge_sensitivities, dims=1))
+end
+
+
 
 # Compute a (column subset of a) dense identity matrix where the subset corresponds
 # to the landsmarks
