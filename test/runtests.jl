@@ -54,7 +54,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
         if landscape == "wall_full" && β == 0.2
             @test ConScape.mean_kl_divergence(h) ≈ 31104209170543.438
         elseif landscape == "sno_2000" && β == 0.1
-            @test ConScape.mean_kl_divergence(h) ≈ 298539.4404998081
+            @test ConScape.mean_kl_divergence(h) ≈ 323895.3828183995
         end
     end
 
@@ -73,15 +73,15 @@ datadir = joinpath(@__DIR__(), "..", "data")
         if landscape == "sno_2000" && β == 0.1
             # This is a regression test based on values that we currently believe to be correct
             bet = ConScape.RSP_betweenness_kweighted(h)
-            @test bet[21:23, 31:33] ≈ [0.056248647745559356 0.09283682744933167 0.13009655005263085
-                                       0.051749956522989624 0.15070574694066693 0.18103463182904647
-                                       0.0468241782430599   0.2081201353658689  0.29892394108578946]
+            @test bet[21:23, 31:33] ≈ [0.04063917813171917 0.06843246983487516 0.08862506281612659
+                                       0.03684621201600996 0.10352876485995872 0.1255652231824746
+                                       0.03190640567704462 0.13832814750469344 0.1961393152256104]
 
             # This is a regression test based on values that we currently believe to be correct
             bet = ConScape.RSP_betweenness_kweighted(h, invcost=t -> exp(-t/50))
-            @test bet[21:23, 31:33] ≈ [1108.2090427345915 1456.7519912636426 1908.1917725150054
-                                        870.9372313404992 2147.3483997180106 2226.8165679274825
-                                        770.5051274960429 2573.3261638421927 3434.4832928490296]
+            @test bet[21:23, 31:33] ≈ [980.5828087688377 1307.981162399926 1602.8445739784497
+                                       826.0710054834001 1883.0940077789735 1935.4450344630702
+                                       676.9212075214159 2228.2700913772774 2884.0409495023364]
 
             @test ConScape.RSP_betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
                     ConScape.RSP_betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
@@ -107,7 +107,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
         if landscape == "wall_full" && β == 0.2
             @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.1901061703319367e14
         elseif landscape == "sno_2000" && β == 0.1
-            @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.5335659790160232e6
+            @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.5660600315073947e6
         end
     end
 
@@ -190,11 +190,11 @@ end
          1/4 0 1/4 1/4
          1/4 0 1/4 1/4]
 
-    g = ConScape.Grid(size(l)..., landscape=ConScape.adjacency(l))
+    g = ConScape.Grid(size(l)..., landscape=ConScape.adjacency(l,neighbors=ConScape.N4))
 
-    @test all(ConScape.least_cost_distance(g, (4,4)) .=== [Inf  NaN  0.75  0.75
-                                                           Inf  NaN  0.5   0.5
-                                                           Inf  NaN  0.25  0.25
+    @test all(ConScape.least_cost_distance(g, (4,4)) .=== [Inf  NaN  1.0   0.75
+                                                           Inf  NaN  0.75  0.5 
+                                                           Inf  NaN  0.5   0.25
                                                            Inf  NaN  0.25  0.0])
 end
 
