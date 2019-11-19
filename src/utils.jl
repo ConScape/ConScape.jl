@@ -111,7 +111,7 @@ function adjacency(R::Matrix; neighbors::Tuple=N8, weight=TargetWeight)
                     push!(is, (j - 1)*m + i)
                     push!(js, (j - 1)*m + i + ki + kj*m)
                     if weight == TargetWeight
-                        push!(vs, rijk)
+                        push!(vs, rijk/l)
                     elseif weight == AverageWeight
                         v = 2/((inv(rij) + inv(rijk))*l)
                         push!(vs, v)
