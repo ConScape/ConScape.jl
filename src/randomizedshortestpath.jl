@@ -32,6 +32,7 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
                                    targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
+    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
 
     qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
     sumqˢ = sum(qˢ)
@@ -70,6 +71,7 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
     end
 
     Zⁱ = inv.(Z)
+    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
 
     KZⁱ = qˢ .* S .* qᵗ'
     k = vec(sum(KZⁱ, dims=1))
@@ -92,6 +94,7 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
                                    targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
+    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
 
     qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
 
@@ -124,6 +127,7 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
                                         targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
+    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
 
     KZⁱ = qˢ .* K .* qᵗ'
     k = vec(sum(KZⁱ, dims=1))
@@ -206,8 +210,10 @@ function LF_sensitivity(qˢ::AbstractVector, # Source qualities
                         invcost::Any,
                         landmarks::AbstractVector)
 
-
     n = size(A,1)
+    Zⁱ = inv.(Z)
+    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
+
     # Preallocations:
     Ni_non = Matrix{Float64}(undef,n,n)
     Ni_hit = Matrix{Float64}(undef,n,n)
@@ -218,9 +224,12 @@ function LF_sensitivity(qˢ::AbstractVector, # Source qualities
     Nij_hit = Matrix{Float64}(undef,n,n)
     Qij = Matrix{Float64}(undef,n,n)
     Γij = Matrix{Float64}(undef,n,n)
-    pdiffEC_cij = Matrix{Float64}(undef,n,n)
-    pdiffEC_aij = Matrix{Float64}(undef,n,n)
-    diffEC_aij = Matrix{Float64}(undef,n,n)
+
+    pdiff_cij = Matrix{Float64}(undef,n,n)
+    pdiff_aij = Matrix{Float64}(undef,n,n)
+
+    diff_aij = Matrix{Float64}(undef,n,n)
+
     K_diff = Matrix{Float64}(undef,n,n)
 
 
@@ -231,50 +240,59 @@ function LF_sensitivity(qˢ::AbstractVector, # Source qualities
     ZCW = Z*CW
     ZCWZ = ZCW*Z
 
-    EC = ZCWZ./Z
+    EC = ZCWZ.*Zⁱ
     EC .-= diag(EC)'
     K = map(invcost, EC)
+    K[1:n+1:end] .= 1
+    K[isinf.(K)] .= 0
 
-    edge_sensitivities = copy(A)
+    S_e_cost = copy(A)
+    S_e_aff = copy(A)
+
+
     @showprogress for i = 1:n
-        Ni_non .= (Z[:,i].*Z[i,:]')./Z
+        Ni_non .= (Z[:,i].*Z[i,:]').*Zⁱ
 
         Ni_hit .= Ni_non .- diag(Ni_non)'
 
-        Qi .= (ZCWZ[:,i].*Z[i,:]')./Z
+        Qi .= (ZCWZ[:,i].*Z[i,:]').*Zⁱ
         Qi .-= diag(Qi)'
 
-        Γi_div .= (Ni_non.*EC .- Ni_hit.*EC[i,:]' .- Qi)./rowsums[i];
+        Γi_div .= (Ni_non.*EC .- Ni_hit.*EC[i,:]' .- Qi)./rowsums[i]
 
         i_idx = findall(A[i,:].>0)
 
         for j in i_idx
-            Nij_non .= W[i,j] .* (Z[:,i].*Z[j,:]')./Z
+            Nij_non .= W[i,j] .* (Z[:,i].*Z[j,:]').*Zⁱ
 
             Nij_hit .= Nij_non .- diag(Nij_non)'
 
-            Qij .= W[i,j] .* (ZCWZ[:,i].*Z[j,:]')./Z
+            Qij .= W[i,j] .* (ZCWZ[:,i].*Z[j,:]').*Zⁱ
             Qij .-= diag(Qij)'
 
 
             Γij .= Nij_non .* EC .- Nij_hit .* (EC[j,:] .+ C[i,j])' .- Qij
 
-            pdiffEC_cij .= Nij_hit .+ β.*Γij
-            pdiffEC_aij .= Γi_div .- Γij./A[i,j]
+            pdiff_cij .= Nij_hit .+ β.*Γij
+            K_diff .= K.*pdiff_cij
+            S_e_cost[i,j] = -(qˢ'*K_diff)*qᵗ # A[i,j].*(-qˢ'*(K.*diff_aij)*qᵗ)
 
-            diffEC_aij .= pdiffEC_aij .+ pdiffEC_cij.*diff_C_A[i,j]
-            diffEC_aij[:,i] .= 0
+            pdiff_aij .= Γi_div .- Γij./A[i,j]
+            K_diff .= K.*pdiff_aij
+            S_e_aff[i,j] = -(qˢ'*K_diff)*qᵗ # A[i,j].*(-qˢ'*(K.*diff_aij)*qᵗ)
 
-            # diffEC_cij = pdiffEC_cij + pdiffEC_aij.*diff_A_C[i,j]
-            # diffEC_cij[:,i] .= 0
-            K_diff .= K.*diffEC_aij
-            edge_sensitivities[i,j] = -(qˢ'*K_diff)*qᵗ # A[i,j].*(-qˢ'*(K.*diffEC_aij)*qᵗ)
+
+            # diff_cij = pdiff_cij + pdiff_aij.*diff_A_C[i,j]
+            # diff_cij[:,i] .= 0
+            # S_e_total[i,j] = -(qˢ'*K_diff)*qᵗ # A[i,j].*(-qˢ'*(K.*diff_aij)*qᵗ)
 
         end
 
     end
 
-    return vec(sum(edge_sensitivities, dims=1))
+    S_e_total = S_e_aff .+ S_e_cost.*diff_C_A
+
+    return S_e_total, S_e_aff, S_e_cost
 
 end
 
@@ -293,14 +311,17 @@ function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
 
     rowsums = sum(A,dims=2)
 
-    bet_node_k = RSP_betweenness_kweighted(W, Z, qˢ, qᵗ, K, landmarks)
     bet_edge_k = RSP_edge_betweenness_kweighted(W, Z, qˢ, qᵗ, K, landmarks)
+    S_e_cost = -bet_edge_k
+
+    bet_node_k = RSP_betweenness_kweighted(W, Z, qˢ, qᵗ, K, landmarks)
 
     Idx = A.>0
-    edge_sensitivities = copy(A)
-    edge_sensitivities[Idx] = bet_edge_k[Idx]./(β.*A[Idx]) .- bet_edge_k[Idx].*diff_C_A[Idx] .- (Idx.*(bet_node_k./(β.*rowsums)))[Idx]
+    S_e_aff = copy(A)
+    S_e_aff[Idx] = (bet_edge_k[Idx]./A[Idx] .- (Idx.*(bet_node_k./rowsums))[Idx])./β
 
-    return vec(sum(edge_sensitivities, dims=1))
+    return S_e_aff .+ S_e_cost.*diff_C_A, S_e_aff, S_e_cost
+
 end
 
 

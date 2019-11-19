@@ -17,7 +17,7 @@ function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
     C    = mapnz(cost, g.A)
     Pref = _Pref(g.A)
     W    = _W(Pref, β, C)
-    @debug("Compututing fundamental matrix of non-absorbing paths (Z). Please be patient...")
+    @debug("Computing fundamental matrix of non-absorbing paths (Z). Please be patient...")
     targetidx, targetnodes = _targetidx_and_nodes(g)
     Z    = (I - W)\Matrix(sparse(targetnodes,
                                  1:length(targetnodes),
@@ -91,7 +91,7 @@ end
 Compute full RSP betweenness of all edges weighted by source and target qualities. Returns a
 sparse matrix where element (i,j) is the betweenness of edge (i,j).
 """
-function RSP_edge_betweenness_kweighted(h::Habitat, invcost=inv(h.cost))
+function RSP_edge_betweenness_kweighted(h::Habitat; invcost=inv(h.cost))
 
     similarities = map(invcost, RSP_dissimilarities(h))
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
@@ -366,12 +366,18 @@ end
 
 # using Base.Threads
 
-function LF_sensitivity(h::Habitat, invcost=inv(h.cost))
+function LF_sensitivity(h::Habitat; invcost=inv(h.cost))
     # Now assumes h.cost = MinusLog
     # TODO: Implement the derivatives of a2c and d2k transformations
 
     # Derivative of costs w.r.t. affinities:
-    diff_C_A = -mapnz(inv, h.g.A)
+    if h.cost == MinusLog()
+        diff_C_A = -mapnz(inv, h.g.A)
+    elseif h.cost == Inv()
+        diff_C_A = mapnz(x -> x^2, h.g.A)
+        diff_C_A = -mapnz(inv, diff_C_A)
+    end
+
     # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
     # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
 
@@ -380,14 +386,18 @@ function LF_sensitivity(h::Habitat, invcost=inv(h.cost))
 
     landmarks = 1:length(h.g.id_to_grid_coordinate_list) # TODO: Include consideration of landmarks
 
-    node_sensitivity_vec = LF_sensitivity(qˢ, qᵗ, h.g.A, h.C, h.β, diff_C_A, h.W, h.Z, invcost, landmarks)
+    S_e_total, S_e_aff, S_e_cost = LF_sensitivity(qˢ, qᵗ, h.g.A, h.C, h.β, diff_C_A, h.W, h.Z, invcost, landmarks)
+
+    node_sensitivity_vec = vec(sum(S_e_total, dims=1))
 
 
-    return sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
-                  [ij[2] for ij in h.g.id_to_grid_coordinate_list],
-                  node_sensitivity_vec,
-                  h.g.nrows,
-                  h.g.ncols)
+    node_sensitivity_matrix = Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                                            [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                                            node_sensitivity_vec,
+                                            h.g.nrows,
+                                            h.g.ncols))
+
+    return node_sensitivity_matrix, S_e_total, S_e_aff, S_e_cost
 
 end
 
@@ -398,25 +408,34 @@ end
 
 
 
-function LF_power_mean_sensitivity(h::Habitat, invcost=inv(h.cost))
+function LF_power_mean_sensitivity(h::Habitat; invcost=inv(h.cost))
     # Now assumes h.cost = MinusLog
     # TODO: Implement the derivatives of a2c and d2k transformations
 
     qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
     qᵗ = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list]
 
-    diff_C_A = -mapnz(inv, h.g.A);
+    if h.cost == MinusLog()
+        diff_C_A = -mapnz(inv, h.g.A)
+    elseif h.cost == Inv()
+        diff_C_A = mapnz(x -> x^2, h.g.A)
+        diff_C_A = -mapnz(inv, diff_C_A)
+    end
     # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
     # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
 
     landmarks = 1:length(h.g.id_to_grid_coordinate_list) # TODO: Include consideration of landmarks
-    node_sensitivity_vec = LF_power_mean_sensitivity(qˢ, qᵗ, h.g.A, h.β, diff_C_A, h.W, h.Z, landmarks)
+    S_e_total, S_e_aff, S_e_cost = LF_power_mean_sensitivity(qˢ, qᵗ, h.g.A, h.β, diff_C_A, h.W, h.Z, landmarks)
 
-    return sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
-                  [ij[2] for ij in h.g.id_to_grid_coordinate_list],
-                  node_sensitivity_vec,
-                  h.g.nrows,
-                  h.g.ncols)
+    node_sensitivity_vec = vec(sum(S_e_total, dims=1))
+
+    node_sensitivity_matrix = Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                                            [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                                            node_sensitivity_vec,
+                                            h.g.nrows,
+                                            h.g.ncols))
+
+    return node_sensitivity_matrix, S_e_total, S_e_aff, S_e_cost
 
 end
 
@@ -451,7 +470,8 @@ function LF_sensitivity_simulation(h::Habitat)
                   [ij[2] for ij in h.g.id_to_grid_coordinate_list],
                   node_sensitivities,
                   h.g.nrows,
-                  h.g.ncols)
+                  h.g.ncols),
+           edge_sensitivities
 
 end
 
@@ -500,6 +520,7 @@ function LF_power_mean_sensitivity_simulation(h::Habitat)
                   [ij[2] for ij in h.g.id_to_grid_coordinate_list],
                   node_sensitivities,
                   g.nrows,
-                  g.ncols)
+                  g.ncols),
+           edge_sensitivities
 
 end
