@@ -93,7 +93,6 @@ datadir = joinpath(@__DIR__(), "..", "data")
                                        826.0710054834001 1883.0940077789735 1935.4450344630702
                                        676.9212075214159 2228.2700913772774 2884.0409495023364]
 
-
             @test ConScape.RSP_betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
                     ConScape.RSP_betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
 
