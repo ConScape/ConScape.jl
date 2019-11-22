@@ -250,7 +250,8 @@ function LF_sensitivity(qˢ::AbstractVector, # Source qualities
     S_e_aff = copy(A)
 
 
-    @showprogress for i = 1:n
+    # @showprogress for i = 1:n
+    for i = 1:n
         Ni_non .= (Z[:,i].*Z[i,:]').*Zⁱ
 
         Ni_hit .= Ni_non .- diag(Ni_non)'

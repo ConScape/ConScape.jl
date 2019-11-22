@@ -13,8 +13,8 @@ end
 
 Construct a Habitat from a `g::Grid` based on a `cost::Cost` type and the temperature `β::Real`.
 """
-function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
-    C    = mapnz(cost, g.A)
+
+function Habitat(g::Grid, C::SparseMatrixCSC{Float64,Int}; cost::Cost=MinusLog(), β=nothing)
     Pref = _Pref(g.A)
     W    = _W(Pref, β, C)
     @debug("Computing fundamental matrix of non-absorbing paths (Z). Please be patient...")
@@ -26,6 +26,13 @@ function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
                                  length(targetnodes)))
     return Habitat(g, cost, β, C, Pref, W, Z)
 end
+
+function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
+    C    = mapnz(cost, g.A)
+    return Habitat(g, C, cost, β)
+end
+
+
 
 function Base.show(io::IO, ::MIME"text/plain", h::Habitat)
     print(io, summary(h), " of size ", h.g.nrows, "x", h.g.ncols)
@@ -374,8 +381,7 @@ function LF_sensitivity(h::Habitat; invcost=inv(h.cost))
     if h.cost == MinusLog()
         diff_C_A = -mapnz(inv, h.g.A)
     elseif h.cost == Inv()
-        diff_C_A = mapnz(x -> x^2, h.g.A)
-        diff_C_A = -mapnz(inv, diff_C_A)
+        diff_C_A = -mapnz(x -> inv(x^2), h.g.A)
     end
 
     # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
