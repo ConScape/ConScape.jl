@@ -108,7 +108,7 @@ julia> landscape = [1/4 0 1/4 1/4
                     1/4 0 1/4 1/4
                     1/4 0 1/4 1/4];
 
-julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.adjacency(landscape))
+julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.graph_matrix_from_raster(landscape))
 ConScape.Grid of size 4x4
 
 julia> ConScape.is_connected(grid)
@@ -161,7 +161,7 @@ julia> landscape = [1/4 0 1/4 1/4
                     1/4 0 1/4 1/4
                     1/4 0 1/4 1/4];
 
-julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.adjacency(landscape))
+julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.graph_matrix_from_raster(landscape))
 ConScape.Grid of size 4x4
 
 julia> ConScape.least_cost_distance(grid, (4,4))
