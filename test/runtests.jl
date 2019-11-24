@@ -136,7 +136,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
             # Just a regression test but result looks visually correct
             @test ConScape.RSP_betweenness_qweighted(h)[9:11, 30:32] ≈
                     [1.35257193796979e9 1.3112254944853191e9 1.3525448385844798e9
-                     1.7383632661402326e9 1.9571251417867596e9 1.7385247019409044e9 
+                     1.7383632661402326e9 1.9571251417867596e9 1.7385247019409044e9
                      1.352382919812123e9 1.3103077614483771e9 1.3520848636655023e9]
 
         elseif landscape == "wall_landmark2" && β == 0.2
@@ -245,5 +245,5 @@ end
                                qualities=copy(reshape(collect(m*n:-1:1), n, m)')
                                )
     h = ConScape.Habitat(g, β=0.2)
-    @test sum(ConScape.RSP_criticality(h).nzval .< 0) == 0
+    @test sum(ConScape.RSP_criticality(h).nzval .< -1e-5) == 0
 end
