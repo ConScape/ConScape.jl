@@ -2,7 +2,7 @@ using ConScape, Test, SparseArrays
 
 datadir = joinpath(@__DIR__(), "..", "data")
 
-@testset "test landscale: $landscape" for
+@testset "test landscape: $landscape" for
     # FIXME! Enable testing of sno_1000 landscape with landmarks. The full landscape is too large for CI
     landscape in ("wall_full", "wall_landmark1", "wall_landmark2", "sno_2000",#= "sno_1000"=#),
         β in (0.1, 0.2)
@@ -59,13 +59,14 @@ datadir = joinpath(@__DIR__(), "..", "data")
         end
     end
 
-    @testset "test adjacency creation with $nn neighbors and $w weighting" for
+    @testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
         nn in (ConScape.N4, ConScape.N8),
-            w in (ConScape.TargetWeight, ConScape.AverageWeight)
+            w in (ConScape.TargetWeight, ConScape.AverageWeight),
+                mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
 
         if landscape == "sno_2000" && β == 0.1 # No need to test this on sno_100 and doesn't deepend on β
             # FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
-            @test ConScape.graph_matrix_from_raster(affinities, neighbors=nn, weight=w) isa ConScape.SparseMatrixCSC
+            @test ConScape.graph_matrix_from_raster(affinities, neighbors=nn, weight=w, matrix_type=mt) isa ConScape.SparseMatrixCSC
         end
     end
 
