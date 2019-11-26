@@ -2,7 +2,7 @@ using ConScape, Test, SparseArrays
 
 datadir = joinpath(@__DIR__(), "..", "data")
 
-@testset "test landscale: $landscape" for
+@testset "test landscape: $landscape" for
     # FIXME! Enable testing of sno_1000 landscape with landmarks. The full landscape is too large for CI
     landscape in ("wall_full", "wall_landmark1", "wall_landmark2", "sno_2000",#= "sno_1000"=#),
         β in (0.1, 0.2)
@@ -59,13 +59,14 @@ datadir = joinpath(@__DIR__(), "..", "data")
         end
     end
 
-    @testset "test adjacency creation with $nn neighbors and $w weighting" for
+    @testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
         nn in (ConScape.N4, ConScape.N8),
-            w in (ConScape.TargetWeight, ConScape.AverageWeight)
+            w in (ConScape.TargetWeight, ConScape.AverageWeight),
+                mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
 
         if landscape == "sno_2000" && β == 0.1 # No need to test this on sno_100 and doesn't deepend on β
             # FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
-            @test ConScape.graph_matrix_from_raster(affinities, neighbors=nn, weight=w) isa ConScape.SparseMatrixCSC
+            @test ConScape.graph_matrix_from_raster(affinities, neighbors=nn, weight=w, matrix_type=mt) isa ConScape.SparseMatrixCSC
         end
     end
 
@@ -147,7 +148,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
             # Just a regression test but result looks visually correct
             @test ConScape.RSP_betweenness_qweighted(h)[9:11, 30:32] ≈
                     [1.35257193796979e9 1.3112254944853191e9 1.3525448385844798e9
-                     1.7383632661402326e9 1.9571251417867596e9 1.7385247019409044e9 
+                     1.7383632661402326e9 1.9571251417867596e9 1.7385247019409044e9
                      1.352382919812123e9 1.3103077614483771e9 1.3520848636655023e9]
 
         elseif landscape == "wall_landmark2" && β == 0.2
@@ -256,7 +257,7 @@ end
                                qualities=copy(reshape(collect(m*n:-1:1), n, m)')
                                )
     h = ConScape.Habitat(g, β=0.2)
-    @test sum(ConScape.RSP_criticality(h).nzval .< 0) == 0
+    @test sum(ConScape.RSP_criticality(h).nzval .< -1e-5) == 0
 end
 
 
