@@ -95,7 +95,7 @@ respect to eight neighbors (`N8`) or four neighbors (`N4`).
 function graph_matrix_from_raster(R::Matrix; matrix_type=AffinityMatrix, neighbors::Tuple=N8, weight=TargetWeight)
     m, n = size(R)
 
-    # Initialy the buffers of the SparseMatrixCSC
+    # Initialize the buffers of the SparseMatrixCSC
     is, js, vs = Int[], Int[], Float64[]
 
     for j in 1:n
@@ -156,10 +156,6 @@ function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, i
     if impossible_affinity > 0
         A[node_list_idx,:] = impossible_affinity*(A[node_list_idx,:] .> 0)
         A[:,node_list_idx] = impossible_affinity*(A[:,node_list_idx] .> 0)
-        for i in node_list
-            g.source_qualities[i] .= 0
-            g.target_qualities[i] .= 0
-        end
     elseif impossible_affinity == 0
         # Delete the nodes completely:
         num_of_removed = length(node_list_idx)
@@ -174,6 +170,11 @@ function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, i
         # deleteat!(vec(g.source_qualities), node_list_idx)
         # deleteat!(vec(g.target_qualities), node_list_idx)
         g.id_to_grid_coordinate_list = [g.id_to_grid_coordinate_list[id] for id in 1:length(g.id_to_grid_coordinate_list) if !(id in node_list_idx)]
+    end
+
+    for i in node_list
+        g.source_qualities[i] .= 0
+        g.target_qualities[i] .= 0
     end
 
     g.A = A

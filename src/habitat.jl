@@ -29,7 +29,7 @@ end
 
 function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
     C    = mapnz(cost, g.A)
-    return Habitat(g, C, cost, β)
+    return Habitat(g, C, cost=cost, β=β)
 end
 
 
@@ -124,11 +124,17 @@ cost function can be passed. The function will be applied elementwise to the mat
 dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the dissimilarities.
 """
-function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost))
+function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
 
     similarities = map(invcost, RSP_dissimilarities(h))
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
+
+    if diagvalue !== nothing
+        for (j, i) in enumerate(targetnodes)
+            similarities[i, j] = diagvalue
+        end
+    end
 
     betvec = RSP_betweenness_kweighted(h.W,
                                        h.Z,
@@ -373,15 +379,25 @@ end
 
 # using Base.Threads
 
-function LF_sensitivity(h::Habitat; invcost=inv(h.cost))
-    # Now assumes h.cost = MinusLog
-    # TODO: Implement the derivatives of a2c and d2k transformations
+function LF_sensitivity(h::Habitat; invcost=inv(h.cost), exp_prox_scaling=1.)
+
+    if h.cost == Inv() && exp_prox_scaling !== 1.
+        throw(ArgumentError("exp_prox_scaling can be other than 1 only when using exponential proximity transformation"))
+    end
 
     # Derivative of costs w.r.t. affinities:
+    # TODO: Implement these as properties of Costs:
+    K = map(invcost, RSP_dissimilarities(h)./exp_prox_scaling)
+    n = length(h.g.id_to_grid_coordinate_list)
+    K[1:n+1:end] .= 1
+    K[isinf.(K)] .= 0
+
     if h.cost == MinusLog()
         diff_C_A = -mapnz(inv, h.g.A)
+        diff_K_D = -K./exp_prox_scaling
     elseif h.cost == Inv()
         diff_C_A = -mapnz(x -> inv(x^2), h.g.A)
+        diff_K_D = -K.^2
     end
 
     # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
@@ -392,7 +408,7 @@ function LF_sensitivity(h::Habitat; invcost=inv(h.cost))
 
     landmarks = 1:length(h.g.id_to_grid_coordinate_list) # TODO: Include consideration of landmarks
 
-    S_e_total, S_e_aff, S_e_cost = LF_sensitivity(qˢ, qᵗ, h.g.A, h.C, h.β, diff_C_A, h.W, h.Z, invcost, landmarks)
+    S_e_total, S_e_aff, S_e_cost = LF_sensitivity(qˢ, qᵗ, h.g.A, h.C, h.β, diff_C_A, diff_K_D, h.W, h.Z, invcost, landmarks)
 
     node_sensitivity_vec = vec(sum(S_e_total, dims=1))
 
@@ -472,11 +488,11 @@ function LF_sensitivity_simulation(h::Habitat)
     node_sensitivities = vec(sum(edge_sensitivities, dims=1))
 
 
-    return sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+    return Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
                   [ij[2] for ij in h.g.id_to_grid_coordinate_list],
                   node_sensitivities,
                   h.g.nrows,
-                  h.g.ncols),
+                  h.g.ncols)),
            edge_sensitivities
 
 end
@@ -522,11 +538,11 @@ function LF_power_mean_sensitivity_simulation(h::Habitat)
     node_sensitivities = vec(sum(edge_sensitivities, dims=1))
 
 
-    return sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+    return Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
                   [ij[2] for ij in h.g.id_to_grid_coordinate_list],
                   node_sensitivities,
                   g.nrows,
-                  g.ncols),
+                  g.ncols)),
            edge_sensitivities
 
 end

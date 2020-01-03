@@ -274,14 +274,14 @@ end
 
     h = ConScape.Habitat(g, β=0.2)
 
-    S_comp = ConScape.LF_sensitivity(h)
-    S_simu = ConScape.LF_sensitivity_simulation(h)
+    S_comp = ConScape.LF_sensitivity(h)[1]
+    S_simu = ConScape.LF_sensitivity_simulation(h)[1]
 
     @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
 
 
-    S_comp = ConScape.LF_power_mean_sensitivity(h)
-    S_simu = ConScape.LF_power_mean_sensitivity_simulation(h)
+    S_comp = ConScape.LF_power_mean_sensitivity(h)[1]
+    S_simu = ConScape.LF_power_mean_sensitivity_simulation(h)[1]
 
     @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
 end

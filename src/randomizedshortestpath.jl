@@ -199,12 +199,15 @@ function RSP_functionality(qˢ::AbstractVector, # Source qualities
     return qˢ .* (S*qᵗ)
 end
 
+
+
 function LF_sensitivity(qˢ::AbstractVector, # Source qualities
                         qᵗ::AbstractVector, # Target qualities
                         A::SparseMatrixCSC,
                         C::SparseMatrixCSC,
                         β::Real,
                         diff_C_A::SparseMatrixCSC,
+                        diff_K_D::AbstractMatrix,
                         W::SparseMatrixCSC,
                         Z::AbstractMatrix,
                         invcost::Any,
@@ -219,6 +222,7 @@ function LF_sensitivity(qˢ::AbstractVector, # Source qualities
     Ni_hit = Matrix{Float64}(undef,n,n)
     Qi = Matrix{Float64}(undef,n,n)
     Γi_div = Matrix{Float64}(undef,n,n)
+    EC_non_minus_i = Matrix{Float64}(undef,n,n)
 
     Nij_non = Matrix{Float64}(undef,n,n)
     Nij_hit = Matrix{Float64}(undef,n,n)
@@ -228,62 +232,62 @@ function LF_sensitivity(qˢ::AbstractVector, # Source qualities
     pdiff_cij = Matrix{Float64}(undef,n,n)
     pdiff_aij = Matrix{Float64}(undef,n,n)
 
-    diff_aij = Matrix{Float64}(undef,n,n)
-
-    K_diff = Matrix{Float64}(undef,n,n)
-
 
     rowsums = sum(A,dims=2)
 
 
-    CW  = C.*W
-    ZCW = Z*CW
-    ZCWZ = ZCW*Z
+    # CW  = C.*W
+    # ZCW = Z*CW
+    # ZCWZ = ZCW*Z
+    # EC_non = ZCWZ.*Zⁱ
 
-    EC = ZCWZ.*Zⁱ
-    EC .-= diag(EC)'
-    K = map(invcost, EC)
-    K[1:n+1:end] .= 1
-    K[isinf.(K)] .= 0
+
+    EC_non = (Z*(C.*W)*Z).*Zⁱ
+    EC = EC_non .- diag(EC_non)'
 
     S_e_cost = copy(A)
     S_e_aff = copy(A)
 
 
-    # @showprogress for i = 1:n
-    for i = 1:n
+    @showprogress 3 for i = 1:n # Shows progress bar if process takes more than 3 secs
+    # for i = 1:n
         Ni_non .= (Z[:,i].*Z[i,:]').*Zⁱ
 
         Ni_hit .= Ni_non .- diag(Ni_non)'
 
-        Qi .= (ZCWZ[:,i].*Z[i,:]').*Zⁱ
+
+        EC_non_minus_i .= EC_non.-EC_non[:,i]
+        Qi .= Ni_non.*EC_non_minus_i
         Qi .-= diag(Qi)'
 
-        Γi_div .= (Ni_non.*EC .- Ni_hit.*EC[i,:]' .- Qi)./rowsums[i]
+        Γi_div .= (Ni_hit.*EC_non[i,:]' .- Qi)./rowsums[i]
 
         i_idx = findall(A[i,:].>0)
 
+        # TODO: Consider only nonzero quality target nodes!
+        # for j in i_idx ∩ target_idx
         for j in i_idx
             Nij_non .= W[i,j] .* (Z[:,i].*Z[j,:]').*Zⁱ
 
             Nij_hit .= Nij_non .- diag(Nij_non)'
 
-            Qij .= W[i,j] .* (ZCWZ[:,i].*Z[j,:]').*Zⁱ
+            Qij .= Nij_non.*EC_non_minus_i
             Qij .-= diag(Qij)'
 
+            Γij .= Nij_hit .* (EC_non[j,:] .+ C[i,j])' .- Qij
 
-            Γij .= Nij_non .* EC .- Nij_hit .* (EC[j,:] .+ C[i,j])' .- Qij
+            pdiff_cij .= Nij_hit .- β.*Γij
+            # pdiff_cij[j,:] .= 0
+            # pdiff_cij[:,j] .= 0
+            S_e_cost[i,j] = (qˢ'* (diff_K_D.*pdiff_cij)) *qᵗ # A[i,j].*(-qˢ'*(K.*diff_aij)*qᵗ)
 
-            pdiff_cij .= Nij_hit .+ β.*Γij
-            K_diff .= K.*pdiff_cij
-            S_e_cost[i,j] = -(qˢ'*K_diff)*qᵗ # A[i,j].*(-qˢ'*(K.*diff_aij)*qᵗ)
-
-            pdiff_aij .= Γi_div .- Γij./A[i,j]
-            K_diff .= K.*pdiff_aij
-            S_e_aff[i,j] = -(qˢ'*K_diff)*qᵗ # A[i,j].*(-qˢ'*(K.*diff_aij)*qᵗ)
+            pdiff_aij .= Γij./A[i,j] .- Γi_div
+            # pdiff_aij[j,:] .= 0
+            # pdiff_aij[:,j] .= 0
+            S_e_aff[i,j] = (qˢ'* (diff_K_D.*pdiff_aij)) *qᵗ # A[i,j].*(-qˢ'*(K.*diff_aij)*qᵗ)
 
 
-            # diff_cij = pdiff_cij + pdiff_aij.*diff_A_C[i,j]
+            # diff_cij = pdiff_cij + pdiff_aij.*diff_C_A[i,j]
             # diff_cij[:,i] .= 0
             # S_e_total[i,j] = -(qˢ'*K_diff)*qᵗ # A[i,j].*(-qˢ'*(K.*diff_aij)*qᵗ)
 
@@ -296,6 +300,15 @@ function LF_sensitivity(qˢ::AbstractVector, # Source qualities
     return S_e_total, S_e_aff, S_e_cost
 
 end
+
+
+
+
+
+
+
+
+
 
 function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
                                    qᵗ::AbstractVector, # Target qualities
