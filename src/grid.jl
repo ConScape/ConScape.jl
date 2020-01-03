@@ -71,7 +71,7 @@ function Base.show(io::IO, ::MIME"text/html", g::Grid)
         write(io, "<table><tr><td>Source qualities")
         show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
         write(io, "</td><td>Target qualities")
-        show(io, MIME"text/html"(), heatmap(g.target_qualities, yflip=true))
+        show(io, MIME"text/html"(), heatmap(Matrix(g.target_qualities), yflip=true))
         write(io, "</td></tr></table>")
     end
 end
