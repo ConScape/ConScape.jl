@@ -7,6 +7,7 @@ function perm_wall_sim(
     wallposition::Float64=0.5,
     corridorwidths::NTuple{N,Int}=(3,3),
     corridorpositions=(0.35,0.7),
+    impossible_affinity::Real=1e-20,
     kwargs...) where N
 
     # 1. initialize landscape
@@ -30,7 +31,7 @@ function perm_wall_sim(
     append!(ys, range(maximum(ys) + 1 + corridorwidths[end]  , stop=nrows))
 
     impossible_nodes = vec(CartesianIndex.(collect(Iterators.product(ys, xs))))
-    _set_impossible_nodes!(g, impossible_nodes)
+    _set_impossible_nodes!(g, impossible_nodes, impossible_affinity)
 
     return g
 end
@@ -78,15 +79,20 @@ const N8 = ((-1, -1,  √2),
     AverageWeight
 end
 
-"""
-    adjacency(R::Matrix[, neighbors::Tuple=N8, weight=TargetWeight])::SparseMatrixCSC
+@enum MatrixType begin
+    AffinityMatrix
+    CostMatrix
+end
 
-Compute an adjacency matrix of the raster image `R` of the similarities/conductances
-the cells. The similarities are computed as either the value of the target cell (TargetWeight)
-or as harmonic means of the cell values weighted by the grid distance (AverageWeight). The similarities
-can be computed with respect to eight neighbors (`N8`) or four neighbors (`N4`).
 """
-function adjacency(R::Matrix; neighbors::Tuple=N8, weight=TargetWeight)
+    graph_matrix_from_raster(R::Matrix[, type=AffinityMatrix, neighbors::Tuple=N8, weight=TargetWeight])::SparseMatrixCSC
+
+Compute a graph matrix, i.e. an affinity or cost matrix of the raster image `R` of cell affinities or cell costs.
+The values are computed as either the value of the target cell (TargetWeight) or as harmonic (arithmetic) means
+of the cell affinities (costs) weighted by the grid distance (AverageWeight). The values can be computed with
+respect to eight neighbors (`N8`) or four neighbors (`N4`).
+"""
+function graph_matrix_from_raster(R::Matrix; matrix_type=AffinityMatrix, neighbors::Tuple=N8, weight=TargetWeight)
     m, n = size(R)
 
     # Initialy the buffers of the SparseMatrixCSC
@@ -111,10 +117,19 @@ function adjacency(R::Matrix; neighbors::Tuple=N8, weight=TargetWeight)
                     push!(is, (j - 1)*m + i)
                     push!(js, (j - 1)*m + i + ki + kj*m)
                     if weight == TargetWeight
-                        push!(vs, rijk/l)
+                        if matrix_type == AffinityMatrix
+                            push!(vs, rijk/l)
+                        elseif matrix_type == CostMatrix
+                            push!(vs, rijk*l)
+                        end
                     elseif weight == AverageWeight
-                        v = 2/((inv(rij) + inv(rijk))*l)
-                        push!(vs, v)
+                        if matrix_type == AffinityMatrix
+                            v = 2/((inv(rij) + inv(rijk))*l)
+                            push!(vs, v)
+                        elseif matrix_type == CostMatrix
+                            v = ((rij + rijk)*l)/2
+                            push!(vs, v)
+                        end
                     else
                         throw(ArgumentError("weight mode $weight not implemented"))
                     end
@@ -124,6 +139,7 @@ function adjacency(R::Matrix; neighbors::Tuple=N8, weight=TargetWeight)
     end
     return sparse(is, js, vs, m*n, m*n)
 end
+
 
 #=
 Make pixels impossible to move to by changing the affinities to them to zero.
@@ -140,6 +156,10 @@ function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, i
     if impossible_affinity > 0
         A[node_list_idx,:] = impossible_affinity*(A[node_list_idx,:] .> 0)
         A[:,node_list_idx] = impossible_affinity*(A[:,node_list_idx] .> 0)
+        for i in node_list
+            g.source_qualities[i] .= 0
+            g.target_qualities[i] .= 0
+        end
     elseif impossible_affinity == 0
         # Delete the nodes completely:
         num_of_removed = length(node_list_idx)

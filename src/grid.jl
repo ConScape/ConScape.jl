@@ -71,7 +71,7 @@ function Base.show(io::IO, ::MIME"text/html", g::Grid)
         write(io, "<table><tr><td>Source qualities")
         show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
         write(io, "</td><td>Target qualities")
-        show(io, MIME"text/html"(), heatmap(g.target_qualities, yflip=true))
+        show(io, MIME"text/html"(), heatmap(Matrix(g.target_qualities), yflip=true))
         write(io, "</td></tr></table>")
     end
 end
@@ -108,7 +108,7 @@ julia> landscape = [1/4 0 1/4 1/4
                     1/4 0 1/4 1/4
                     1/4 0 1/4 1/4];
 
-julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.adjacency(landscape))
+julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.graph_matrix_from_raster(landscape))
 ConScape.Grid of size 4x4
 
 julia> ConScape.is_connected(grid)
@@ -161,7 +161,7 @@ julia> landscape = [1/4 0 1/4 1/4
                     1/4 0 1/4 1/4
                     1/4 0 1/4 1/4];
 
-julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.adjacency(landscape))
+julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.graph_matrix_from_raster(landscape))
 ConScape.Grid of size 4x4
 
 julia> ConScape.least_cost_distance(grid, (4,4))
