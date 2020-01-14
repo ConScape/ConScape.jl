@@ -2,7 +2,7 @@ using ConScape, Test, SparseArrays
 
 datadir = joinpath(@__DIR__(), "..", "data")
 
-@testset "test landscale: $landscape" for
+@testset "test landscape: $landscape" for
     # FIXME! Enable testing of sno_1000 landscape with landmarks. The full landscape is too large for CI
     landscape in ("wall_full", "wall_landmark1", "wall_landmark2", "sno_2000",#= "sno_1000"=#),
         β in (0.1, 0.2)
@@ -24,7 +24,8 @@ datadir = joinpath(@__DIR__(), "..", "data")
             target_qualities=sparse(
                 [10, 20, 10, 20],
                 [15, 15, 45, 45],
-                [sq[10, 15], sq[20, 15], sq[10, 45], sq[20, 45]]))
+                [sq[10, 15], sq[20, 15], sq[10, 45], sq[20, 45]],
+                30, 60))
         h = ConScape.Habitat(g, β=0.2)
     elseif landscape == "wall_landmark2"
         sq = copy(reshape(collect(1800:-1:1), 60, 30)')
@@ -43,7 +44,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
         affinities, _ = ConScape.readasc(joinpath(datadir, "affinities_$landscape.asc"))
         qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_$landscape.asc"))
         g = ConScape.Grid(size(affinities)...,
-                          landscape=ConScape.adjacency(affinities),
+                          landscape=ConScape.graph_matrix_from_raster(affinities),
                           qualities=qualities
                           )
         h = ConScape.Habitat(g, β=β)
@@ -52,19 +53,20 @@ datadir = joinpath(@__DIR__(), "..", "data")
     @testset "Test mean_kl_divergence" begin
         # FIXME Enable all combinations
         if landscape == "wall_full" && β == 0.2
-            @test ConScape.mean_kl_divergence(h) ≈ 31104209170543.438
+            @test ConScape.mean_kl_divergence(h) ≈ 2.4405084252728125e13
         elseif landscape == "sno_2000" && β == 0.1
             @test ConScape.mean_kl_divergence(h) ≈ 323895.3828183995
         end
     end
 
-    @testset "test adjacency creation with $nn neightbors and $w weighting" for
+    @testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
         nn in (ConScape.N4, ConScape.N8),
-            w in (ConScape.TargetWeight, ConScape.AverageWeight)
+            w in (ConScape.TargetWeight, ConScape.AverageWeight),
+                mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
 
         if landscape == "sno_2000" && β == 0.1 # No need to test this on sno_100 and doesn't deepend on β
             # FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
-            @test ConScape.adjacency(affinities, neighbors=nn, weight=w) isa ConScape.SparseMatrixCSC
+            @test ConScape.graph_matrix_from_raster(affinities, neighbors=nn, weight=w, matrix_type=mt) isa ConScape.SparseMatrixCSC
         end
     end
 
@@ -105,7 +107,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
     @testset "mean_lc_kl_divergence" begin
         # FIXME Enable all combinations
         if landscape == "wall_full" && β == 0.2
-            @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.1901061703319367e14
+            @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.0667623231698838e14
         elseif landscape == "sno_2000" && β == 0.1
             @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.5660600315073947e6
         end
@@ -134,9 +136,9 @@ datadir = joinpath(@__DIR__(), "..", "data")
         if landscape == "wall_landmark1" && β == 0.2
             # Just a regression test but result looks visually correct
             @test ConScape.RSP_betweenness_qweighted(h)[9:11, 30:32] ≈
-                    [1.4012984154363496e9 1.3576613474599123e9 1.4013548293211923e9
-                     1.7902650081599138e9 2.016569666682126e9  1.790379360572362e9
-                     1.3937127669128556e9 1.3505349580912094e9 1.3934168377493184e9]
+                    [1.35257193796979e9 1.3112254944853191e9 1.3525448385844798e9
+                     1.7383632661402326e9 1.9571251417867596e9 1.7385247019409044e9
+                     1.352382919812123e9 1.3103077614483771e9 1.3520848636655023e9]
 
         elseif landscape == "wall_landmark2" && β == 0.2
             @test ConScape.RSP_betweenness_kweighted(h)[9:11, 30:32] ≈
@@ -174,8 +176,8 @@ end
           0   0 1/4 1/4
           0   0 1/4 1/4]
 
-    g1 = ConScape.Grid(size(l1)..., landscape=ConScape.adjacency(l1))
-    g2 = ConScape.Grid(size(l2)..., landscape=ConScape.adjacency(l2))
+    g1 = ConScape.Grid(size(l1)..., landscape=ConScape.graph_matrix_from_raster(l1))
+    g2 = ConScape.Grid(size(l2)..., landscape=ConScape.graph_matrix_from_raster(l2))
 
     @test !ConScape.is_connected(g1)
     @test ConScape.is_connected(g2)
@@ -190,10 +192,10 @@ end
          1/4 0 1/4 1/4
          1/4 0 1/4 1/4]
 
-    g = ConScape.Grid(size(l)..., landscape=ConScape.adjacency(l,neighbors=ConScape.N4))
+    g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4))
 
     @test all(ConScape.least_cost_distance(g, (4,4)) .=== [Inf  NaN  1.0   0.75
-                                                           Inf  NaN  0.75  0.5 
+                                                           Inf  NaN  0.75  0.5
                                                            Inf  NaN  0.5   0.25
                                                            Inf  NaN  0.25  0.0])
 end
@@ -202,7 +204,7 @@ end
     l = rand(4, 4)
     q = rand(4, 4)
 
-    g = ConScape.Grid(size(l)..., landscape=ConScape.adjacency(l))
+    g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l))
     h = ConScape.Habitat(g, β=0.2)
 
     @test ConScape.RSP_betweenness_kweighted(h) == ConScape.RSP_betweenness_kweighted(h; invcost=t -> exp(-t))
@@ -244,5 +246,5 @@ end
                                qualities=copy(reshape(collect(m*n:-1:1), n, m)')
                                )
     h = ConScape.Habitat(g, β=0.2)
-    @test sum(ConScape.RSP_criticality(h).nzval .< 0) == 0
+    @test sum(ConScape.RSP_criticality(h).nzval .< -1e-5) == 0
 end
