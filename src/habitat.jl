@@ -14,7 +14,11 @@ end
 Construct a Habitat from a `g::Grid` based on a `cost::Cost` type and the temperature `β::Real`.
 """
 
-function Habitat(g::Grid, C::SparseMatrixCSC{Float64,Int}; cost::Cost=MinusLog(), β=nothing)
+function Habitat(g::Grid;
+                 cost::Cost=MinusLog(),
+                 β=nothing,
+                 C::SparseMatrixCSC{Float64,Int}=mapnz(cost, g.A))
+
     Pref = _Pref(g.A)
     W    = _W(Pref, β, C)
     @debug("Computing fundamental matrix of non-absorbing paths (Z). Please be patient...")
@@ -26,13 +30,6 @@ function Habitat(g::Grid, C::SparseMatrixCSC{Float64,Int}; cost::Cost=MinusLog()
                                  length(targetnodes)))
     return Habitat(g, cost, β, C, Pref, W, Z)
 end
-
-function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
-    C    = mapnz(cost, g.A)
-    return Habitat(g, C, cost=cost, β=β)
-end
-
-
 
 function Base.show(io::IO, ::MIME"text/plain", h::Habitat)
     print(io, summary(h), " of size ", h.g.nrows, "x", h.g.ncols)
