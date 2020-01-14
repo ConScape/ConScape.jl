@@ -7,7 +7,7 @@ function perm_wall_sim(
     wallposition::Float64=0.5,
     corridorwidths::NTuple{N,Int}=(3,3),
     corridorpositions=(0.35,0.7),
-    impossible_affinity::Number=1e-20,
+    impossible_affinity::Real=1e-20,
     kwargs...) where N
 
     # 1. initialize landscape
@@ -156,6 +156,10 @@ function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, i
     if impossible_affinity > 0
         A[node_list_idx,:] = impossible_affinity*(A[node_list_idx,:] .> 0)
         A[:,node_list_idx] = impossible_affinity*(A[:,node_list_idx] .> 0)
+        for i in node_list
+            g.source_qualities[i] .= 0
+            g.target_qualities[i] .= 0
+        end
     elseif impossible_affinity == 0
         # Delete the nodes completely:
         num_of_removed = length(node_list_idx)
