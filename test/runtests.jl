@@ -59,8 +59,8 @@ datadir = joinpath(@__DIR__(), "..", "data")
         end
     end
 
-    @testset "test adjacency creation with $nn_str neighbors, $w weighting and $mt" for
-        (nn,nn_str) in ((ConScape.N4, "N4"), (ConScape.N8, "N8")),
+    @testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
+        nn in (ConScape.N4, ConScape.N8),
             w in (ConScape.TargetWeight, ConScape.AverageWeight),
                 mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
 
