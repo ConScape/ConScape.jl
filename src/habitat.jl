@@ -95,10 +95,16 @@ end
 Compute full RSP betweenness of all edges weighted by source and target qualities. Returns a
 sparse matrix where element (i,j) is the betweenness of edge (i,j).
 """
-function RSP_edge_betweenness_kweighted(h::Habitat; invcost=inv(h.cost))
+function RSP_edge_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
 
     similarities = map(invcost, RSP_dissimilarities(h))
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
+
+    if diagvalue !== nothing
+        for (j, i) in enumerate(targetnodes)
+            similarities[i, j] = diagvalue
+        end
+    end
 
     betmatrix = RSP_edge_betweenness_kweighted(
         h.W,

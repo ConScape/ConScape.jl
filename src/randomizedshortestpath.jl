@@ -47,7 +47,6 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
 end
 
 
-
 function RSP_betweenness_kweighted(W::SparseMatrixCSC,
                                    Z::AbstractMatrix,  # Fundamental matrix of non-absorbing paths
                                    qˢ::AbstractVector, # Source qualities
@@ -96,23 +95,40 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
     Zⁱ = inv.(Z)
     Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
 
-    qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
-
-    edge_betweennesses = copy(W)
-
-    sumqˢ = sum(qˢ)
+    # FIXME: This should be only done when actually size(Z,2) < size(Z,1)/K where K ≈ 10 or so.
+    # Otherwise we just compute many of the elements of Z twice...
+    if size(Z,2) < size(Z,1)
+        Zrows = ((I - W')\Matrix(sparse(targetnodes,
+                                       1:length(targetnodes),
+                                       1.0,
+                                       size(W, 1),
+                                       length(targetnodes))))'
+    else
+        Zrows = Z
+    end
 
     n = size(W,1)
 
-    ZᵀZⁱ = Vector{Float64}(undef,n)
+
+    diagZⁱ = [Zⁱ[targetnodes[t], t] for t in 1:length(targetnodes)]
+    sumqˢ = sum(qˢ)
+
+    Zrows = Zrows .* (sumqˢ*qᵗ.*diagZⁱ)
+
+    qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
+
+    QZⁱᵀZ = qˢZⁱqᵗ'/(I - W)
+
+    RHS = QZⁱᵀZ-Zrows
+
+    edge_betweennesses = copy(W)
 
     for i in axes(W, 1)
-        ZᵀZⁱ_minus_diag = Z[:,i]'*qˢZⁱqᵗ .- sumqˢ.* (Z[:,i].*diag(Zⁱ).*qᵗ)'
+        # ZᵀZⁱ_minus_diag = Z[:,i]'*qˢZⁱqᵗ .- sumqˢ.* (Z[:,i].*diag(Zⁱ).*qᵗ)'
 
-        i_idx = findall(W[i,:].>0)
-        for j in i_idx
-
-            edge_betweennesses[i,j] = W[i,j] .* (ZᵀZⁱ_minus_diag * Z[j,:])[1]
+        for j in findall(W[i,:].>0)
+            # edge_betweennesses[i,j] = W[i,j] .* Zqt[j,:]'* (ZᵀZⁱ_minus_diag * Z[j,:])[1]
+            edge_betweennesses[i,j] = W[i,j] .* (Z[j,:]' * RHS[:,i])[1]
         end
     end
 
@@ -129,32 +145,36 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
     Zⁱ = inv.(Z)
     Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
 
-    KZⁱ = qˢ .* K .* qᵗ'
-    k = vec(sum(KZⁱ, dims=1))
+    K̂ = qˢ .* K .* qᵗ'
+    k̂ = vec(sum(K̂, dims=1))
+    K̂ .*= Zⁱ
 
-    qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
 
-    bet_matrix = copy(W)
+    K̂ᵀZ = K̂'/(I - W)
 
-    sumqˢ = sum(qˢ)
+    k̂diagZⁱ = k̂.*[Zⁱ[targetnodes[t], t] for t in 1:length(targetnodes)]
 
-    n = size(W,1)
+    Zrows = (I - W')\Matrix(sparse(targetnodes,
+                                   1:length(targetnodes),
+                                   1.0,
+                                   size(W, 1),
+                                   length(targetnodes)))
+    k̂diagZⁱZ = k̂diagZⁱ .* Zrows'
 
-    ZᵀZⁱ = Vector{Float64}(undef,n)
+    K̂ᵀZ_minus_diag = K̂ᵀZ - k̂diagZⁱZ
 
-    KZⁱ .*= Zⁱ
+    edge_betweennesses = copy(W)
 
     for i in axes(W, 1)
-        ZᵀZⁱ_minus_diag = Z[:,i]'*KZⁱ .- (k.*Z[:,i].*diag(Zⁱ))'
+        # ZᵀZⁱ_minus_diag = ZᵀKZⁱ[i,:] .- (k.*Z[targetnodes,i].*(Zⁱ[targetnodes,targetnodes]))'
+        # ZᵀZⁱ_minus_diag = Z[:,i]'*K̂ .- (k.*Z[targetnodes,i].*diag(Zⁱ))'
 
-        i_idx = findall(W[i,:].>0)
-        for j in i_idx
-
-            bet_matrix[i,j] = W[i,j] .* (ZᵀZⁱ_minus_diag * Z[j,:])[1]
+        for j in findall(W[i,:].>0)
+            edge_betweennesses[i,j] = W[i,j] .* (Z[j,:]'*K̂ᵀZ_minus_diag[:,i])[1]
         end
     end
 
-    return bet_matrix
+    return edge_betweennesses
 end
 
 
