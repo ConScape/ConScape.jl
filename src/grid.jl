@@ -86,7 +86,7 @@ function _targetidx_and_nodes(g::Grid)
     return targetidx, targetnodes
 end
 
-function plot_values(g::Grid, values::AbstractMatrix; kwargs...)
+function plot_values(g::Grid, values::Vector; kwargs...)
     canvas = fill(NaN, g.nrows, g.ncols)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
