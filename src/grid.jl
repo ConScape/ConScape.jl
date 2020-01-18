@@ -86,13 +86,30 @@ function _targetidx_and_nodes(g::Grid)
     return targetidx, targetnodes
 end
 
-function plot_outdegrees(g::Grid)
+function plot_values(g::Grid, values::Vector; kwargs...)
+    canvas = fill(NaN, g.nrows, g.ncols)
+    for (i,v) in enumerate(values)
+        canvas[g.id_to_grid_coordinate_list[i]] = v
+    end
+    heatmap(canvas, yflip=true, axis=nothing, border=:none; kwargs...)
+end
+
+function plot_outdegrees(g::Grid; kwargs...)
     values = sum(g.A, dims=2)
     canvas = zeros(g.nrows, g.ncols)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
-    heatmap(canvas, yflip=true)
+    heatmap(canvas, yflip=true, axis=nothing, border=:none; kwargs...)
+end
+
+function plot_indegrees(g::Grid; kwargs...)
+    values = sum(g.A, dims=1)
+    canvas = zeros(g.nrows, g.ncols)
+    for (i,v) in enumerate(values)
+        canvas[g.id_to_grid_coordinate_list[i]] = v
+    end
+    heatmap(canvas, yflip=true, axis=nothing, border=:none; kwargs...)
 end
 
 """

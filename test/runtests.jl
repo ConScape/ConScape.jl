@@ -59,8 +59,8 @@ datadir = joinpath(@__DIR__(), "..", "data")
         end
     end
 
-    @testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
-        nn in (ConScape.N4, ConScape.N8),
+    @testset "test adjacency creation with $nn_str neighbors, $w weighting and $mt" for
+        (nn,nn_str) in ((ConScape.N4, "N4"), (ConScape.N8, "N8")),
             w in (ConScape.TargetWeight, ConScape.AverageWeight),
                 mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
 
@@ -74,10 +74,18 @@ datadir = joinpath(@__DIR__(), "..", "data")
         # FIXME Enable all combinations
         if landscape == "sno_2000" && β == 0.1
             # This is a regression test based on values that we currently believe to be correct
-            bet = ConScape.RSP_betweenness_kweighted(h)
+            bet = ConScape.RSP_betweenness_kweighted(h, diagvalue=1.)
             @test bet[21:23, 31:33] ≈ [0.04063917813171917 0.06843246983487516 0.08862506281612659
                                        0.03684621201600996 0.10352876485995872 0.1255652231824746
                                        0.03190640567704462 0.13832814750469344 0.1961393152256104]
+
+            # Check that summed edge betweennesses corresponds to node betweennesses:
+            bet_edge = ConScape.RSP_edge_betweenness_kweighted(h, diagvalue=1.)
+            bet_edge_sum = fill(NaN, h.g.nrows, h.g.ncols)
+            for (i, v) in enumerate(sum(bet_edge,dims=2))
+                bet_edge_sum[h.g.id_to_grid_coordinate_list[i]] = v
+            end
+            @test bet_edge_sum[21:23, 31:33] ≈ bet[21:23, 31:33]
 
             # This is a regression test based on values that we currently believe to be correct
             bet = ConScape.RSP_betweenness_kweighted(h, invcost=t -> exp(-t/50))
@@ -85,8 +93,23 @@ datadir = joinpath(@__DIR__(), "..", "data")
                                        826.0710054834001 1883.0940077789735 1935.4450344630702
                                        676.9212075214159 2228.2700913772774 2884.0409495023364]
 
+
             @test ConScape.RSP_betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
                     ConScape.RSP_betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
+
+            @test ConScape.RSP_edge_betweenness_kweighted(h, invcost=one) ≈
+                    ConScape.RSP_edge_betweenness_qweighted(h)
+
+        elseif landscape == "wall_full"
+            # Check that summed edge betweennesses corresponds to node betweennesses:
+            bet_node = ConScape.RSP_betweenness_qweighted(h)
+            bet_edge = ConScape.RSP_edge_betweenness_qweighted(h)
+            bet = fill(NaN, h.g.nrows, h.g.ncols)
+            for (i, v) in enumerate(sum(bet_edge,dims=2))
+                bet[h.g.id_to_grid_coordinate_list[i]] = v
+            end
+
+            @test bet ≈ bet_node
         end
     end
 
@@ -111,6 +134,12 @@ datadir = joinpath(@__DIR__(), "..", "data")
         elseif landscape == "sno_2000" && β == 0.1
             @test ConScape.ConScape.mean_lc_kl_divergence(h) ≈ 1.5660600315073947e6
         end
+    end
+
+    @testset "Grid plotting" begin
+        @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
+        @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
+        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
     end
 
     @testset "Show methods" begin
@@ -247,4 +276,30 @@ end
                                )
     h = ConScape.Habitat(g, β=0.2)
     @test sum(ConScape.RSP_criticality(h).nzval .< -1e-5) == 0
+end
+
+
+@testset "Sensitivity" begin
+    m, n = 6,8
+    # g = ConScape.perm_wall_sim(m, n, scaling=0.35, corridorwidths=(3,), corridorpositions=(0.55,))#,
+                               # Qualities decrease by row
+                               # qualities=copy(reshape(collect(m*n:-1:1), n, m)')
+                               # )
+
+    # g = ConScape.Grid(m, n, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+    g = ConScape.Grid(m, n) #, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+    # g.A = 0.35 * g.A
+
+    h = ConScape.Habitat(g, β=0.2)
+
+    S_comp = ConScape.LF_sensitivity(h)[1]
+    S_simu = ConScape.LF_sensitivity_simulation(h)[1]
+
+    @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
+
+
+    S_comp = ConScape.LF_power_mean_sensitivity(h)[1]
+    S_simu = ConScape.LF_power_mean_sensitivity_simulation(h)[1]
+
+    @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
 end

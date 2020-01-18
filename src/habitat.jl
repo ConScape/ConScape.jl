@@ -13,11 +13,15 @@ end
 
 Construct a Habitat from a `g::Grid` based on a `cost::Cost` type and the temperature `β::Real`.
 """
-function Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)
-    C    = mapnz(cost, g.A)
+
+function Habitat(g::Grid;
+                 cost::Cost=MinusLog(),
+                 β=nothing,
+                 C::SparseMatrixCSC{Float64,Int}=mapnz(cost, g.A))
+
     Pref = _Pref(g.A)
     W    = _W(Pref, β, C)
-    @debug("Compututing fundamental matrix of non-absorbing paths (Z). Please be patient...")
+    @debug("Computing fundamental matrix of non-absorbing paths (Z). Please be patient...")
     targetidx, targetnodes = _targetidx_and_nodes(g)
     Z    = (I - W)\Matrix(sparse(targetnodes,
                                  1:length(targetnodes),
@@ -61,6 +65,60 @@ function RSP_betweenness_qweighted(h::Habitat)
     return bet
 end
 
+
+
+"""
+    RSP_betweenness_qweighted(h::Habitat)::Matrix{Float64}
+
+Compute full RSP betweenness of all edges weighted by source and target qualities. Returns a
+sparse matrix where element (i,j) is the betweenness of edge (i,j).
+"""
+function RSP_edge_betweenness_qweighted(h::Habitat)
+
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+
+    betmatrix = RSP_edge_betweenness_qweighted(
+        h.W,
+        h.Z,
+        [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
+        [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
+        targetnodes)
+
+    return betmatrix
+end
+
+
+
+"""
+    RSP_betweenness_kweighted(h::Habitat)::Matrix{Float64}
+
+Compute full RSP betweenness of all edges weighted by source and target qualities. Returns a
+sparse matrix where element (i,j) is the betweenness of edge (i,j).
+"""
+function RSP_edge_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
+
+    similarities = map(invcost, RSP_dissimilarities(h))
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+
+    if diagvalue !== nothing
+        for (j, i) in enumerate(targetnodes)
+            similarities[i, j] = diagvalue
+        end
+    end
+
+    betmatrix = RSP_edge_betweenness_kweighted(
+        h.W,
+        h.Z,
+        [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
+        [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
+        similarities,
+        targetnodes)
+
+    return betmatrix
+end
+
+
+
 """
     RSP_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost)])::Matrix{Float64}
 
@@ -69,11 +127,17 @@ cost function can be passed. The function will be applied elementwise to the mat
 dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the dissimilarities.
 """
-function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost))
+function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
 
     similarities = map(invcost, RSP_dissimilarities(h))
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
+
+    if diagvalue !== nothing
+        for (j, i) in enumerate(targetnodes)
+            similarities[i, j] = diagvalue
+        end
+    end
 
     betvec = RSP_betweenness_kweighted(h.W,
                                        h.Z,
@@ -314,4 +378,174 @@ function RSP_criticality(h::Habitat;
                            copy(h.g.target_qualities.colptr),
                            copy(h.g.target_qualities.rowval),
                            critvec)
+end
+
+# using Base.Threads
+
+function LF_sensitivity(h::Habitat; invcost=inv(h.cost), exp_prox_scaling=1.)
+
+    if h.cost == Inv() && exp_prox_scaling !== 1.
+        throw(ArgumentError("exp_prox_scaling can be other than 1 only when using exponential proximity transformation"))
+    end
+
+    # Derivative of costs w.r.t. affinities:
+    # TODO: Implement these as properties of Costs:
+    K = map(invcost, RSP_dissimilarities(h)./exp_prox_scaling)
+    n = length(h.g.id_to_grid_coordinate_list)
+    K[1:n+1:end] .= 1
+    K[isinf.(K)] .= 0
+
+    if h.cost == MinusLog()
+        diff_C_A = -mapnz(inv, h.g.A)
+        diff_K_D = -K./exp_prox_scaling
+    elseif h.cost == Inv()
+        diff_C_A = -mapnz(x -> inv(x^2), h.g.A)
+        diff_K_D = -K.^2
+    end
+
+    # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
+    # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
+
+    qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+    qᵗ = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+
+    landmarks = 1:length(h.g.id_to_grid_coordinate_list) # TODO: Include consideration of landmarks
+
+    S_e_total, S_e_aff, S_e_cost = LF_sensitivity(qˢ, qᵗ, h.g.A, h.C, h.β, diff_C_A, diff_K_D, h.W, h.Z, invcost, landmarks)
+
+    node_sensitivity_vec = vec(sum(S_e_total, dims=1))
+
+
+    node_sensitivity_matrix = Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                                            [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                                            node_sensitivity_vec,
+                                            h.g.nrows,
+                                            h.g.ncols))
+
+    return node_sensitivity_matrix, S_e_total, S_e_aff, S_e_cost
+
+end
+
+
+
+
+
+
+
+
+function LF_power_mean_sensitivity(h::Habitat; invcost=inv(h.cost))
+    # Now assumes h.cost = MinusLog
+    # TODO: Implement the derivatives of a2c and d2k transformations
+
+    qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+    qᵗ = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+
+    if h.cost == MinusLog()
+        diff_C_A = -mapnz(inv, h.g.A)
+    elseif h.cost == Inv()
+        diff_C_A = mapnz(x -> x^2, h.g.A)
+        diff_C_A = -mapnz(inv, diff_C_A)
+    end
+    # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
+    # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
+
+    landmarks = 1:length(h.g.id_to_grid_coordinate_list) # TODO: Include consideration of landmarks
+    S_e_total, S_e_aff, S_e_cost = LF_power_mean_sensitivity(qˢ, qᵗ, h.g.A, h.β, diff_C_A, h.W, h.Z, landmarks)
+
+    node_sensitivity_vec = vec(sum(S_e_total, dims=1))
+
+    node_sensitivity_matrix = Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                                            [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                                            node_sensitivity_vec,
+                                            h.g.nrows,
+                                            h.g.ncols))
+
+    return node_sensitivity_matrix, S_e_total, S_e_aff, S_e_cost
+
+end
+
+function LF_sensitivity_simulation(h::Habitat)
+
+    LF_orig = ConScape.RSP_functionality(h)
+    g = h.g
+
+    epsi = 1e-8
+
+    edge_sensitivities = copy(g.A)
+
+    n = length(g.id_to_grid_coordinate_list)
+    for i in 1:n
+        Succ_i = findall(g.A[i,:].>0)
+
+        for j in Succ_i
+            gnew = deepcopy(g)
+            gnew.A[i,j] += epsi
+            # gnew.A[i,j] *= (1+epsi)
+
+            hnew = ConScape.Habitat(gnew, β=h.β)
+            LF_new = ConScape.RSP_functionality(hnew)
+            edge_sensitivities[i,j] = sum(LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
+        end
+    end
+
+    node_sensitivities = vec(sum(edge_sensitivities, dims=1))
+
+
+    return Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                  [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                  node_sensitivities,
+                  h.g.nrows,
+                  h.g.ncols)),
+           edge_sensitivities
+
+end
+
+
+
+function LF_power_mean_sensitivity_simulation(h::Habitat)
+
+    g = h.g
+
+    qˢ = [g.source_qualities[i] for i in g.id_to_grid_coordinate_list]
+    qᵗ = [g.target_qualities[i] for i in g.id_to_grid_coordinate_list]
+
+    K = copy(h.Z)
+    K ./= diag(h.Z)'
+    K .^= inv(h.β) # \mathcal{Z}^{1/β}
+    LF_orig = ConScape.RSP_functionality(qˢ, qᵗ, K)
+
+    epsi = 1e-8
+
+    edge_sensitivities = copy(g.A)
+
+    n = length(g.id_to_grid_coordinate_list)
+    @showprogress for i in 1:n
+        Succ_i = findall(g.A[i,:].>0)
+
+        for j in Succ_i
+            gnew = deepcopy(g)
+            gnew.A[i,j] += epsi
+            # gnew.A[i,j] *= (1+epsi)
+
+            hnew = ConScape.Habitat(gnew, β=h.β)
+
+            Snew = copy(hnew.Z)
+            Snew ./= diag(hnew.Z)'
+            Snew .^= inv(hnew.β) # \mathcal{Z}^{1/β}
+            LF_new = ConScape.RSP_functionality(qˢ, qᵗ, Snew)
+
+            edge_sensitivities[i,j] = sum(LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
+        end
+    end
+
+    node_sensitivities = vec(sum(edge_sensitivities, dims=1))
+
+
+    return Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                  [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                  node_sensitivities,
+                  g.nrows,
+                  g.ncols)),
+           edge_sensitivities
+
 end
