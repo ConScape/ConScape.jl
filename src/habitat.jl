@@ -1,3 +1,16 @@
+abstract type Cost end
+struct MinusLog <: Cost end
+struct ExpMinus <: Cost end
+struct Inv      <: Cost end
+
+(::MinusLog)(x::Number) = -log(x)
+(::ExpMinus)(x::Number) = exp(-x)
+(::Inv)(x::Number)      = inv(x)
+
+Base.inv(::MinusLog) = ExpMinus()
+Base.inv(::ExpMinus) = MinusLog()
+Base.inv(::Inv)      = Inv()
+
 struct Habitat
     g::Grid
     cost::Cost

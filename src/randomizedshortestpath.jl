@@ -1,15 +1,3 @@
-abstract type Cost end
-struct MinusLog <: Cost end
-struct ExpMinus <: Cost end
-struct Inv      <: Cost end
-
-(::MinusLog)(x::Number) = -log(x)
-(::ExpMinus)(x::Number) = exp(-x)
-(::Inv)(x::Number)      = inv(x)
-
-Base.inv(::MinusLog) = ExpMinus()
-Base.inv(::ExpMinus) = MinusLog()
-Base.inv(::Inv)      = Inv()
 
 _Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
 
