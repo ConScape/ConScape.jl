@@ -3,6 +3,7 @@ struct MinusLog     <: Cost end
 struct ExpMinus     <: Cost end
 struct Inv          <: Cost end
 struct OddsAgainst  <: Cost end
+struct OddsFor      <: Cost end
 
 (::MinusLog)(x::Number)     = -log(x)
 (::ExpMinus)(x::Number)     = exp(-x)
