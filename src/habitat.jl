@@ -15,7 +15,7 @@ Base.inv(::MinusLog)     = ExpMinus()
 Base.inv(::ExpMinus)     = MinusLog()
 Base.inv(::Inv)          = Inv()
 Base.inv(::OddsAgainst)  = OddsFor()
-Base.inv(::OddsFor)  = Inv()
+Base.inv(::OddsFor)      = OddsAgainst()
 
 struct Habitat
     g::Grid
