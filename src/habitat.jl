@@ -9,7 +9,7 @@ struct OddsFor      <: Cost end
 (::ExpMinus)(x::Number)     = exp(-x)
 (::Inv)(x::Number)          = inv(x)
 (::OddsAgainst)(x::Number)  = inv(x) - 1
-(::OddsFor)(x::Number)      = x./(1. - x)
+(::OddsFor)(x::Number)      = x/(1 - x)
 
 
 Base.inv(::MinusLog)     = ExpMinus()
