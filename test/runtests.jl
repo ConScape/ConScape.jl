@@ -308,6 +308,8 @@ end
     S_simu_pm = ConScape.LF_power_mean_sensitivity_simulation(h, testnodes=testnodes)
 
     @test maximum(abs.(S_testnodes_pm - S_simu_pm)./abs.(S_testnodes_pm)) < 1e-5
+
+    @test_throws ErrorException ConScape.LF_power_mean_sensitivity_simulation(ConScape.Habitat(g, β=0.5, cost=ConScape.Inv()))
 end
 
 
