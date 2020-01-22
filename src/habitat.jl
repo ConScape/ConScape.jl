@@ -474,8 +474,6 @@ function LF_sensitivity(h::Habitat; invcost=inv(h.cost), exp_prox_scaling=1.)
 end
 
 
-
-
 function LF_power_mean_sensitivity(h::Habitat; invcost=inv(h.cost))
     # Now assumes h.cost = MinusLog
 
