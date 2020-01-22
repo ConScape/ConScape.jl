@@ -303,3 +303,20 @@ end
 
     @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
 end
+
+
+@testset "Cost functions" begin
+    l = rand(4, 4)
+
+    for c in [ConScape.MinusLog(),
+              ConScape.ExpMinus(),
+              ConScape.Inv(),
+              ConScape.OddsAgainst(),
+              ConScape.OddsFor()
+              ]
+
+        g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l))
+        h = ConScape.Habitat(g, β=0.2)
+        @test h isa ConScape.Habitat
+    end
+end
