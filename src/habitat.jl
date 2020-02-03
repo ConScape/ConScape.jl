@@ -198,7 +198,20 @@ function RSP_dissimilarities(h::Habitat)
     return RSP_dissimilarities(h.W, h.C, h.Z, targetnodes)
 end
 
-RSP_free_energy_distance(h::Habitat) = RSP_free_energy_distance(h.Z, h.β)
+function RSP_free_energy_distance(h::Habitat)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+    return RSP_free_energy_distance(h.Z, h.β, targetidx)
+end
+
+function RSP_survival_probability(h::Habitat)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+    return RSP_survival_probability(h.Z, h.β, targetidx)
+end
+
+function RSP_power_mean_proximity(h::Habitat)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+    return RSP_power_mean_proximity(h.Z, h.β, targetidx)
+end
 
 """
     mean_kl_divergence(h::Habitat)::Float64
