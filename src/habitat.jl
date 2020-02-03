@@ -53,7 +53,12 @@ function Habitat(g::Grid;
                                  1.0,
                                  size(C, 1),
                                  length(targetnodes)))
-    return Habitat(g, cost, β, C, Pref, W, Z)
+
+    if any(Z.==0)
+        @debug("Warning: Z-matrix contains zeros! Either the graph is disconnected or β might be too large.")
+    end
+
+    return Habitat(g, cost, d2k, β, C, Pref, W, Z)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", h::Habitat)
