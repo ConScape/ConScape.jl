@@ -198,7 +198,7 @@ function RSP_dissimilarities(W::SparseMatrixCSC,
 end
 
 RSP_free_energy_distance(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
-    -log.RSP_survival_probability(Z, β, landmarks)./β
+    -log.(RSP_survival_probability(Z, β, landmarks))./β
 
 RSP_survival_probability(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
     Z .* inv.([Z[i, j] for (j, i) in enumerate(landmarks)])'

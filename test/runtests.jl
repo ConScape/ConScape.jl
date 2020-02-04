@@ -228,6 +228,31 @@ end
                                                            Inf  NaN  0.25  0.0])
 end
 
+@testset "Other distances and proximities" begin
+    l = [1 1
+         1 1 ]
+
+    g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4))
+    C = ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4,matrix_type=ConScape.CostMatrix)
+    h = ConScape.Habitat(g, C=C, β=2.)
+
+    @test maximum(abs.(ConScape.RSP_free_energy_distance(h) - [0.0       1.34197   1.34197   2.34197
+                                                               1.34197   0.0       2.34197   1.34197
+                                                               1.34197   2.34197   0.0       1.34197
+                                                               2.34197   1.34197   1.34197   0.0     ])) < 1e-5
+
+    @test maximum(abs.(ConScape.RSP_survival_probability(h) - [1.0         0.0682931   0.0682931   0.00924246
+                                                               0.0682931   1.0         0.00924246  0.0682931
+                                                               0.0682931   0.00924246  1.0         0.0682931
+                                                               0.00924246  0.0682931   0.0682931   1.0    ])) < 1e-5
+
+    @test maximum(abs.(ConScape.RSP_power_mean_proximity(h) - [1.0        0.261329   0.261329   0.0961377
+                                                               0.261329   1.0        0.0961377  0.261329
+                                                               0.261329   0.0961377  1.0        0.261329
+                                                               0.0961377  0.261329   0.261329   1.0      ])) < 1e-5
+end
+
+
 @testset "custom scaling function in k-weighted betweenness" begin
     l = rand(4, 4)
     q = rand(4, 4)

@@ -205,17 +205,17 @@ end
 
 function RSP_free_energy_distance(h::Habitat)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
-    return RSP_free_energy_distance(h.Z, h.β, targetidx)
+    return RSP_free_energy_distance(h.Z, h.β, targetnodes)
 end
 
 function RSP_survival_probability(h::Habitat)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
-    return RSP_survival_probability(h.Z, h.β, targetidx)
+    return RSP_survival_probability(h.Z, h.β, targetnodes)
 end
 
 function RSP_power_mean_proximity(h::Habitat)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
-    return RSP_power_mean_proximity(h.Z, h.β, targetidx)
+    return RSP_power_mean_proximity(h.Z, h.β, targetnodes)
 end
 
 """
