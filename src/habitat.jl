@@ -308,14 +308,14 @@ function least_cost_kl_divergence(h::Habitat, target::Tuple{Int,Int})
 end
 
 """
-    RSP_functionality(h::Habitat; [connectivity_function=RSP_dissimilarities, invcost=inv(h.cost), self_similarity=nothing])::Matrix{Float64}
+    RSP_functionality(h::Habitat; [connectivity_function=RSP_dissimilarities, invcost=inv(h.cost), diagvalue=nothing])::Matrix{Float64}
 
 Compute RSP functionality of all nodes. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
 dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the dissimilarities.
 
-The optional `self_similarity` element specifies which value to use for the diagonal of the matrix
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
 of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
 When nothing is specified, the diagonal elements won't be adjusted.
 
@@ -327,7 +327,7 @@ then proximities are computed directly using it. The default is `RSP_dissimilari
 function RSP_functionality(h::Habitat;
                            connectivity_function=RSP_dissimilarities,
                            invcost=inv(h.cost),
-                           self_similarity=nothing)
+                           diagvalue=nothing)
 
     S = connectivity_function(h)
 
