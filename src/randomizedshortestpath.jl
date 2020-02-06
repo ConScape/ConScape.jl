@@ -1,4 +1,16 @@
 
+abstract type ConnectivityFunction <: Function end
+abstract type DistanceFunction <: ConnectivityFunction end
+abstract type ProximityFunction <: ConnectivityFunction end
+
+struct RSP_dissimilarities  <: DistanceFunction end
+struct RSP_free_energy_distance  <: DistanceFunction end
+
+struct RSP_survival_probability  <: ProximityFunction end
+struct RSP_power_mean_proximity  <: ProximityFunction end
+
+
+
 _Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
 
 function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
