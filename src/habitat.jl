@@ -53,8 +53,9 @@ function Habitat(g::Grid;
                                  1.0,
                                  size(C, 1),
                                  length(targetnodes)))
-    if any(Z.==0)
-        @debug("Warning: Z-matrix contains zeros! Either the graph is disconnected or β might be too large.")
+    # Check that values in Z are not too small:
+    if minimum(Z)*minimum(nonzeros(C.*W)) == 0
+        @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing β."
     end
 
     return Habitat(g, cost, β, C, Pref, W, Z)
