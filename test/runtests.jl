@@ -278,9 +278,9 @@ end
     @test sum(ConScape.RSP_criticality(h).nzval .< -1e-5) == 0
 end
 
-
+##
 @testset "Sensitivity" begin
-    m, n = 6,8
+    m, n = 12,16
     # g = ConScape.perm_wall_sim(m, n, scaling=0.35, corridorwidths=(3,), corridorpositions=(0.55,))#,
                                # Qualities decrease by row
                                # qualities=copy(reshape(collect(m*n:-1:1), n, m)')
@@ -288,35 +288,45 @@ end
 
     # g = ConScape.Grid(m, n, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
     g = ConScape.Grid(m, n) #, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
-    # g.A = 0.35 * g.A
+    g.A = 0.35 * g.A
 
-    h = ConScape.Habitat(g, β=0.2)
+    h = ConScape.Habitat(g, β=0.5)
 
+    testnodes = [5, 20, 39, 67, 92]
+    # testnodes = collect(1:5)
     S_comp = ConScape.LF_sensitivity(h)[1]
-    S_simu = ConScape.LF_sensitivity_simulation(h)[1]
+    S_testnodes = S_comp[[h.g.id_to_grid_coordinate_list[i] for i in testnodes]]
 
-    @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
+    S_simu = ConScape.LF_sensitivity_simulation(h,testnodes=testnodes)
 
 
-    S_comp = ConScape.LF_power_mean_sensitivity(h)[1]
-    S_simu = ConScape.LF_power_mean_sensitivity_simulation(h)[1]
+    @test maximum(abs.(S_testnodes - S_simu)./abs.(S_testnodes)) < 1e-5
 
-    @test sum(abs.(S_comp - S_simu)./maximum(S_comp)) ≈ 0 atol=1e-4
+
+    S_comp_pm = ConScape.LF_power_mean_sensitivity(h)[1]
+    S_testnodes_pm = S_comp_pm[[h.g.id_to_grid_coordinate_list[i] for i in testnodes]]
+
+    S_simu_pm = ConScape.LF_power_mean_sensitivity_simulation(h, testnodes=testnodes)
+
+    @test maximum(abs.(S_testnodes_pm - S_simu_pm)./abs.(S_testnodes_pm)) < 1e-5
 end
 
 
 @testset "Cost functions" begin
     l = rand(4, 4)
 
+    g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l))
+
     for c in [ConScape.MinusLog(),
               ConScape.ExpMinus(),
               ConScape.Inv(),
               ConScape.OddsAgainst(),
-              ConScape.OddsFor()
-              ]
+              ConScape.OddsFor()]
 
-        g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l))
-        h = ConScape.Habitat(g, β=0.2)
-        @test h isa ConScape.Habitat
+        h_c = ConScape.Habitat(g, β=0.2, cost=c)
+        @test h_c isa ConScape.Habitat
     end
+
+    g.A[1,2] = 1.1 # Causes negative cost for C[1,2] when cost=MinusLog
+    @test_throws ArgumentError ConScape.Habitat(g, β=0.1, cost=ConScape.MinusLog()) # should raise error, as C[1,2]<0
 end
