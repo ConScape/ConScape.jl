@@ -159,7 +159,7 @@ end
 
 
 """
-    RSP_edge_betweenness_kweighted(h::Habitat; [invcost=inv(h.d2k), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
+    RSP_edge_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
 
     Compute RSP betweenness of all edges weighted by qualities of source s and target t and the proximity between s and t. Returns a
     sparse matrix where element (i,j) is the betweenness of edge (i,j).
@@ -168,7 +168,7 @@ end
     of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
     When nothing is specified, the diagonal elements won't be adjusted.
 """
-function RSP_edge_betweenness_kweighted(h::Habitat; invcost=h.d2k, diagvalue=nothing)
+function RSP_edge_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
 
     similarities = map(invcost, RSP_dissimilarities(h))
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
