@@ -74,13 +74,13 @@ datadir = joinpath(@__DIR__(), "..", "data")
         # FIXME Enable all combinations
         if landscape == "sno_2000" && β == 0.1
             # This is a regression test based on values that we currently believe to be correct
-            bet = ConScape.RSP_betweenness_kweighted(h, self_similarity=1.)
+            bet = ConScape.RSP_betweenness_kweighted(h, diagvalue=1.)
             @test bet[21:23, 31:33] ≈ [0.04063917813171917 0.06843246983487516 0.08862506281612659
                                        0.03684621201600996 0.10352876485995872 0.1255652231824746
                                        0.03190640567704462 0.13832814750469344 0.1961393152256104]
 
             # Check that summed edge betweennesses corresponds to node betweennesses:
-            bet_edge = ConScape.RSP_edge_betweenness_kweighted(h, self_similarity=1.)
+            bet_edge = ConScape.RSP_edge_betweenness_kweighted(h, diagvalue=1.)
             bet_edge_sum = fill(NaN, h.g.nrows, h.g.ncols)
             for (i, v) in enumerate(sum(bet_edge,dims=2))
                 bet_edge_sum[h.g.id_to_grid_coordinate_list[i]] = v
@@ -115,7 +115,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
     @testset "RSP_functionality" begin
         # FIXME Enable all combinations
         if landscape == "wall_full" && β == 0.2
-            @test ConScape.ConScape.RSP_functionality(h, self_similarity=0.0)[28:30,58:60]' ≈
+            @test ConScape.ConScape.RSP_functionality(h, diagvalue=0.0)[28:30,58:60]' ≈
                 [11082.654882969266 2664.916100189486 89.420910249988
                  10340.977912804196 2465.918728844169 56.970111157896
                  11119.132467660969 2662.969749775032 33.280379014217]
