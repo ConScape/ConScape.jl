@@ -302,38 +302,37 @@ end
     @test sum(ConScape.RSP_criticality(h).nzval .< -1e-5) == 0
 end
 
-##
-@testset "Sensitivity" begin
-    m, n = 12,16
-    # g = ConScape.perm_wall_sim(m, n, scaling=0.35, corridorwidths=(3,), corridorpositions=(0.55,))#,
-                               # Qualities decrease by row
-                               # qualities=copy(reshape(collect(m*n:-1:1), n, m)')
-                               # )
 
-    # g = ConScape.Grid(m, n, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
-    g = ConScape.Grid(m, n) #, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+@testset "Sensitivity" for cost in (ConScape.MinusLog(), ConScape.Inv()),
+                           test_landmarks in (true, false)
+    m, n = 12,16
+
+    if test_landmarks
+        target_qualities = zeros(m,n)
+        target_qualities[:, Int(floor(n/2)-1):Int(ceil(n/2)+1)] .= 1.
+        target_qualities = sparse(target_qualities)
+        g = ConScape.Grid(m, n, target_qualities=target_qualities) #, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+    else
+        g = ConScape.Grid(m, n)
+    end
+
     g.A = 0.35 * g.A
 
-    h = ConScape.Habitat(g, β=0.5)
+    h = ConScape.Habitat(g, β=0.2, cost=cost)
 
-    testnodes = [5, 20, 39, 67, 92]
-    # testnodes = collect(1:5)
-    S_comp = ConScape.LF_sensitivity(h)[1]
-    S_testnodes = S_comp[[h.g.id_to_grid_coordinate_list[i] for i in testnodes]]
+    S_comp = ConScape.LF_sensitivity(h, diagvalue=1.)[1]
+    S_simu = ConScape.LF_sensitivity_simulation(h, diagvalue=1.)[1]
 
-    S_simu = ConScape.LF_sensitivity_simulation(h,testnodes=testnodes)
+    @test sum(abs.(S_comp - S_simu)./maximum(abs.(S_comp))) ≈ 0 atol=5e-3
 
 
-    @test maximum(abs.(S_testnodes - S_simu)./abs.(S_testnodes)) < 1e-5
+    S_comp = ConScape.LF_power_mean_sensitivity(h)[1]
+    S_simu = ConScape.LF_power_mean_sensitivity_simulation(h)[1]
 
+    @test sum(abs.(S_comp - S_simu)./maximum(abs.(S_comp))) ≈ 0 atol=5e-3
 
-    S_comp_pm = ConScape.LF_power_mean_sensitivity(h)[1]
-    S_testnodes_pm = S_comp_pm[[h.g.id_to_grid_coordinate_list[i] for i in testnodes]]
-
-    S_simu_pm = ConScape.LF_power_mean_sensitivity_simulation(h, testnodes=testnodes)
-
-    @test maximum(abs.(S_testnodes_pm - S_simu_pm)./abs.(S_testnodes_pm)) < 1e-5
 end
+
 
 
 @testset "Cost functions" begin

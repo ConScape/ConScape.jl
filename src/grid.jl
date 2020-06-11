@@ -91,7 +91,7 @@ function plot_values(g::Grid, values::Vector; kwargs...)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
-    heatmap(canvas, yflip=true, axis=nothing, border=:none; kwargs...)
+    heatmap(canvas, yflip=true, axis=nothing, border=:none, aspect_ratio=:equal; kwargs...)
 end
 
 function plot_outdegrees(g::Grid; kwargs...)

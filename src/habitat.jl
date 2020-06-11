@@ -451,7 +451,7 @@ end
 
 
 """
-    LF_sensitivity(h::Habitat; invcost=inv(h.cost), exp_prox_scaling=1.)::Matrix{Float64}
+    LF_sensitivity(h::Habitat; invcost=inv(h.cost), exp_prox_scaling::Real=1., unitless::Bool=true)::Matrix{Float64}
 
 Compute the sensitivity of Landscape Functionality with respect to perturbation of
 affinities on incoming edges of a node. Optionally, an inverse
@@ -462,22 +462,36 @@ passed the the inverse of the cost function is used for the conversion of the di
 The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
 of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
 When nothing is specified, the diagonal elements won't be adjusted.
+
+    exp_prox_scaling = the scaling parameter of the exponential cost function.
+    unitless = Boolean deciding whether the output is the "unitless" derivative, i.e., df / d logx, or the standard derivative
+
 """
 
 # using Base.Threads
 
-function LF_sensitivity(h::Habitat; invcost=inv(h.cost), exp_prox_scaling=1.)
+function LF_sensitivity(h::Habitat; invcost=inv(h.cost),
+                                    exp_prox_scaling::Real=1.,
+                                    unitless::Bool=true,
+                                    diagvalue=nothing)
 
     if h.cost == Inv() && exp_prox_scaling !== 1.
         throw(ArgumentError("exp_prox_scaling can be other than 1 only when using exponential proximity transformation"))
     end
 
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+
     # Derivative of costs w.r.t. affinities:
     # TODO: Implement these as properties of Costs:
     K = map(invcost, RSP_dissimilarities(h)./exp_prox_scaling)
-    n = length(h.g.id_to_grid_coordinate_list)
-    K[1:n+1:end] .= 1
-    K[isinf.(K)] .= 0
+
+    if diagvalue !== nothing
+        for (j, i) in enumerate(targetnodes)
+            K[i, j] = diagvalue
+        end
+    end
+
+    K[isinf.(K)] .= 0.
 
     if h.cost == MinusLog()
         diff_C_A = -mapnz(inv, h.g.A)
@@ -491,11 +505,16 @@ function LF_sensitivity(h::Habitat; invcost=inv(h.cost), exp_prox_scaling=1.)
     # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
 
     qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
-    qᵗ = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+    qᵗ = [h.g.target_qualities[i] for i in targetidx]
 
-    landmarks = 1:length(h.g.id_to_grid_coordinate_list) # TODO: Include consideration of landmarks
+    S_e_aff, S_e_cost = LF_sensitivity(h.g.A, h.C, h.β, h.W, h.Z, diff_K_D, qˢ, qᵗ, targetnodes)
 
-    S_e_total, S_e_aff, S_e_cost = LF_sensitivity(qˢ, qᵗ, h.g.A, h.C, h.β, diff_C_A, diff_K_D, h.W, h.Z, invcost, landmarks)
+    if unitless
+        S_e_aff = S_e_aff.*h.g.A
+        S_e_cost = S_e_cost.*h.g.A
+    end
+
+    S_e_total = S_e_aff .+ S_e_cost.*diff_C_A
 
     node_sensitivity_vec = vec(sum(S_e_total, dims=1))
 
@@ -514,8 +533,10 @@ end
 function LF_power_mean_sensitivity(h::Habitat; invcost=inv(h.cost))
     # Now assumes h.cost = MinusLog
 
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+
     qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
-    qᵗ = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+    qᵗ = [h.g.target_qualities[i] for i in targetidx]
 
     if h.cost == MinusLog()
         diff_C_A = -mapnz(inv, h.g.A)
@@ -526,8 +547,7 @@ function LF_power_mean_sensitivity(h::Habitat; invcost=inv(h.cost))
     # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
     # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
 
-    landmarks = 1:length(h.g.id_to_grid_coordinate_list) # TODO: Include consideration of landmarks
-    S_e_total, S_e_aff, S_e_cost = LF_power_mean_sensitivity(qˢ, qᵗ, h.g.A, h.β, diff_C_A, h.W, h.Z, landmarks)
+    S_e_total, S_e_aff, S_e_cost = LF_power_mean_sensitivity(qˢ, qᵗ, h.g.A, h.β, diff_C_A, h.W, h.Z, targetnodes)
 
     node_sensitivity_vec = vec(sum(S_e_total, dims=1))
 
@@ -541,91 +561,97 @@ function LF_power_mean_sensitivity(h::Habitat; invcost=inv(h.cost))
 
 end
 
-function LF_sensitivity_simulation(h::Habitat; testnodes::Vector=collect(1:length(h.g.id_to_grid_coordinate_list)))
+function LF_sensitivity_simulation(h::Habitat;
+    invcost=inv(h.cost),
+    exp_prox_scaling::Real=1.,
+    unitless::Bool=true,
+    diagvalue=nothing)
 
-    LF_orig = RSP_functionality(h)
+    LF_orig = ConScape.RSP_functionality(h, diagvalue=diagvalue)
     g = h.g
 
-    epsi = 1e-8
+    epsi = 1e-6
 
-    testnode_sensitivities = zeros(length(testnodes))
+    edge_sensitivities = copy(g.A)
 
-    for (j_ind,j) in enumerate(testnodes)
-        Pred_j = findall(g.A[:,j].>0)
-        edge_sensitivities = zeros(length(Pred_j))
+    n = length(g.id_to_grid_coordinate_list)
+    @showprogress for i in 1:n
+        Succ_i = findall(g.A[i,:].>0)
 
-        for (i_ind,i) in enumerate(Pred_j)
+        for j in Succ_i
             gnew = deepcopy(g)
             gnew.A[i,j] += epsi
             # gnew.A[i,j] *= (1+epsi)
 
-            hnew = Habitat(gnew, β=h.β)
-            LF_new = RSP_functionality(hnew)
-            edge_sensitivities[i_ind] = sum(LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
+            hnew = ConScape.Habitat(gnew, β=h.β, cost=h.cost)
+            LF_new = ConScape.RSP_functionality(hnew, diagvalue=diagvalue)
+            edge_sensitivities[i,j] = sum(LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
+            if unitless
+                edge_sensitivities[i,j] *= g.A[i,j]
+            end
         end
-        testnode_sensitivities[j_ind] = sum(edge_sensitivities)
     end
 
-    return testnode_sensitivities
+    node_sensitivities = vec(sum(edge_sensitivities, dims=1))
 
-    # return Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
-    #               [ij[2] for ij in h.g.id_to_grid_coordinate_list],
-    #               node_sensitivities,
-    #               h.g.nrows,
-    #               h.g.ncols)),
-    #        edge_sensitivities
 
+    return Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                  [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                  node_sensitivities,
+                  h.g.nrows,
+                  h.g.ncols)),
+           edge_sensitivities
 end
 
 
 
-function LF_power_mean_sensitivity_simulation(
-    h::Habitat;
-    testnodes::Vector=collect(1:length(h.g.id_to_grid_coordinate_list)))
+function LF_power_mean_sensitivity_simulation(h::Habitat)
 
     g = h.g
 
-    qˢ = [g.source_qualities[i] for i in g.id_to_grid_coordinate_list]
-    qᵗ = [g.target_qualities[i] for i in g.id_to_grid_coordinate_list]
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+
+    qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+    qᵗ = [h.g.target_qualities[i] for i in targetidx]
 
     K = copy(h.Z)
-    K ./= diag(h.Z)'
+    K ./= [h.Z[targetnodes[i],i] for i in 1:length(targetnodes)]'
     K .^= inv(h.β) # \mathcal{Z}^{1/β}
-    LF_orig = RSP_functionality(qˢ, qᵗ, K)
+    LF_orig = sum(ConScape.RSP_functionality(qˢ, qᵗ, K))
 
-    epsi = 1e-8
+    epsi = 1e-6
 
-    testnode_sensitivities = zeros(length(testnodes))
+    edge_sensitivities = copy(g.A)
 
-    for (j_ind,j) in enumerate(testnodes)
-        Pred_j = findall(g.A[:,j].>0)
-        edge_sensitivities = zeros(length(Pred_j))
+    n = length(g.id_to_grid_coordinate_list)
+    @showprogress for i in 1:n
+        Succ_i = findall(g.A[i,:].>0)
 
-        for (i_ind,i) in enumerate(Pred_j)
+        for j in Succ_i
             gnew = deepcopy(g)
             gnew.A[i,j] += epsi
             # gnew.A[i,j] *= (1+epsi)
 
-            hnew = Habitat(gnew, β=h.β)
+            hnew = ConScape.Habitat(gnew, β=h.β, cost=h.cost)
 
-            Snew = copy(hnew.Z)
-            Snew ./= diag(hnew.Z)'
-            Snew .^= inv(hnew.β) # \mathcal{Z}^{1/β}
-            LF_new = RSP_functionality(qˢ, qᵗ, Snew)
+            Knew = copy(hnew.Z)
+            Knew ./= [hnew.Z[targetnodes[i],i] for i in 1:length(targetnodes)]'
+            Knew .^= inv(hnew.β) # \mathcal{Z}^{1/β}
+            LF_new = sum(ConScape.RSP_functionality(qˢ, qᵗ, Knew))
 
-            edge_sensitivities[i_ind] = sum(LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
+            edge_sensitivities[i,j] = (LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
         end
-        testnode_sensitivities[j_ind] = sum(edge_sensitivities)
     end
 
-    return testnode_sensitivities
+    node_sensitivities = vec(sum(edge_sensitivities, dims=1))
 
-    #
-    # return Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
-    #               [ij[2] for ij in h.g.id_to_grid_coordinate_list],
-    #               node_sensitivities,
-    #               g.nrows,
-    #               g.ncols)),
-    #        edge_sensitivities
+
+    return Matrix(sparse([ij[1] for ij in h.g.id_to_grid_coordinate_list],
+                  [ij[2] for ij in h.g.id_to_grid_coordinate_list],
+                  node_sensitivities,
+                  g.nrows,
+                  g.ncols)),
+           edge_sensitivities
 
 end
+

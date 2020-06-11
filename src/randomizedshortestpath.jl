@@ -192,7 +192,7 @@ function RSP_dissimilarities(W::SparseMatrixCSC,
         throw(DimensionMismatch(""))
     end
     if axes(Z, 2) != axes(landmarks, 1)
-        throw(DimensionMismatch(""))
+        Z = Z[:,landmarks]
     end
 
     if size(Z, 1) == size(Z, 2)
@@ -227,7 +227,75 @@ end
 
 
 
-function LF_sensitivity(qˢ::AbstractVector, # Source qualities
+function LF_sensitivity(A::SparseMatrixCSC,
+                                   C::SparseMatrixCSC,
+                                   β::Real,
+                                   W::SparseMatrixCSC,
+                                   Z::AbstractMatrix,
+                                   K::AbstractMatrix,  # diff_K_D (but can be any weighting matrix)
+                                   qˢ::AbstractVector,
+                                   qᵗ::AbstractVector,
+                                   lmarks::AbstractVector)
+
+    Zⁱ = inv.(Z)
+    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
+
+    K̂ = qˢ .* K .* qᵗ'
+    k̂ = vec(sum(K̂, dims=1))
+    K̂ .*= Zⁱ # k̂ᵢⱼ = kᵢⱼ/zᵢⱼ
+
+    CW = C.*W
+
+    Q = (I-W)\(CW*Z)
+
+    C̄ᵣ = Q.*Zⁱ # Expected costs of REGULAR paths
+
+    K̂ᵀZ = K̂'/(I - W)
+
+    k̂diagZⁱ = k̂.*[Zⁱ[lmarks[t], t] for t in 1:length(lmarks)]
+
+    if size(Z,2) < size(Z,1)
+        I_L = Matrix(sparse(lmarks, 1:length(lmarks), 1.0, size(W, 1), length(lmarks)))
+        Zrows = I_L'/(I - W)
+    else
+        Zrows = Z
+    end
+
+    X3 = k̂diagZⁱ .* Zrows
+
+    k̂diagC̄Zⁱ = k̂diagZⁱ.*[C̄ᵣ[lmarks[t], t] for t in 1:length(lmarks)]
+    X1 = ((K̂.*C̄ᵣ)' - (K̂ᵀZ*CW) + (X3*CW))/(I-W) - k̂diagC̄Zⁱ .* Zrows # "X1- X2 - X4"
+
+    X3 .= K̂ᵀZ .- X3
+
+    kΣ = copy(W) # k-weighted negative covariance matrix
+    kB = copy(W) # k-weighted edge betweenness matrix
+
+    @showprogress 3 for i in axes(W, 1)
+        for j in findall(W[i,:].>0)
+            kB[i,j] *= (Z[j,:]'*X3[:,i])[1]
+            kΣ[i,j] *= (Z[j,:]'*X1[:,i])[1] - (Q[j,:]'*X3[:,i])[1] - C[i,j]*kB[i,j]/W[i,j]
+        end
+    end
+
+    # kB .*= W
+    # kΣ .*= W
+
+    kΣ_node = sum(kΣ, dims=2)
+    Ae = sum(A,dims=2)
+
+    S_cost = kB + β*kΣ
+
+    Idx = W.>0
+    Aⁱ = mapnz(x -> inv(x), A)
+    S_aff = (kΣ_node./Ae).*Idx - kΣ.*Aⁱ
+
+    return S_aff, S_cost
+end
+
+
+
+function LF_sensitivity_old(qˢ::AbstractVector, # Source qualities
                         qᵗ::AbstractVector, # Target qualities
                         A::SparseMatrixCSC,
                         C::SparseMatrixCSC,
@@ -346,7 +414,7 @@ function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
                                    landmarks::AbstractVector)
 
     K = copy(Z)
-    K ./= diag(Z)'
+    K ./= [Z[landmarks[i],i] for i in 1:length(landmarks)]'
     K .^= inv(β) # \mathcal{Z}^{1/β}
 
     rowsums = sum(A,dims=2)
@@ -357,8 +425,8 @@ function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
     bet_node_k = RSP_betweenness_kweighted(W, Z, qˢ, qᵗ, K, landmarks)
 
     Idx = A.>0
-    S_e_aff = copy(A)
-    S_e_aff[Idx] = (bet_edge_k[Idx]./A[Idx] .- (Idx.*(bet_node_k./rowsums))[Idx])./β
+    Aⁱ = ConScape.mapnz(inv, A)
+    S_e_aff = (bet_edge_k.*Aⁱ .- (bet_node_k./rowsums).*Idx)./β
 
     return S_e_aff .+ S_e_cost.*diff_C_A, S_e_aff, S_e_cost
 
