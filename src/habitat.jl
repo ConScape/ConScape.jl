@@ -53,6 +53,11 @@ function Habitat(g::Grid;
                                  1.0,
                                  size(C, 1),
                                  length(targetnodes)))
+    # Check that values in Z are not too small:
+    if minimum(Z)*minimum(nonzeros(C.*W)) == 0
+        @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing β."
+    end
+
     return Habitat(g, cost, β, C, Pref, W, Z)
 end
 
@@ -114,26 +119,26 @@ end
 
 
 """
-    RSP_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost), self_similarity=nothing])::SparseMatrixCSC{Float64,Int}
+    RSP_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
 
 Compute RSP betweenness of all nodes weighted with proximity. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
 dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the dissimilarities.
 
-    The optional `self_similarity` element specifies which value to use for the diagonal of the matrix
+    The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
     of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
     When nothing is specified, the diagonal elements won't be adjusted.
 """
-function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), self_similarity=nothing)
+function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
 
     similarities = map(invcost, RSP_dissimilarities(h))
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
-    if self_similarity !== nothing
+    if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
-            similarities[i, j] = self_similarity
+            similarities[i, j] = diagvalue
         end
     end
 
@@ -151,26 +156,29 @@ function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), self_similar
     return bet
 end
 
-"""
-    RSP_edge_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost), self_similarity=nothing])::SparseMatrixCSC{Float64,Int}
 
-Compute RSP betweenness of all edges weighted by source and target qualities. Returns a
-sparse matrix where element (i,j) is the betweenness of edge (i,j).
 
-The optional `self_similarity` element specifies which value to use for the diagonal of the matrix
-of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
-When nothing is specified, the diagonal elements won't be adjusted.
 """
-function RSP_edge_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), self_similarity=nothing)
+    RSP_edge_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
+
+    Compute RSP betweenness of all edges weighted by qualities of source s and target t and the proximity between s and t. Returns a
+    sparse matrix where element (i,j) is the betweenness of edge (i,j).
+
+    The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
+    of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
+    When nothing is specified, the diagonal elements won't be adjusted.
+"""
+function RSP_edge_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
 
     similarities = map(invcost, RSP_dissimilarities(h))
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
-    if self_similarity !== nothing
+    if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
-            similarities[i, j] = self_similarity
+            similarities[i, j] = diagvalue
         end
     end
+
 
     betmatrix = RSP_edge_betweenness_kweighted(
         h.W,
@@ -195,7 +203,20 @@ function RSP_dissimilarities(h::Habitat)
     return RSP_dissimilarities(h.W, h.C, h.Z, targetnodes)
 end
 
-RSP_free_energy_distance(h::Habitat) = RSP_free_energy_distance(h.Z, h.β)
+function RSP_free_energy_distance(h::Habitat)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+    return RSP_free_energy_distance(h.Z, h.β, targetnodes)
+end
+
+function RSP_survival_probability(h::Habitat)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+    return RSP_survival_probability(h.Z, h.β, targetnodes)
+end
+
+function RSP_power_mean_proximity(h::Habitat)
+    targetidx, targetnodes = _targetidx_and_nodes(h.g)
+    return RSP_power_mean_proximity(h.Z, h.β, targetnodes)
+end
 
 """
     mean_kl_divergence(h::Habitat)::Float64
@@ -288,27 +309,43 @@ function least_cost_kl_divergence(h::Habitat, target::Tuple{Int,Int})
 end
 
 """
-    RSP_functionality(h::Habitat; [invcost=inv(h.cost), self_similarity=nothing])::Matrix{Float64}
+    RSP_functionality(h::Habitat; [connectivity_function=RSP_dissimilarities, invcost=inv(h.cost), diagvalue=nothing])::Matrix{Float64}
 
 Compute RSP functionality of all nodes. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
 dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the dissimilarities.
 
-The optional `self_similarity` element specifies which value to use for the diagonal of the matrix
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
 of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
 When nothing is specified, the diagonal elements won't be adjusted.
-"""
-function RSP_functionality(h::Habitat; invcost=inv(h.cost), self_similarity=nothing)
 
-    S = RSP_dissimilarities(h)
-    map!(invcost, S, S)
+`connectivity_function` determines which function is used for computing the matrix of proximities.
+If `connectivity_function` is a `DistanceFunction`, then it is used for computing distances, which
+is converted to proximities using `invcost`. If `connectivity_function` is a `ProximityFunction`,
+then proximities are computed directly using it. The default is `RSP_dissimilarities`.
+"""
+function RSP_functionality(h::Habitat;
+                           connectivity_function=RSP_dissimilarities,
+                           invcost=inv(h.cost),
+                           diagvalue=nothing)
+
+    S = connectivity_function(h)
+
+    if connectivity_function <: DistanceFunction
+        map!(invcost, S, S)
+    end
+
+    return RSP_functionality(h, S, diagvalue=diagvalue)
+end
+
+function RSP_functionality(h::Habitat, S::Matrix; diagvalue::Union{Nothing,Real}=nothing)
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
-    if self_similarity !== nothing
+    if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
-            S[i, j] = self_similarity
+            S[i, j] = diagvalue
         end
     end
 
@@ -329,7 +366,7 @@ end
 function RSP_functionality(h::Habitat,
                            cell::CartesianIndex{2};
                            invcost=inv(h.cost),
-                           self_similarity=nothing,
+                           diagvalue=nothing,
                            avalue=floatmin(), # smallest non-zero value
                            qˢvalue=0.0,
                            qᵗvalue=0.0)
@@ -371,7 +408,7 @@ end
 """
     RSP_criticality(h::Habitat[;
                     invcost=inv(h.cost),
-                    self_similarity=nothing,
+                    diagvalue=nothing,
                     avalue=floatmin(),
                     qˢvalue=0.0,
                     qᵗvalue=0.0])
@@ -384,14 +421,14 @@ for the remaining arguments.
 """
 function RSP_criticality(h::Habitat;
                          invcost=inv(h.cost),
-                         self_similarity=nothing,
+                         diagvalue=nothing,
                          avalue=floatmin(),
                          qˢvalue=0.0,
                          qᵗvalue=0.0)
 
     targetidx = CartesianIndex.(findnz(h.g.target_qualities)[1:2]...)
     nl = length(targetidx)
-    reference_functionality = sum(RSP_functionality(h, invcost=invcost, self_similarity=self_similarity))
+    reference_functionality = sum(RSP_functionality(h, invcost=invcost, diagvalue=diagvalue))
     critvec = fill(reference_functionality, nl)
 
     @showprogress 1 "Computing criticality..." for i in 1:nl
@@ -399,7 +436,7 @@ function RSP_criticality(h::Habitat;
                             h,
                             targetidx[i];
                             invcost=invcost,
-                            self_similarity=self_similarity,
+                            diagvalue=diagvalue,
                             avalue=avalue,
                             qˢvalue=qˢvalue,
                             qᵗvalue=qᵗvalue))
@@ -422,7 +459,7 @@ cost function can be passed. The function will be applied elementwise to the mat
 dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the dissimilarities.
 
-The optional `self_similarity` element specifies which value to use for the diagonal of the matrix
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
 of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
 When nothing is specified, the diagonal elements won't be adjusted.
 """
@@ -472,8 +509,6 @@ function LF_sensitivity(h::Habitat; invcost=inv(h.cost), exp_prox_scaling=1.)
     return node_sensitivity_matrix, S_e_total, S_e_aff, S_e_cost
 
 end
-
-
 
 
 function LF_power_mean_sensitivity(h::Habitat; invcost=inv(h.cost))

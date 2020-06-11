@@ -59,8 +59,8 @@ datadir = joinpath(@__DIR__(), "..", "data")
         end
     end
 
-    @testset "test adjacency creation with $nn_str neighbors, $w weighting and $mt" for
-        (nn,nn_str) in ((ConScape.N4, "N4"), (ConScape.N8, "N8")),
+    @testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
+        nn in (ConScape.N4, ConScape.N8),
             w in (ConScape.TargetWeight, ConScape.AverageWeight),
                 mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
 
@@ -74,13 +74,13 @@ datadir = joinpath(@__DIR__(), "..", "data")
         # FIXME Enable all combinations
         if landscape == "sno_2000" && β == 0.1
             # This is a regression test based on values that we currently believe to be correct
-            bet = ConScape.RSP_betweenness_kweighted(h, self_similarity=1.)
+            bet = ConScape.RSP_betweenness_kweighted(h, diagvalue=1.)
             @test bet[21:23, 31:33] ≈ [0.04063917813171917 0.06843246983487516 0.08862506281612659
                                        0.03684621201600996 0.10352876485995872 0.1255652231824746
                                        0.03190640567704462 0.13832814750469344 0.1961393152256104]
 
             # Check that summed edge betweennesses corresponds to node betweennesses:
-            bet_edge = ConScape.RSP_edge_betweenness_kweighted(h, self_similarity=1.)
+            bet_edge = ConScape.RSP_edge_betweenness_kweighted(h, diagvalue=1.)
             bet_edge_sum = fill(NaN, h.g.nrows, h.g.ncols)
             for (i, v) in enumerate(sum(bet_edge,dims=2))
                 bet_edge_sum[h.g.id_to_grid_coordinate_list[i]] = v
@@ -92,7 +92,6 @@ datadir = joinpath(@__DIR__(), "..", "data")
             @test bet[21:23, 31:33] ≈ [980.5828087688377 1307.981162399926 1602.8445739784497
                                        826.0710054834001 1883.0940077789735 1935.4450344630702
                                        676.9212075214159 2228.2700913772774 2884.0409495023364]
-
 
             @test ConScape.RSP_betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
                     ConScape.RSP_betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
@@ -116,7 +115,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
     @testset "RSP_functionality" begin
         # FIXME Enable all combinations
         if landscape == "wall_full" && β == 0.2
-            @test ConScape.ConScape.RSP_functionality(h, self_similarity=0.0)[28:30,58:60]' ≈
+            @test ConScape.ConScape.RSP_functionality(h, diagvalue=0.0)[28:30,58:60]' ≈
                 [11082.654882969266 2664.916100189486 89.420910249988
                  10340.977912804196 2465.918728844169 56.970111157896
                  11119.132467660969 2662.969749775032 33.280379014217]
@@ -228,6 +227,31 @@ end
                                                            Inf  NaN  0.5   0.25
                                                            Inf  NaN  0.25  0.0])
 end
+
+@testset "Other distances and proximities" begin
+    l = [1 1
+         1 1 ]
+
+    g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4))
+    C = ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4,matrix_type=ConScape.CostMatrix)
+    h = ConScape.Habitat(g, C=C, β=2.)
+
+    @test maximum(abs.(ConScape.RSP_free_energy_distance(h) - [0.0       1.34197   1.34197   2.34197
+                                                               1.34197   0.0       2.34197   1.34197
+                                                               1.34197   2.34197   0.0       1.34197
+                                                               2.34197   1.34197   1.34197   0.0     ])) < 1e-5
+
+    @test maximum(abs.(ConScape.RSP_survival_probability(h) - [1.0         0.0682931   0.0682931   0.00924246
+                                                               0.0682931   1.0         0.00924246  0.0682931
+                                                               0.0682931   0.00924246  1.0         0.0682931
+                                                               0.00924246  0.0682931   0.0682931   1.0    ])) < 1e-5
+
+    @test maximum(abs.(ConScape.RSP_power_mean_proximity(h) - [1.0        0.261329   0.261329   0.0961377
+                                                               0.261329   1.0        0.0961377  0.261329
+                                                               0.261329   0.0961377  1.0        0.261329
+                                                               0.0961377  0.261329   0.261329   1.0      ])) < 1e-5
+end
+
 
 @testset "custom scaling function in k-weighted betweenness" begin
     l = rand(4, 4)

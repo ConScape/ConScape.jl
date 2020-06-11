@@ -1,4 +1,16 @@
 
+abstract type ConnectivityFunction <: Function end
+abstract type DistanceFunction <: ConnectivityFunction end
+abstract type ProximityFunction <: ConnectivityFunction end
+
+struct RSP_dissimilarities  <: DistanceFunction end
+struct RSP_free_energy_distance  <: DistanceFunction end
+
+struct RSP_survival_probability  <: ProximityFunction end
+struct RSP_power_mean_proximity  <: ProximityFunction end
+
+
+
 _Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
 
 function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
@@ -198,7 +210,13 @@ function RSP_dissimilarities(W::SparseMatrixCSC,
 end
 
 RSP_free_energy_distance(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
-    -log.(Z .* inv.([Z[i, j] for (j, i) in enumerate(landmarks)])')./β
+    -log.(RSP_survival_probability(Z, β, landmarks))./β
+
+RSP_survival_probability(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
+    Z .* inv.([Z[i, j] for (j, i) in enumerate(landmarks)])'
+
+RSP_power_mean_proximity(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
+    RSP_survival_probability(Z, β, landmarks).^(1/β)
 
 function RSP_functionality(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities
