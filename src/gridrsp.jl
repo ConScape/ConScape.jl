@@ -18,7 +18,17 @@ Base.inv(::Inv)          = Inv()
 Base.inv(::OddsAgainst)  = OddsFor()
 Base.inv(::OddsFor)      = OddsAgainst()
 
-struct Habitat
+abstract type ConnectivityFunction <: Function end
+abstract type DistanceFunction <: ConnectivityFunction end
+abstract type ProximityFunction <: ConnectivityFunction end
+
+struct expected_cost         <: DistanceFunction end
+struct free_energy_distance  <: DistanceFunction end
+
+struct survival_probability  <: ProximityFunction end
+struct power_mean_proximity  <: ProximityFunction end
+
+struct GridRSP
     g::Grid
     cost::Cost
     β::Float64
@@ -29,12 +39,12 @@ struct Habitat
 end
 
 """
-    Habitat(g::Grid; cost::Cost=MinusLog(), β=nothing)::Habitat
+    GridRSP(g::Grid; cost::Cost=MinusLog(), β=nothing)::GridRSP
 
-Construct a Habitat from a `g::Grid` based on a `cost::Cost` type and the temperature `β::Real`.
+Construct a GridRSP from a `g::Grid` based on a `cost::Cost` type and the temperature `β::Real`.
 """
 
-function Habitat(g::Grid;
+function GridRSP(g::Grid;
                  cost::Cost=MinusLog(),
                  β=nothing,
                  C::SparseMatrixCSC{Float64,Int}=mapnz(cost, g.A))
@@ -58,25 +68,25 @@ function Habitat(g::Grid;
         @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing β."
     end
 
-    return Habitat(g, cost, β, C, Pref, W, Z)
+    return GridRSP(g, cost, β, C, Pref, W, Z)
 end
 
-function Base.show(io::IO, ::MIME"text/plain", h::Habitat)
+function Base.show(io::IO, ::MIME"text/plain", h::GridRSP)
     print(io, summary(h), " of size ", h.g.nrows, "x", h.g.ncols)
 end
 
-function Base.show(io::IO, ::MIME"text/html", h::Habitat)
+function Base.show(io::IO, ::MIME"text/html", h::GridRSP)
     t = string(summary(h), " of size ", h.g.nrows, "x", h.g.ncols)
     write(io, "<h4>$t</h4>")
     show(io, MIME"text/html"(), plot_outdegrees(h.g))
 end
 
 """
-    RSP_betweenness_qweighted(h::Habitat)::Matrix{Float64}
+    betweenness_qweighted(h::GridRSP)::Matrix{Float64}
 
 Compute RSP betweenness of all nodes weighted by source and target qualities.
 """
-function RSP_betweenness_qweighted(h::Habitat)
+function betweenness_qweighted(h::GridRSP)
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
@@ -98,12 +108,12 @@ end
 
 
 """
-    RSP_edge_betweenness_qweighted(h::Habitat)::Matrix{Float64}
+    edge_betweenness_qweighted(h::GridRSP)::Matrix{Float64}
 
 Compute RSP betweenness of all edges weighted by source and target qualities. Returns a
 sparse matrix where element (i,j) is the betweenness of edge (i,j).
 """
-function RSP_edge_betweenness_qweighted(h::Habitat)
+function edge_betweenness_qweighted(h::GridRSP)
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
@@ -119,35 +129,37 @@ end
 
 
 """
-    RSP_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
+    betweenness_kweighted(h::GridRSP; [invcost=inv(h.cost), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
 
 Compute RSP betweenness of all nodes weighted with proximity. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
-dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
-passed the the inverse of the cost function is used for the conversion of the dissimilarities.
+distances to convert it to a matrix of proximities. If no inverse cost function is
+passed the the inverse of the cost function is used for the conversion of distances.
 
-    The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
-    of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
-    When nothing is specified, the diagonal elements won't be adjusted.
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
+of proximities, i.e. after applying the inverse cost function to the matrix of distances.
+When nothing is specified, the diagonal elements won't be adjusted.
 """
-function RSP_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
+function betweenness_kweighted(h::GridRSP; invcost=inv(h.cost), diagvalue=nothing)
 
-    similarities = map(invcost, RSP_dissimilarities(h))
+    proximities = map(invcost, expected_cost(h))
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
     if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
-            similarities[i, j] = diagvalue
+            proximities[i, j] = diagvalue
         end
     end
 
-    betvec = RSP_betweenness_kweighted(h.W,
-                                       h.Z,
-                                       [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
-                                       [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
-                                            similarities,
-                                            targetnodes)
+    betvec = RSP_betweenness_kweighted(
+        h.W,
+        h.Z,
+        [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
+        [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
+        proximities,
+        targetnodes)
+
     bet = fill(NaN, h.g.nrows, h.g.ncols)
     for (i, v) in enumerate(betvec)
         bet[h.g.id_to_grid_coordinate_list[i]] = v
@@ -159,23 +171,23 @@ end
 
 
 """
-    RSP_edge_betweenness_kweighted(h::Habitat; [invcost=inv(h.cost), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
+    edge_betweenness_kweighted(h::GridRSP; [invcost=inv(h.cost), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
 
     Compute RSP betweenness of all edges weighted by qualities of source s and target t and the proximity between s and t. Returns a
     sparse matrix where element (i,j) is the betweenness of edge (i,j).
 
     The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
-    of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
+    of proximities, i.e. after applying the inverse cost function to the matrix of expected costs.
     When nothing is specified, the diagonal elements won't be adjusted.
 """
-function RSP_edge_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagvalue=nothing)
+function edge_betweenness_kweighted(h::GridRSP; invcost=inv(h.cost), diagvalue=nothing)
 
-    similarities = map(invcost, RSP_dissimilarities(h))
+    proximities = map(invcost, expected_cost(h))
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
     if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
-            similarities[i, j] = diagvalue
+            proximities[i, j] = diagvalue
         end
     end
 
@@ -185,7 +197,7 @@ function RSP_edge_betweenness_kweighted(h::Habitat; invcost=inv(h.cost), diagval
         h.Z,
         [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
         [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
-        similarities,
+        proximities,
         targetnodes)
 
     return betmatrix
@@ -194,49 +206,49 @@ end
 
 
 """
-    RSP_dissimilarities(h::Habitat)::Matrix{Float64}
+    expected_cost(h::GridRSP)::Matrix{Float64}
 
-Compute RSP expected costs or RSP dissimilarities from all nodes.
+Compute RSP expected costs from all nodes.
 """
-function RSP_dissimilarities(h::Habitat)
+function expected_cost(h::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
-    return RSP_dissimilarities(h.W, h.C, h.Z, targetnodes)
+    return RSP_expected_cost(h.W, h.C, h.Z, targetnodes)
 end
 
-function RSP_free_energy_distance(h::Habitat)
+function free_energy_distance(h::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
     return RSP_free_energy_distance(h.Z, h.β, targetnodes)
 end
 
-function RSP_survival_probability(h::Habitat)
+function survival_probability(h::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
     return RSP_survival_probability(h.Z, h.β, targetnodes)
 end
 
-function RSP_power_mean_proximity(h::Habitat)
+function power_mean_proximity(h::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
     return RSP_power_mean_proximity(h.Z, h.β, targetnodes)
 end
 
 """
-    mean_kl_divergence(h::Habitat)::Float64
+    mean_kl_divergence(h::GridRSP)::Float64
 
-Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP dissimilarities for `h::Habitat`.
+Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP expected costs for `h::GridRSP`.
 """
-function mean_kl_divergence(h::Habitat)
+function mean_kl_divergence(h::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
     qs = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
     qt = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx]
-    return qs'*(RSP_free_energy_distance(h.Z, h.β, targetnodes) - RSP_dissimilarities(h))*qt*h.β
+    return qs'*(RSP_free_energy_distance(h.Z, h.β, targetnodes) - expected_cost(h))*qt*h.β
 end
 
 
 """
-    mean_lc_kl_divergence(h::Habitat)::Float64
+    mean_lc_kl_divergence(h::GridRSP)::Float64
 
-Compute the mean Kullback–Leibler divergence between the least-cost path and the random path distribution for `h::Habitat`, weighted by the qualities of the source and target node.
+Compute the mean Kullback–Leibler divergence between the least-cost path and the random path distribution for `h::GridRSP`, weighted by the qualities of the source and target node.
 """
-function mean_lc_kl_divergence(h::Habitat)
+function mean_lc_kl_divergence(h::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
     div = hcat([least_cost_kl_divergence(h.C, h.Pref, i) for i in targetnodes]...)
     qs = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
@@ -291,12 +303,12 @@ function least_cost_kl_divergence(C::SparseMatrixCSC, Pref::SparseMatrixCSC, tar
 end
 
 """
-    least_cost_kl_divergence(h::Habitat, target::Tuple{Int,Int})
+    least_cost_kl_divergence(h::GridRSP, target::Tuple{Int,Int})
 
 Compute the least cost Kullback-Leibler divergence from each cell in the g in
 `h` to the `target` cell.
 """
-function least_cost_kl_divergence(h::Habitat, target::Tuple{Int,Int})
+function least_cost_kl_divergence(h::GridRSP, target::Tuple{Int,Int})
 
     targetnode = findfirst(isequal(CartesianIndex(target)), h.g.id_to_grid_coordinate_list)
     if targetnode === nothing
@@ -309,26 +321,26 @@ function least_cost_kl_divergence(h::Habitat, target::Tuple{Int,Int})
 end
 
 """
-    RSP_functionality(h::Habitat; [connectivity_function=RSP_dissimilarities, invcost=inv(h.cost), diagvalue=nothing])::Matrix{Float64}
+    functionality(h::GridRSP; [connectivity_function=expected_cost, invcost=inv(h.cost), diagvalue=nothing])::Matrix{Float64}
 
 Compute RSP functionality of all nodes. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
-dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
-passed the the inverse of the cost function is used for the conversion of the dissimilarities.
+distances to convert it to a matrix of proximities. If no inverse cost function is
+passed the the inverse of the cost function is used for the conversion of the proximities.
 
 The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
-of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
+of proximities, i.e. after applying the inverse cost function to the matrix of distances.
 When nothing is specified, the diagonal elements won't be adjusted.
 
 `connectivity_function` determines which function is used for computing the matrix of proximities.
 If `connectivity_function` is a `DistanceFunction`, then it is used for computing distances, which
 is converted to proximities using `invcost`. If `connectivity_function` is a `ProximityFunction`,
-then proximities are computed directly using it. The default is `RSP_dissimilarities`.
+then proximities are computed directly using it. The default is `expected_cost`.
 """
-function RSP_functionality(h::Habitat;
-                           connectivity_function=RSP_dissimilarities,
-                           invcost=inv(h.cost),
-                           diagvalue=nothing)
+function functionality(h::GridRSP;
+                       connectivity_function=expected_cost,
+                       invcost=inv(h.cost),
+                       diagvalue=nothing)
 
     S = connectivity_function(h)
 
@@ -336,10 +348,10 @@ function RSP_functionality(h::Habitat;
         map!(invcost, S, S)
     end
 
-    return RSP_functionality(h, S, diagvalue=diagvalue)
+    return functionality(h, S, diagvalue=diagvalue)
 end
 
-function RSP_functionality(h::Habitat, S::Matrix; diagvalue::Union{Nothing,Real}=nothing)
+function functionality(h::GridRSP, S::Matrix; diagvalue::Union{Nothing,Real}=nothing)
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
@@ -363,13 +375,13 @@ function RSP_functionality(h::Habitat, S::Matrix; diagvalue::Union{Nothing,Real}
     return func
 end
 
-function RSP_functionality(h::Habitat,
-                           cell::CartesianIndex{2};
-                           invcost=inv(h.cost),
-                           diagvalue=nothing,
-                           avalue=floatmin(), # smallest non-zero value
-                           qˢvalue=0.0,
-                           qᵗvalue=0.0)
+function functionality(h::GridRSP,
+                       cell::CartesianIndex{2};
+                       invcost=inv(h.cost),
+                       diagvalue=nothing,
+                       avalue=floatmin(), # smallest non-zero value
+                       qˢvalue=0.0,
+                       qᵗvalue=0.0)
 
     if avalue <= 0.0
         throw("Affinity value has to be positive. Otherwise the graph will become disconnected.")
@@ -400,13 +412,13 @@ function RSP_functionality(h::Habitat,
                 newsource_qualities,
                 newtarget_qualities)
 
-    newh = Habitat(newg, β=h.β, cost=h.cost)
+    newh = GridRSP(newg, β=h.β, cost=h.cost)
 
-    return RSP_functionality(newh)
+    return functionality(newh)
 end
 
 """
-    RSP_criticality(h::Habitat[;
+    criticality(h::GridRSP[;
                     invcost=inv(h.cost),
                     diagvalue=nothing,
                     avalue=floatmin(),
@@ -416,30 +428,30 @@ end
 Compute the landscape criticality for each target cell by setting setting affinities
 for the cell to `avalue` as well as the source and target qualities associated with
 the cell to `qˢvalue` and `qᵗvalue` respectively. It is required that `avalue` is
-positive to avoid that the graph becomes disconnected. See `RSP_functionality`(@ref)
+positive to avoid that the graph becomes disconnected. See `functionality`(@ref)
 for the remaining arguments.
 """
-function RSP_criticality(h::Habitat;
-                         invcost=inv(h.cost),
-                         diagvalue=nothing,
-                         avalue=floatmin(),
-                         qˢvalue=0.0,
-                         qᵗvalue=0.0)
+function criticality(h::GridRSP;
+                     invcost=inv(h.cost),
+                     diagvalue=nothing,
+                     avalue=floatmin(),
+                     qˢvalue=0.0,
+                     qᵗvalue=0.0)
 
     targetidx = CartesianIndex.(findnz(h.g.target_qualities)[1:2]...)
     nl = length(targetidx)
-    reference_functionality = sum(RSP_functionality(h, invcost=invcost, diagvalue=diagvalue))
+    reference_functionality = sum(functionality(h, invcost=invcost, diagvalue=diagvalue))
     critvec = fill(reference_functionality, nl)
 
     @showprogress 1 "Computing criticality..." for i in 1:nl
-        critvec[i] -= sum(RSP_functionality(
-                            h,
-                            targetidx[i];
-                            invcost=invcost,
-                            diagvalue=diagvalue,
-                            avalue=avalue,
-                            qˢvalue=qˢvalue,
-                            qᵗvalue=qᵗvalue))
+        critvec[i] -= sum(functionality(
+            h,
+            targetidx[i];
+            invcost=invcost,
+            diagvalue=diagvalue,
+            avalue=avalue,
+            qˢvalue=qˢvalue,
+            qᵗvalue=qᵗvalue))
     end
 
     return SparseMatrixCSC(h.g.target_qualities.m,
@@ -451,26 +463,26 @@ end
 
 
 """
-    LF_sensitivity(h::Habitat; invcost=inv(h.cost), exp_prox_scaling::Real=1., unitless::Bool=true)::Matrix{Float64}
+    LF_sensitivity(h::GridRSP; invcost=inv(h.cost), exp_prox_scaling::Real=1., unitless::Bool=true)::Matrix{Float64}
 
 Compute the sensitivity of Landscape Functionality with respect to perturbation of
 affinities on incoming edges of a node. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
-dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
-passed the the inverse of the cost function is used for the conversion of the dissimilarities.
+distances to convert it to a matrix of proximities. If no inverse cost function is
+passed the the inverse of the cost function is used for the conversion of the distances.
 
 The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
-of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
+of proximities, i.e. after applying the inverse cost function to the matrix of distances.
 When nothing is specified, the diagonal elements won't be adjusted.
 
-    exp_prox_scaling = the scaling parameter of the exponential cost function.
-    unitless = Boolean deciding whether the output is the "unitless" derivative, i.e., df / d logx, or the standard derivative
+ - `exp_prox_scaling`: the scaling parameter of the exponential cost function.
+ - `unitless`: A boolean deciding whether the output is the "unitless" derivative, i.e., ``\\frac{\\mathrm{d} f}{\\mathrm{d} \\log x}``, or the standard derivative
 
 """
 
 # using Base.Threads
 
-function LF_sensitivity(h::Habitat; invcost=inv(h.cost),
+function LF_sensitivity(h::GridRSP; invcost=inv(h.cost),
                                     exp_prox_scaling::Real=1.,
                                     unitless::Bool=true,
                                     diagvalue=nothing)
@@ -483,7 +495,7 @@ function LF_sensitivity(h::Habitat; invcost=inv(h.cost),
 
     # Derivative of costs w.r.t. affinities:
     # TODO: Implement these as properties of Costs:
-    K = map(invcost, RSP_dissimilarities(h)./exp_prox_scaling)
+    K = map(invcost, expected_cost(h) ./ exp_prox_scaling)
 
     if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
@@ -530,7 +542,7 @@ function LF_sensitivity(h::Habitat; invcost=inv(h.cost),
 end
 
 
-function LF_power_mean_sensitivity(h::Habitat; invcost=inv(h.cost))
+function LF_power_mean_sensitivity(h::GridRSP; invcost=inv(h.cost))
     # Now assumes h.cost = MinusLog
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
@@ -561,13 +573,13 @@ function LF_power_mean_sensitivity(h::Habitat; invcost=inv(h.cost))
 
 end
 
-function LF_sensitivity_simulation(h::Habitat;
+function LF_sensitivity_simulation(h::GridRSP;
     invcost=inv(h.cost),
     exp_prox_scaling::Real=1.,
     unitless::Bool=true,
     diagvalue=nothing)
 
-    LF_orig = ConScape.RSP_functionality(h, diagvalue=diagvalue)
+    LF_orig = functionality(h, diagvalue=diagvalue)
     g = h.g
 
     epsi = 1e-6
@@ -583,8 +595,8 @@ function LF_sensitivity_simulation(h::Habitat;
             gnew.A[i,j] += epsi
             # gnew.A[i,j] *= (1+epsi)
 
-            hnew = ConScape.Habitat(gnew, β=h.β, cost=h.cost)
-            LF_new = ConScape.RSP_functionality(hnew, diagvalue=diagvalue)
+            hnew = GridRSP(gnew, β=h.β, cost=h.cost)
+            LF_new = functionality(hnew, diagvalue=diagvalue)
             edge_sensitivities[i,j] = sum(LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
             if unitless
                 edge_sensitivities[i,j] *= g.A[i,j]
@@ -605,7 +617,7 @@ end
 
 
 
-function LF_power_mean_sensitivity_simulation(h::Habitat)
+function LF_power_mean_sensitivity_simulation(h::GridRSP)
 
     g = h.g
 
@@ -617,7 +629,7 @@ function LF_power_mean_sensitivity_simulation(h::Habitat)
     K = copy(h.Z)
     K ./= [h.Z[targetnodes[i],i] for i in 1:length(targetnodes)]'
     K .^= inv(h.β) # \mathcal{Z}^{1/β}
-    LF_orig = sum(ConScape.RSP_functionality(qˢ, qᵗ, K))
+    LF_orig = sum(RSP_functionality(qˢ, qᵗ, K))
 
     epsi = 1e-6
 
@@ -632,12 +644,12 @@ function LF_power_mean_sensitivity_simulation(h::Habitat)
             gnew.A[i,j] += epsi
             # gnew.A[i,j] *= (1+epsi)
 
-            hnew = ConScape.Habitat(gnew, β=h.β, cost=h.cost)
+            hnew = GridRSP(gnew, β=h.β, cost=h.cost)
 
             Knew = copy(hnew.Z)
             Knew ./= [hnew.Z[targetnodes[i],i] for i in 1:length(targetnodes)]'
             Knew .^= inv(hnew.β) # \mathcal{Z}^{1/β}
-            LF_new = sum(ConScape.RSP_functionality(qˢ, qᵗ, Knew))
+            LF_new = sum(RSP_functionality(qˢ, qᵗ, Knew))
 
             edge_sensitivities[i,j] = (LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
         end

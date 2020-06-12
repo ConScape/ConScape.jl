@@ -22,7 +22,7 @@ ConScape.plot_outdegrees(g)
 
 
 ```julia
-h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2);
+h = ConScape.GridRSP(g, cost=ConScape.MinusLog(), β=0.2);
 ```
 
 ```julia
@@ -40,15 +40,15 @@ ConScape.heatmap(reshape(bet_shortest, 30, 60), yflip=true)
 ```
 
 ```julia
-bet_q = ConScape.RSP_betweenness_qweighted(h)
+bet_q = ConScape.betweenness_qweighted(h)
 ConScape.heatmap(bet_q, yflip=true)
 ```
 
 ```julia
-@time ConScape.RSP_dissimilarities(h)
+@time ConScape.expected_costs(h)
 ```
 
 ```julia
-bet_k = ConScape.RSP_betweenness_kweighted(h);
+bet_k = ConScape.betweenness_kweighted(h);
 ConScape.heatmap(bet_k, yflip=true)
 ```
