@@ -22,7 +22,7 @@ abstract type ConnectivityFunction <: Function end
 abstract type DistanceFunction <: ConnectivityFunction end
 abstract type ProximityFunction <: ConnectivityFunction end
 
-struct dissimilarities  <: DistanceFunction end
+struct expected_cost         <: DistanceFunction end
 struct free_energy_distance  <: DistanceFunction end
 
 struct survival_probability  <: ProximityFunction end
@@ -133,22 +133,22 @@ end
 
 Compute RSP betweenness of all nodes weighted with proximity. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
-dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
-passed the the inverse of the cost function is used for the conversion of the dissimilarities.
+distances to convert it to a matrix of proximities. If no inverse cost function is
+passed the the inverse of the cost function is used for the conversion of distances.
 
-    The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
-    of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
-    When nothing is specified, the diagonal elements won't be adjusted.
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
+of proximities, i.e. after applying the inverse cost function to the matrix of distances.
+When nothing is specified, the diagonal elements won't be adjusted.
 """
 function betweenness_kweighted(h::GridRSP; invcost=inv(h.cost), diagvalue=nothing)
 
-    similarities = map(invcost, dissimilarities(h))
+    proximities = map(invcost, expected_cost(h))
 
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
     if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
-            similarities[i, j] = diagvalue
+            proximities[i, j] = diagvalue
         end
     end
 
@@ -157,7 +157,7 @@ function betweenness_kweighted(h::GridRSP; invcost=inv(h.cost), diagvalue=nothin
         h.Z,
         [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
         [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
-        similarities,
+        proximities,
         targetnodes)
 
     bet = fill(NaN, h.g.nrows, h.g.ncols)
@@ -177,17 +177,17 @@ end
     sparse matrix where element (i,j) is the betweenness of edge (i,j).
 
     The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
-    of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
+    of proximities, i.e. after applying the inverse cost function to the matrix of expected costs.
     When nothing is specified, the diagonal elements won't be adjusted.
 """
 function edge_betweenness_kweighted(h::GridRSP; invcost=inv(h.cost), diagvalue=nothing)
 
-    similarities = map(invcost, dissimilarities(h))
+    proximities = map(invcost, expected_cost(h))
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
 
     if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
-            similarities[i, j] = diagvalue
+            proximities[i, j] = diagvalue
         end
     end
 
@@ -197,7 +197,7 @@ function edge_betweenness_kweighted(h::GridRSP; invcost=inv(h.cost), diagvalue=n
         h.Z,
         [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list],
         [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx],
-        similarities,
+        proximities,
         targetnodes)
 
     return betmatrix
@@ -206,13 +206,13 @@ end
 
 
 """
-    dissimilarities(h::GridRSP)::Matrix{Float64}
+    expected_cost(h::GridRSP)::Matrix{Float64}
 
-Compute RSP expected costs or RSP dissimilarities from all nodes.
+Compute RSP expected costs from all nodes.
 """
-function dissimilarities(h::GridRSP)
+function expected_cost(h::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
-    return RSP_dissimilarities(h.W, h.C, h.Z, targetnodes)
+    return RSP_expected_cost(h.W, h.C, h.Z, targetnodes)
 end
 
 function free_energy_distance(h::GridRSP)
@@ -233,13 +233,13 @@ end
 """
     mean_kl_divergence(h::GridRSP)::Float64
 
-Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP dissimilarities for `h::GridRSP`.
+Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP expected costs for `h::GridRSP`.
 """
 function mean_kl_divergence(h::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(h.g)
     qs = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
     qt = [h.g.target_qualities[i] for i in h.g.id_to_grid_coordinate_list ∩ targetidx]
-    return qs'*(RSP_free_energy_distance(h.Z, h.β, targetnodes) - dissimilarities(h))*qt*h.β
+    return qs'*(RSP_free_energy_distance(h.Z, h.β, targetnodes) - expected_cost(h))*qt*h.β
 end
 
 
@@ -321,26 +321,26 @@ function least_cost_kl_divergence(h::GridRSP, target::Tuple{Int,Int})
 end
 
 """
-    functionality(h::GridRSP; [connectivity_function=dissimilarities, invcost=inv(h.cost), diagvalue=nothing])::Matrix{Float64}
+    functionality(h::GridRSP; [connectivity_function=expected_cost, invcost=inv(h.cost), diagvalue=nothing])::Matrix{Float64}
 
 Compute RSP functionality of all nodes. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
-dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
-passed the the inverse of the cost function is used for the conversion of the dissimilarities.
+distances to convert it to a matrix of proximities. If no inverse cost function is
+passed the the inverse of the cost function is used for the conversion of the proximities.
 
 The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
-of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
+of proximities, i.e. after applying the inverse cost function to the matrix of distances.
 When nothing is specified, the diagonal elements won't be adjusted.
 
 `connectivity_function` determines which function is used for computing the matrix of proximities.
 If `connectivity_function` is a `DistanceFunction`, then it is used for computing distances, which
 is converted to proximities using `invcost`. If `connectivity_function` is a `ProximityFunction`,
-then proximities are computed directly using it. The default is `dissimilarities`.
+then proximities are computed directly using it. The default is `expected_cost`.
 """
 function functionality(h::GridRSP;
-                           connectivity_function=dissimilarities,
-                           invcost=inv(h.cost),
-                           diagvalue=nothing)
+                       connectivity_function=expected_cost,
+                       invcost=inv(h.cost),
+                       diagvalue=nothing)
 
     S = connectivity_function(h)
 
@@ -468,15 +468,15 @@ end
 Compute the sensitivity of Landscape Functionality with respect to perturbation of
 affinities on incoming edges of a node. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
-dissimilarities to convert it to a matrix of similarities. If no inverse cost function is
-passed the the inverse of the cost function is used for the conversion of the dissimilarities.
+distances to convert it to a matrix of proximities. If no inverse cost function is
+passed the the inverse of the cost function is used for the conversion of the distances.
 
 The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
-of similarities, i.e. after applying the inverse cost function to the matrix of dissimilarities.
+of proximities, i.e. after applying the inverse cost function to the matrix of distances.
 When nothing is specified, the diagonal elements won't be adjusted.
 
-    exp_prox_scaling = the scaling parameter of the exponential cost function.
-    unitless = Boolean deciding whether the output is the "unitless" derivative, i.e., df / d logx, or the standard derivative
+ - `exp_prox_scaling`: the scaling parameter of the exponential cost function.
+ - `unitless`: A boolean deciding whether the output is the "unitless" derivative, i.e., ``\\frac{\\mathrm{d} f}{\\mathrm{d} \\log x}``, or the standard derivative
 
 """
 
@@ -495,7 +495,7 @@ function LF_sensitivity(h::GridRSP; invcost=inv(h.cost),
 
     # Derivative of costs w.r.t. affinities:
     # TODO: Implement these as properties of Costs:
-    K = map(invcost, dissimilarities(h)./exp_prox_scaling)
+    K = map(invcost, expected_cost(h) ./ exp_prox_scaling)
 
     if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)

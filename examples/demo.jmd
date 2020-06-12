@@ -45,7 +45,7 @@ ConScape.heatmap(bet_q, yflip=true)
 ```
 
 ```julia
-@time ConScape.dissimilarities(h)
+@time ConScape.expected_costs(h)
 ```
 
 ```julia

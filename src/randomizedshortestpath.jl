@@ -38,7 +38,7 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
                                    Z::AbstractMatrix,  # Fundamental matrix of non-absorbing paths
                                    qˢ::AbstractVector, # Source qualities
                                    qᵗ::AbstractVector, # Target qualities
-                                   S::AbstractMatrix,  # Matrix of similarities
+                                   S::AbstractMatrix,  # Matrix of proximities
                                    landmarks::AbstractVector)
 
 
@@ -126,7 +126,7 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
                                         Z::AbstractMatrix,
                                         qˢ::AbstractVector,
                                         qᵗ::AbstractVector,
-                                        K::AbstractMatrix,  # Matrix of similarities
+                                        K::AbstractMatrix,  # Matrix of proximities
                                         targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
@@ -167,7 +167,7 @@ end
 
 
 
-function RSP_dissimilarities(W::SparseMatrixCSC,
+function RSP_expected_cost(W::SparseMatrixCSC,
                              C::SparseMatrixCSC,
                              Z::AbstractMatrix,
                              landmarks::AbstractVector)
@@ -207,7 +207,7 @@ RSP_power_mean_proximity(Z::AbstractMatrix, β::Real, landmarks::AbstractVector)
 
 function RSP_functionality(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities
-                           S::AbstractMatrix)  # Matrix of similarities
+                           S::AbstractMatrix)  # Matrix of proximities
 
     return qˢ .* (S*qᵗ)
 end
