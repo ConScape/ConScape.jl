@@ -496,7 +496,7 @@ end
         g = ConScape.Grid(m, n)
     end
 
-    g.A = 0.35 * g.A
+    g.affinities .*= 0.35
 
     grsp = ConScape.GridRSP(g, β=0.2, cost=cost)
 
@@ -530,6 +530,6 @@ end
         @test h_c isa ConScape.GridRSP
     end
 
-    g.A[1,2] = 1.1 # Causes negative cost for C[1,2] when cost=MinusLog
+    g.affinities[1,2] = 1.1 # Causes negative cost for C[1,2] when cost=MinusLog
     @test_throws ArgumentError ConScape.GridRSP(g, β=0.1, cost=ConScape.MinusLog()) # should raise error, as C[1,2]<0
 end

@@ -47,13 +47,13 @@ Construct a GridRSP from a `g::Grid` based on a `cost::Cost` type and the temper
 function GridRSP(g::Grid;
                  cost::Cost=MinusLog(),
                  β=nothing,
-                 C::SparseMatrixCSC{Float64,Int}=mapnz(cost, g.A))
+                 C::SparseMatrixCSC{Float64,Int}=mapnz(cost, g.affinities))
 
     if any(t -> t < 0, nonzeros(C))
         throw(ArgumentError("The cost matrix C can have only non-negative elements. Perhaps you should change the cost function?"))
     end
 
-    Pref = _Pref(g.A)
+    Pref = _Pref(g.affinities)
     W    = _W(Pref, β, C)
 
     @debug("Computing fundamental matrix of non-absorbing paths (Z). Please be patient...")
@@ -396,7 +396,7 @@ function functionality(h::GridRSP,
         throw(ArgumentError("Computing adjusted functionality is only supported for target cells"))
     end
 
-    newA = copy(h.g.A)
+    newA = copy(h.g.affinities)
     newA[:, node] .= ifelse.(iszero.(newA[:, node]), 0, avalue)
     newA[node, :] .= ifelse.(iszero.(newA[node, :]), 0, avalue)
 
@@ -506,10 +506,10 @@ function LF_sensitivity(h::GridRSP; invcost=inv(h.cost),
     K[isinf.(K)] .= 0.
 
     if h.cost == MinusLog()
-        diff_C_A = -mapnz(inv, h.g.A)
+        diff_C_A = -mapnz(inv, h.g.affinities)
         diff_K_D = -K./exp_prox_scaling
     elseif h.cost == Inv()
-        diff_C_A = -mapnz(x -> inv(x^2), h.g.A)
+        diff_C_A = -mapnz(x -> inv(x^2), h.g.affinities)
         diff_K_D = -K.^2
     end
 
@@ -519,11 +519,11 @@ function LF_sensitivity(h::GridRSP; invcost=inv(h.cost),
     qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
     qᵗ = [h.g.target_qualities[i] for i in targetidx]
 
-    S_e_aff, S_e_cost = LF_sensitivity(h.g.A, h.C, h.β, h.W, h.Z, diff_K_D, qˢ, qᵗ, targetnodes)
+    S_e_aff, S_e_cost = LF_sensitivity(h.g.affinities, h.C, h.β, h.W, h.Z, diff_K_D, qˢ, qᵗ, targetnodes)
 
     if unitless
-        S_e_aff = S_e_aff.*h.g.A
-        S_e_cost = S_e_cost.*h.g.A
+        S_e_aff = S_e_aff.*h.g.affinities
+        S_e_cost = S_e_cost.*h.g.affinities
     end
 
     S_e_total = S_e_aff .+ S_e_cost.*diff_C_A
@@ -551,15 +551,15 @@ function LF_power_mean_sensitivity(h::GridRSP; invcost=inv(h.cost))
     qᵗ = [h.g.target_qualities[i] for i in targetidx]
 
     if h.cost == MinusLog()
-        diff_C_A = -mapnz(inv, h.g.A)
+        diff_C_A = -mapnz(inv, h.g.affinities)
     elseif h.cost == Inv()
-        diff_C_A = mapnz(x -> x^2, h.g.A)
+        diff_C_A = mapnz(x -> x^2, h.g.affinities)
         diff_C_A = -mapnz(inv, diff_C_A)
     end
     # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
     # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
 
-    S_e_total, S_e_aff, S_e_cost = LF_power_mean_sensitivity(qˢ, qᵗ, h.g.A, h.β, diff_C_A, h.W, h.Z, targetnodes)
+    S_e_total, S_e_aff, S_e_cost = LF_power_mean_sensitivity(qˢ, qᵗ, h.g.affinities, h.β, diff_C_A, h.W, h.Z, targetnodes)
 
     node_sensitivity_vec = vec(sum(S_e_total, dims=1))
 
@@ -584,22 +584,22 @@ function LF_sensitivity_simulation(h::GridRSP;
 
     epsi = 1e-6
 
-    edge_sensitivities = copy(g.A)
+    edge_sensitivities = copy(g.affinities)
 
     n = length(g.id_to_grid_coordinate_list)
     @showprogress for i in 1:n
-        Succ_i = findall(g.A[i,:].>0)
+        Succ_i = findall(g.affinities[i,:].>0)
 
         for j in Succ_i
             gnew = deepcopy(g)
-            gnew.A[i,j] += epsi
-            # gnew.A[i,j] *= (1+epsi)
+            gnew.affinities[i,j] += epsi
+            # gnew.affinities[i,j] *= (1+epsi)
 
             hnew = GridRSP(gnew, β=h.β, cost=h.cost)
             LF_new = functionality(hnew, diagvalue=diagvalue)
-            edge_sensitivities[i,j] = sum(LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
+            edge_sensitivities[i,j] = sum(LF_new-LF_orig)/epsi # (gnew.affinities[i,j]-g.affinities[i,j])
             if unitless
-                edge_sensitivities[i,j] *= g.A[i,j]
+                edge_sensitivities[i,j] *= g.affinities[i,j]
             end
         end
     end
@@ -633,16 +633,16 @@ function LF_power_mean_sensitivity_simulation(h::GridRSP)
 
     epsi = 1e-6
 
-    edge_sensitivities = copy(g.A)
+    edge_sensitivities = copy(g.affinities)
 
     n = length(g.id_to_grid_coordinate_list)
     @showprogress for i in 1:n
-        Succ_i = findall(g.A[i,:].>0)
+        Succ_i = findall(g.affinities[i,:].>0)
 
         for j in Succ_i
             gnew = deepcopy(g)
-            gnew.A[i,j] += epsi
-            # gnew.A[i,j] *= (1+epsi)
+            gnew.affinities[i,j] += epsi
+            # gnew.affinities[i,j] *= (1+epsi)
 
             hnew = GridRSP(gnew, β=h.β, cost=h.cost)
 
@@ -651,7 +651,7 @@ function LF_power_mean_sensitivity_simulation(h::GridRSP)
             Knew .^= inv(hnew.β) # \mathcal{Z}^{1/β}
             LF_new = sum(RSP_functionality(qˢ, qᵗ, Knew))
 
-            edge_sensitivities[i,j] = (LF_new-LF_orig)/epsi # (gnew.A[i,j]-g.A[i,j])
+            edge_sensitivities[i,j] = (LF_new-LF_orig)/epsi # (gnew.affinities[i,j]-g.affinities[i,j])
         end
     end
 

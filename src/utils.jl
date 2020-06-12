@@ -12,7 +12,7 @@ function perm_wall_sim(
 
     # 1. initialize landscape
     g = Grid(nrows, ncols; kwargs...)
-    g.A = scaling * g.A
+    g.affinities .*= scaling
 
     # # 2. compute the wall
     wpt = round(Int, ncols*wallposition - wallwidth/2 + 1)
@@ -44,21 +44,21 @@ pixel is connected to its vertical and horizontal neighbors.
 Parameters:
 - nhood_size: 4 creates horizontal and vertical edges, 8 creates also diagonal edges
 =#
-function _generateA(nrows, ncols, nhood_size)
+function _generate_affinities(nrows, ncols, nhood_size)
 
     if !(nhood_size ∈ (4, 8))
         throw(ArgumentError("nhood_size must be either 4 or 8"))
     end
 
-    A = spdiagm(0=>ones(ncols)) ⊗ spdiagm(-1=>ones(nrows - 1), 1=>ones(nrows - 1)) +
+    affinities = spdiagm(0=>ones(ncols)) ⊗ spdiagm(-1=>ones(nrows - 1), 1=>ones(nrows - 1)) +
         spdiagm(-1=>ones(ncols - 1), 1=>ones(ncols - 1)) ⊗ spdiagm(0=>ones(nrows))
 
     if nhood_size == 8
-        A .+= spdiagm(-1=>ones(ncols - 1), 1=>ones(ncols - 1)) ⊗
+        affinities .+= spdiagm(-1=>ones(ncols - 1), 1=>ones(ncols - 1)) ⊗
               spdiagm(-1=>fill(1/√2, nrows - 1), 1=>fill(1/√2, nrows - 1))
     end
 
-    return A
+    return affinities
 end
 
 const N4 = (( 0, -1, 1.0),
@@ -150,12 +150,12 @@ function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, i
     # Find the indices of the coordinates in the id_to_grid_coordinate_list vector
     node_list_idx = [findfirst(isequal(n), g.id_to_grid_coordinate_list) for n in node_list]
 
-    A = g.A
+    affinities = g.affinities
 
     # Set (nonzero) values to impossible_affinity:
     if impossible_affinity > 0
-        A[node_list_idx,:] = impossible_affinity*(A[node_list_idx,:] .> 0)
-        A[:,node_list_idx] = impossible_affinity*(A[:,node_list_idx] .> 0)
+        affinities[node_list_idx,:] = impossible_affinity*(affinities[node_list_idx,:] .> 0)
+        affinities[:,node_list_idx] = impossible_affinity*(affinities[:,node_list_idx] .> 0)
         for i in node_list
             g.source_qualities[i] .= 0
             g.target_qualities[i] .= 0
@@ -164,10 +164,10 @@ function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, i
         # Delete the nodes completely:
         num_of_removed = length(node_list_idx)
 
-        nodes_to_keep = [n for n in 1:size(A, 1) if !(n in node_list_idx)]
+        nodes_to_keep = [n for n in 1:size(affinities, 1) if !(n in node_list_idx)]
 
-        A = A[nodes_to_keep,:]
-        A = A[:,nodes_to_keep]
+        affinities = affinities[nodes_to_keep,:]
+        affinities = affinities[:,nodes_to_keep]
 
         # FIXME! Commented out 8 April 2019 since qualities are now matrices.
         # Check if commention out is a problem. I don't think so.
@@ -181,7 +181,7 @@ function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, i
         g.target_qualities[i] .= 0
     end
 
-    g.A = A
+    g.affinities .= affinities
 end
 
 """
