@@ -13,7 +13,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
                                # Qualities decrease by row
                                qualities=copy(reshape(collect(1800:-1:1), 60, 30)')
                                )
-        h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=β)
+        h = ConScape.GridRSP(g, cost=ConScape.MinusLog(), β=β)
     elseif landscape == "wall_landmark1"
         sq = copy(reshape(collect(1800:-1:1), 60, 30)')
         g = ConScape.perm_wall_sim(
@@ -26,7 +26,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
                 [15, 15, 45, 45],
                 [sq[10, 15], sq[20, 15], sq[10, 45], sq[20, 45]],
                 30, 60))
-        h = ConScape.Habitat(g, β=0.2)
+        h = ConScape.GridRSP(g, β=0.2)
     elseif landscape == "wall_landmark2"
         sq = copy(reshape(collect(1800:-1:1), 60, 30)')
         tmpgrid = [CartesianIndex((i,j)) for i in 1:2:30, j in 1:2:60]
@@ -39,7 +39,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
             corridorwidths=(3,2),
             source_qualities=sq,
             target_qualities=landmarks)
-        h = ConScape.Habitat(g, β=0.2)
+        h = ConScape.GridRSP(g, β=0.2)
     else
         affinities, _ = ConScape.readasc(joinpath(datadir, "affinities_$landscape.asc"))
         qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_$landscape.asc"))
@@ -47,7 +47,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
                           landscape=ConScape.graph_matrix_from_raster(affinities),
                           qualities=qualities
                           )
-        h = ConScape.Habitat(g, β=β)
+        h = ConScape.GridRSP(g, β=β)
     end
 
     @testset "Test mean_kl_divergence" begin
@@ -74,13 +74,13 @@ datadir = joinpath(@__DIR__(), "..", "data")
         # FIXME Enable all combinations
         if landscape == "sno_2000" && β == 0.1
             # This is a regression test based on values that we currently believe to be correct
-            bet = ConScape.RSP_betweenness_kweighted(h, diagvalue=1.)
+            bet = ConScape.betweenness_kweighted(h, diagvalue=1.)
             @test bet[21:23, 31:33] ≈ [0.04063917813171917 0.06843246983487516 0.08862506281612659
                                        0.03684621201600996 0.10352876485995872 0.1255652231824746
                                        0.03190640567704462 0.13832814750469344 0.1961393152256104]
 
             # Check that summed edge betweennesses corresponds to node betweennesses:
-            bet_edge = ConScape.RSP_edge_betweenness_kweighted(h, diagvalue=1.)
+            bet_edge = ConScape.edge_betweenness_kweighted(h, diagvalue=1.)
             bet_edge_sum = fill(NaN, h.g.nrows, h.g.ncols)
             for (i, v) in enumerate(sum(bet_edge,dims=2))
                 bet_edge_sum[h.g.id_to_grid_coordinate_list[i]] = v
@@ -88,21 +88,21 @@ datadir = joinpath(@__DIR__(), "..", "data")
             @test bet_edge_sum[21:23, 31:33] ≈ bet[21:23, 31:33]
 
             # This is a regression test based on values that we currently believe to be correct
-            bet = ConScape.RSP_betweenness_kweighted(h, invcost=t -> exp(-t/50))
+            bet = ConScape.betweenness_kweighted(h, invcost=t -> exp(-t/50))
             @test bet[21:23, 31:33] ≈ [980.5828087688377 1307.981162399926 1602.8445739784497
                                        826.0710054834001 1883.0940077789735 1935.4450344630702
                                        676.9212075214159 2228.2700913772774 2884.0409495023364]
 
-            @test ConScape.RSP_betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
-                    ConScape.RSP_betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
+            @test ConScape.betweenness_kweighted(h, invcost=one)[g.id_to_grid_coordinate_list] ≈
+                    ConScape.betweenness_qweighted(h)[g.id_to_grid_coordinate_list]
 
-            @test ConScape.RSP_edge_betweenness_kweighted(h, invcost=one) ≈
-                    ConScape.RSP_edge_betweenness_qweighted(h)
+            @test ConScape.edge_betweenness_kweighted(h, invcost=one) ≈
+                    ConScape.edge_betweenness_qweighted(h)
 
         elseif landscape == "wall_full"
             # Check that summed edge betweennesses corresponds to node betweennesses:
-            bet_node = ConScape.RSP_betweenness_qweighted(h)
-            bet_edge = ConScape.RSP_edge_betweenness_qweighted(h)
+            bet_node = ConScape.betweenness_qweighted(h)
+            bet_edge = ConScape.edge_betweenness_qweighted(h)
             bet = fill(NaN, h.g.nrows, h.g.ncols)
             for (i, v) in enumerate(sum(bet_edge,dims=2))
                 bet[h.g.id_to_grid_coordinate_list[i]] = v
@@ -112,15 +112,15 @@ datadir = joinpath(@__DIR__(), "..", "data")
         end
     end
 
-    @testset "RSP_functionality" begin
+    @testset "functionality" begin
         # FIXME Enable all combinations
         if landscape == "wall_full" && β == 0.2
-            @test ConScape.ConScape.RSP_functionality(h, diagvalue=0.0)[28:30,58:60]' ≈
+            @test ConScape.ConScape.functionality(h, diagvalue=0.0)[28:30,58:60]' ≈
                 [11082.654882969266 2664.916100189486 89.420910249988
                  10340.977912804196 2465.918728844169 56.970111157896
                  11119.132467660969 2662.969749775032 33.280379014217]
         elseif landscape == "sno_2000" && β == 0.1
-            hf = ConScape.RSP_functionality(h)
+            hf = ConScape.functionality(h)
             @test hf isa SparseMatrixCSC
             @test size(hf) == size(h.g.source_qualities)
         end
@@ -148,7 +148,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
 
         b = IOBuffer()
         show(b, "text/plain", h)
-        @test occursin("Habitat", String(take!(b)))
+        @test occursin("GridRSP", String(take!(b)))
 
         b = IOBuffer()
         show(b, "text/html", g)
@@ -156,20 +156,20 @@ datadir = joinpath(@__DIR__(), "..", "data")
 
         b = IOBuffer()
         show(b, "text/html", h)
-        @test occursin("Habitat", String(take!(b)))
+        @test occursin("GridRSP", String(take!(b)))
     end
 
     @testset "Landmark approach" begin
 
         if landscape == "wall_landmark1" && β == 0.2
             # Just a regression test but result looks visually correct
-            @test ConScape.RSP_betweenness_qweighted(h)[9:11, 30:32] ≈
+            @test ConScape.betweenness_qweighted(h)[9:11, 30:32] ≈
                     [1.35257193796979e9 1.3112254944853191e9 1.3525448385844798e9
                      1.7383632661402326e9 1.9571251417867596e9 1.7385247019409044e9
                      1.352382919812123e9 1.3103077614483771e9 1.3520848636655023e9]
 
         elseif landscape == "wall_landmark2" && β == 0.2
-            @test ConScape.RSP_betweenness_kweighted(h)[9:11, 30:32] ≈
+            @test ConScape.betweenness_kweighted(h)[9:11, 30:32] ≈
                     [1.6153674943888483e6 693690.2564610258    1.6097137526944755e6
                      1.8168095466336345e6 1.8166090537379407e6 1.8108940319968446e6
                      1.41753770380708e6   668884.5700736387    1.412290291817482e6 ]
@@ -234,22 +234,22 @@ end
 
     g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4))
     C = ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4,matrix_type=ConScape.CostMatrix)
-    h = ConScape.Habitat(g, C=C, β=2.)
+    h = ConScape.GridRSP(g, C=C, β=2.)
 
-    @test maximum(abs.(ConScape.RSP_free_energy_distance(h) - [0.0       1.34197   1.34197   2.34197
-                                                               1.34197   0.0       2.34197   1.34197
-                                                               1.34197   2.34197   0.0       1.34197
-                                                               2.34197   1.34197   1.34197   0.0     ])) < 1e-5
+    @test maximum(abs.(ConScape.free_energy_distance(h) - [0.0       1.34197   1.34197   2.34197
+                                                           1.34197   0.0       2.34197   1.34197
+                                                           1.34197   2.34197   0.0       1.34197
+                                                           2.34197   1.34197   1.34197   0.0     ])) < 1e-5
 
-    @test maximum(abs.(ConScape.RSP_survival_probability(h) - [1.0         0.0682931   0.0682931   0.00924246
-                                                               0.0682931   1.0         0.00924246  0.0682931
-                                                               0.0682931   0.00924246  1.0         0.0682931
-                                                               0.00924246  0.0682931   0.0682931   1.0    ])) < 1e-5
+    @test maximum(abs.(ConScape.survival_probability(h) - [1.0         0.0682931   0.0682931   0.00924246
+                                                           0.0682931   1.0         0.00924246  0.0682931
+                                                           0.0682931   0.00924246  1.0         0.0682931
+                                                           0.00924246  0.0682931   0.0682931   1.0    ])) < 1e-5
 
-    @test maximum(abs.(ConScape.RSP_power_mean_proximity(h) - [1.0        0.261329   0.261329   0.0961377
-                                                               0.261329   1.0        0.0961377  0.261329
-                                                               0.261329   0.0961377  1.0        0.261329
-                                                               0.0961377  0.261329   0.261329   1.0      ])) < 1e-5
+    @test maximum(abs.(ConScape.power_mean_proximity(h) - [1.0        0.261329   0.261329   0.0961377
+                                                           0.261329   1.0        0.0961377  0.261329
+                                                           0.261329   0.0961377  1.0        0.261329
+                                                           0.0961377  0.261329   0.261329   1.0      ])) < 1e-5
 end
 
 
@@ -258,9 +258,9 @@ end
     q = rand(4, 4)
 
     g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l))
-    h = ConScape.Habitat(g, β=0.2)
+    h = ConScape.GridRSP(g, β=0.2)
 
-    @test ConScape.RSP_betweenness_kweighted(h) == ConScape.RSP_betweenness_kweighted(h; invcost=t -> exp(-t))
+    @test ConScape.betweenness_kweighted(h) == ConScape.betweenness_kweighted(h; invcost=t -> exp(-t))
 end
 
 @testset "least cost kl divergence" begin
@@ -287,7 +287,7 @@ end
          4.330475309063122  2.027890216069076   0.7949298748698876  0.6007738604289302  0.0               ]
 
     g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2))
-    h = ConScape.Habitat(g, cost=ConScape.MinusLog(), β=0.2)
+    h = ConScape.GridRSP(g, cost=ConScape.MinusLog(), β=0.2)
     @test ConScape.least_cost_kl_divergence(h, (25,50))[10,10] ≈ 80.63375074079197
 end
 
@@ -298,8 +298,8 @@ end
                                # Qualities decrease by row
                                qualities=copy(reshape(collect(m*n:-1:1), n, m)')
                                )
-    h = ConScape.Habitat(g, β=0.2)
-    @test sum(ConScape.RSP_criticality(h).nzval .< -1e-5) == 0
+    h = ConScape.GridRSP(g, β=0.2)
+    @test sum(ConScape.criticality(h).nzval .< -1e-5) == 0
 end
 
 
@@ -318,7 +318,7 @@ end
 
     g.A = 0.35 * g.A
 
-    h = ConScape.Habitat(g, β=0.2, cost=cost)
+    h = ConScape.GridRSP(g, β=0.2, cost=cost)
 
     S_comp = ConScape.LF_sensitivity(h, diagvalue=1.)[1]
     S_simu = ConScape.LF_sensitivity_simulation(h, diagvalue=1.)[1]
@@ -346,10 +346,10 @@ end
               ConScape.OddsAgainst(),
               ConScape.OddsFor()]
 
-        h_c = ConScape.Habitat(g, β=0.2, cost=c)
-        @test h_c isa ConScape.Habitat
+        h_c = ConScape.GridRSP(g, β=0.2, cost=c)
+        @test h_c isa ConScape.GridRSP
     end
 
     g.A[1,2] = 1.1 # Causes negative cost for C[1,2] when cost=MinusLog
-    @test_throws ArgumentError ConScape.Habitat(g, β=0.1, cost=ConScape.MinusLog()) # should raise error, as C[1,2]<0
+    @test_throws ArgumentError ConScape.GridRSP(g, β=0.1, cost=ConScape.MinusLog()) # should raise error, as C[1,2]<0
 end
