@@ -5,14 +5,15 @@ function perm_wall_sim(
     scaling::Float64=0.5,
     wallwidth::Integer=3,
     wallposition::Float64=0.5,
-    corridorwidths::NTuple{N,Int}=(3,3),
+    corridorwidths::NTuple{<:Any,Int}=(3,3),
     corridorpositions=(0.35,0.7),
     impossible_affinity::Real=1e-20,
-    kwargs...) where N
+    nhood_size::Integer=8,
+    kwargs...)
 
     # 1. initialize landscape
-    g = Grid(nrows, ncols; kwargs...)
-    g.affinities .*= scaling
+    affinities = _generate_affinities(nrows, ncols, nhood_size)
+    g = Grid(nrows, ncols; affinities=affinities*scaling, kwargs...)
 
     # # 2. compute the wall
     wpt = round(Int, ncols*wallposition - wallwidth/2 + 1)
@@ -31,7 +32,7 @@ function perm_wall_sim(
     append!(ys, range(maximum(ys) + 1 + corridorwidths[end]  , stop=nrows))
 
     impossible_nodes = vec(CartesianIndex.(collect(Iterators.product(ys, xs))))
-    _set_impossible_nodes!(g, impossible_nodes, impossible_affinity)
+    g = _set_impossible_nodes(g, impossible_nodes, impossible_affinity)
 
     return g
 end
@@ -146,19 +147,22 @@ Make pixels impossible to move to by changing the affinities to them to zero.
 Input:
     - node_list: list of nodes (either node_ids or coordinate-tuples) to be made impossible
 =#
-function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, impossible_affinity=1e-20)
+function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, impossible_affinity=1e-20)
     # Find the indices of the coordinates in the id_to_grid_coordinate_list vector
     node_list_idx = [findfirst(isequal(n), g.id_to_grid_coordinate_list) for n in node_list]
 
-    affinities = g.affinities
+    # Copy affinities and qualities for modification
+    affinities       = copy(g.affinities)
+    source_qualities = copy(g.source_qualities)
+    target_qualities = copy(g.target_qualities)
 
     # Set (nonzero) values to impossible_affinity:
     if impossible_affinity > 0
         affinities[node_list_idx,:] = impossible_affinity*(affinities[node_list_idx,:] .> 0)
         affinities[:,node_list_idx] = impossible_affinity*(affinities[:,node_list_idx] .> 0)
         for i in node_list
-            g.source_qualities[i] .= 0
-            g.target_qualities[i] .= 0
+            source_qualities[i] .= 0
+            target_qualities[i] .= 0
         end
     elseif impossible_affinity == 0
         # Delete the nodes completely:
@@ -168,20 +172,19 @@ function _set_impossible_nodes!(g::Grid, node_list::Vector{CartesianIndex{2}}, i
 
         affinities = affinities[nodes_to_keep,:]
         affinities = affinities[:,nodes_to_keep]
-
-        # FIXME! Commented out 8 April 2019 since qualities are now matrices.
-        # Check if commention out is a problem. I don't think so.
-        # deleteat!(vec(g.source_qualities), node_list_idx)
-        # deleteat!(vec(g.target_qualities), node_list_idx)
-        g.id_to_grid_coordinate_list = [g.id_to_grid_coordinate_list[id] for id in 1:length(g.id_to_grid_coordinate_list) if !(id in node_list_idx)]
     end
 
     for i in node_list
-        g.source_qualities[i] .= 0
-        g.target_qualities[i] .= 0
+        source_qualities[i] .= 0
+        target_qualities[i] .= 0
     end
 
-    g.affinities .= affinities
+    # Generate a new Grid based on the modified affinities
+    return Grid(size(g)...,
+        affinities=affinities,
+        source_qualities=source_qualities,
+        target_qualities=target_qualities,
+        costs=g.costfunction === nothing ? g.costmatrix : g.costfunction)
 end
 
 """

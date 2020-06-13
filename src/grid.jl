@@ -1,51 +1,91 @@
+abstract type Cost end
+struct MinusLog     <: Cost end
+struct ExpMinus     <: Cost end
+struct Inv          <: Cost end
+struct OddsAgainst  <: Cost end
+struct OddsFor      <: Cost end
+
+(::MinusLog)(x::Number)     = -log(x)
+(::ExpMinus)(x::Number)     = exp(-x)
+(::Inv)(x::Number)          = inv(x)
+(::OddsAgainst)(x::Number)  = inv(x) - 1
+(::OddsFor)(x::Number)      = x/(1 - x)
+
+Base.inv(::MinusLog)     = ExpMinus()
+Base.inv(::ExpMinus)     = MinusLog()
+Base.inv(::Inv)          = Inv()
+Base.inv(::OddsAgainst)  = OddsFor()
+Base.inv(::OddsFor)      = OddsAgainst()
+
 struct Grid
     nrows::Int
     ncols::Int
     affinities::SparseMatrixCSC{Float64,Int}
+    costfunction::Union{Nothing,Cost}
+    costmatrix::SparseMatrixCSC{Float64,Int}
     id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
     source_qualities::Matrix{Float64}
     target_qualities::SparseMatrixCSC{Float64,Int}
 end
 
-"""
-    Grid(nrows::Integer, ncols::Integer;
-              qualities::Matrix=ones(nrows, ncols),
-              source_qualities::Matrix=qualities,
-              target_qualities::Matrix=qualities,
-              nhood_size::Integer=8,
-              landscape=_generate_affinities(nrows, ncols, nhood_size))::Grid
+# """
+#     Grid(nrows::Integer, ncols::Integer;
+#               qualities::Matrix=ones(nrows, ncols),
+#               source_qualities::Matrix=qualities,
+#               target_qualities::Matrix=qualities,
+#               nhood_size::Integer=8,
+#               affinities=_generate_affinities(nrows, ncols, nhood_size),
+#               costs=MinusLog())::Grid
 
-Construct a `Grid` from a `landscape` passed a `SparseMatrixCSC`.
-"""
+# Construct a `Grid` from an `affinities` matrix of type `SparseMatrixCSC`.
+# """
 function Grid(nrows::Integer,
               ncols::Integer;
+              affinities=nothing,
               qualities::Matrix=ones(nrows, ncols),
               source_qualities::Matrix=qualities,
               target_qualities::AbstractMatrix=qualities,
-              nhood_size::Integer=8,
-              landscape=_generate_affinities(nrows, ncols, nhood_size),
+              costs::Union{Cost,SparseMatrixCSC{Float64,Int}}=MinusLog(),
               prune=true)
 
-    @assert nrows*ncols == LinearAlgebra.checksquare(landscape)
-    Ngrid = nrows*ncols
+    if affinities === nothing
+        throw(ArgumentError("matrix of affinities must be supplied"))
+    end
+
+    if nrows*ncols != LinearAlgebra.checksquare(affinities)
+        n = size(affinities, 1)
+        throw(ArgumentError("grid size ($nrows, $ncols) is incomptible with size of affinity matrix ($n, $n)"))
+    end
 
     _source_qualities = convert(Matrix{Float64}, source_qualities)
     _target_qualities = convert(SparseMatrixCSC{Float64,Int}, target_qualities)
 
     # Prune
-    if prune
-        nonzerocells = findall(!iszero, vec(sum(landscape, dims=1)))
-        _landscape = landscape[nonzerocells, nonzerocells]
-        _id_to_grid_coordinate_list = vec(CartesianIndices((nrows, ncols)))[nonzerocells]
+    _id_to_grid_coordinate_list = if prune
+        nonzerocells = findall(!iszero, vec(sum(affinities, dims=1)))
+        _affinities = affinities[nonzerocells, nonzerocells]
+        vec(CartesianIndices((nrows, ncols)))[nonzerocells]
     else
-        _landscape = landscape
-        _id_to_grid_coordinate_list = vec(CartesianIndices((nrows, ncols)))
+        _affinities = affinities
+        vec(CartesianIndices((nrows, ncols)))
+    end
+
+    _costfunction, _costmatrix = if costs isa Cost
+        costs, mapnz(costs, _affinities)
+    else
+        nothing, costs
+    end
+
+    if any(t -> t < 0, nonzeros(_costmatrix))
+        throw(ArgumentError("The cost matrix can have only non-negative elements. Perhaps you should change the cost function?"))
     end
 
     Grid(
         nrows,
         ncols,
-        _landscape,
+        _affinities,
+        _costfunction,
+        _costmatrix,
         _id_to_grid_coordinate_list,
         _source_qualities,
         _target_qualities,
@@ -120,12 +160,12 @@ Test if graph defined by Grid is fully connected.
 # Examples
 
 ```jldoctests
-julia> landscape = [1/4 0 1/4 1/4
-                    1/4 0 1/4 1/4
-                    1/4 0 1/4 1/4
-                    1/4 0 1/4 1/4];
+julia> affinities = [1/4 0 1/4 1/4
+                     1/4 0 1/4 1/4
+                     1/4 0 1/4 1/4
+                     1/4 0 1/4 1/4];
 
-julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.graph_matrix_from_raster(landscape))
+julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities))
 ConScape.Grid of size 4x4
 
 julia> ConScape.is_connected(grid)
@@ -139,7 +179,7 @@ LightGraphs.is_connected(g::Grid) = is_connected(SimpleWeightedDiGraph(g.affinit
 
 Extract the largest fully connected subgraph of the `Grid`. The returned `Grid`
 will have the same size as the input `Grid` but only nodes associated with the
-largest subgraph of the landscape will be active.
+largest subgraph of the affinities will be active.
 """
 function largest_subgraph(g::Grid)
     # Convert adjacency matrix to graph
@@ -155,12 +195,14 @@ function largest_subgraph(g::Grid)
     scci = sort(scc[i])
 
     # Extract the adjacency matrix of the largest subgraph
-    newA = graph[scci]
+    affinities = convert(SparseMatrixCSC{Float64,Int}, graph[scci])
 
     return Grid(
         g.nrows,
         g.ncols,
-        newA,
+        affinities,
+        g.costfunction,
+        g.costfunction === nothing ? g.costmatrix : mapnz(g.costfunction, affinities),
         g.id_to_grid_coordinate_list[scci],
         g.source_qualities,
         g.target_qualities)
@@ -173,12 +215,12 @@ Compute the least cost distance from all the cells in the grid to the the `targe
 
 # Examples
 ```jldoctests
-julia> landscape = [1/4 0 1/4 1/4
-                    1/4 0 1/4 1/4
-                    1/4 0 1/4 1/4
-                    1/4 0 1/4 1/4];
+julia> affinities = [1/4 0 1/4 1/4
+                     1/4 0 1/4 1/4
+                     1/4 0 1/4 1/4
+                     1/4 0 1/4 1/4];
 
-julia> grid = ConScape.Grid(size(landscape)..., landscape=ConScape.graph_matrix_from_raster(landscape))
+julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities))
 ConScape.Grid of size 4x4
 
 julia> ConScape.least_cost_distance(grid, (4,4))
