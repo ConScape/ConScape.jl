@@ -158,6 +158,24 @@ end
         qualities=copy(reshape(collect(1800:-1:1), 60, 30)')
     )
 
+    @testset "Grid fields" begin
+        @test g.ncols == 60
+        @test g.nrows == 30
+        @test g.A[1000:1002, 1000:1002] == [
+            0.0 0.5 0.0
+            0.5 0.0 0.5
+            0.0 0.5 0.0]
+        @test g.id_to_grid_coordinate_list[1000:1002] == [
+            CartesianIndex(10, 34),
+            CartesianIndex(11, 34),
+            CartesianIndex(12, 34)]
+        @test g.source_qualities[20:22, 30:32] == [
+              0.0   0.0   0.0
+            571.0 570.0 569.0
+            511.0 510.0 509.0]
+        @test g.target_qualities.nzval[1:3] == [1800, 1740, 1680]
+    end
+
     @testset "Grid plotting" begin
         @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
         @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
@@ -167,6 +185,25 @@ end
 
 
     grsp = ConScape.GridRSP(g, cost=ConScape.MinusLog(), β=β)
+
+    @testset "GridRSP fields" begin
+        @test grsp.C.nzval[end-2:end] ≈ [
+            1.039720770839918
+            0.6931471805599453
+            0.6931471805599453]
+        @test grsp.Pref.nzval[end-2:end] ≈ [
+            0.10355339059327376,
+            0.22654091966098644,
+            0.22654091966098644]
+        @test grsp.W.nzval[end-2:end] ≈ [
+            0.08411148966019986,
+            0.19721532522049376,
+            0.19721532522049376]
+        @test grsp.Z[100:102,100:102] ≈ [
+            1.229380788700237   0.29706639745977187 0.11556093957432793
+            0.29706639745977187 1.22938026597041    0.297066141383724
+            0.11556093957432793 0.29706614138372406 1.2293801404819298]
+    end
 
     @testset "Test mean_kl_divergence" begin
         @test ConScape.mean_kl_divergence(grsp) ≈ 2.4405084252728125e13
