@@ -11,11 +11,12 @@ datadir = joinpath(@__DIR__(), "..", "data")
         0.680433618733817 0.548574246296093 0.0513858082558727
         0.725725747086108 0.425760212528985 0.0378853709637769
         0.658316359706223 0.549403912723064 0.247374645175878]
+    affinities = ConScape.graph_matrix_from_raster(affinity_raster)
 
     qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_$landscape.asc"))
 
     g = ConScape.Grid(size(affinity_raster)...,
-        affinities=ConScape.graph_matrix_from_raster(affinity_raster),
+        affinities=affinities,
         qualities=qualities
         )
 
@@ -477,8 +478,8 @@ end
 @testset "Criticality" begin
     m, n = 10, 15
     g = ConScape.perm_wall_sim(m, n, corridorwidths=(2,2),
-      # Qualities decrease by row
-      qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+        # Qualities decrease by row
+        qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
     grsp = ConScape.GridRSP(g, β=0.2)
     @test sum(ConScape.criticality(grsp).nzval .< -1e-5) == 0
 end
@@ -518,6 +519,48 @@ end
 
 end
 
+@testset "pass cost matrix instead of function" begin
+    m, n = 10, 15
+
+    _g = ConScape.perm_wall_sim(m, n, corridorwidths=(2,2),
+        # Qualities decrease by row
+        qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+
+    g = ConScape.Grid(m, n,
+        affinities=_g.affinities,
+        qualities=_g.source_qualities,
+        costs=ConScape.MinusLog())
+    grsp = ConScape.GridRSP(g, β=0.2)
+
+    g_with_costs = ConScape.Grid(m, n,
+        affinities=_g.affinities,
+        qualities=_g.source_qualities,
+        costs=ConScape.mapnz(ConScape.MinusLog(), _g.affinities))
+    grsp_with_costs = ConScape.GridRSP(g_with_costs, β=0.2)
+
+    @test g_with_costs.costfunction === nothing
+
+    @test ConScape.betweenness_qweighted(grsp) == ConScape.betweenness_qweighted(grsp_with_costs)
+
+    # For betweenness_kweighted and functionality we should have exact match between the two
+    # methods of passing the costs
+    for f in (:betweenness_kweighted, :functionality)
+        @test_throws ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
+        @test getfield(ConScape, f)(grsp, invcost=ConScape.ExpMinus()) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.ExpMinus())
+        @test getfield(ConScape, f)(grsp, invcost=ConScape.Inv(), diagvalue=1.0) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.Inv(), diagvalue=1.0)
+    end
+
+    # ...this is not the case for criticality because we don't set the affinity to zero but a very small
+    # number. Therefore, the costs will get updated when a cost function is suppled but not when cost
+    # matrix is supplied. The difference appear to be small, though, so we can test with ≈
+    for f in (:criticality,)
+        @test_throws ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
+        @test getfield(ConScape, f)(grsp, invcost=ConScape.ExpMinus()) ≈ getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.ExpMinus())
+        @test getfield(ConScape, f)(grsp, invcost=ConScape.Inv(), diagvalue=1.0) ≈ getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.Inv(), diagvalue=1.0)
+    end
+
+    @test_throws ArgumentError("sensitivities are only defined when costs are functions of affinities") ConScape.LF_sensitivity(grsp_with_costs)
+end
 
 @testset "Cost functions" begin
     l = rand(4, 4)

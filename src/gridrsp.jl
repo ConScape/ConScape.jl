@@ -111,10 +111,18 @@ The optional `diagvalue` element specifies which value to use for the diagonal o
 of proximities, i.e. after applying the inverse cost function to the matrix of distances.
 When nothing is specified, the diagonal elements won't be adjusted.
 """
-function betweenness_kweighted(grsp::GridRSP; invcost=inv(grsp.g.costfunction), diagvalue=nothing)
+function betweenness_kweighted(grsp::GridRSP; invcost=nothing, diagvalue=nothing)
+
+    # Check that invcost function has been passed if no cost function is saved
+    if invcost === nothing
+        if grsp.g.costfunction === nothing
+            throw(ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function."))
+        else
+            invcost = inv(grsp.g.costfunction)
+        end
+    end
 
     proximities = map(invcost, expected_cost(grsp))
-
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
 
     if diagvalue !== nothing
@@ -311,8 +319,17 @@ then proximities are computed directly using it. The default is `expected_cost`.
 """
 function functionality(grsp::GridRSP;
                        connectivity_function=expected_cost,
-                       invcost=inv(grsp.g.costfunction),
+                       invcost=nothing,
                        diagvalue=nothing)
+
+    # Check that invcost function has been passed if no cost function is saved
+    if invcost === nothing
+        if grsp.g.costfunction === nothing
+            throw(ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function."))
+        else
+            invcost = inv(grsp.g.costfunction)
+        end
+    end
 
     S = connectivity_function(grsp)
 
@@ -349,7 +366,7 @@ end
 
 function functionality(grsp::GridRSP,
                        cell::CartesianIndex{2};
-                       invcost=inv(grsp.g.costfunction),
+                       invcost=nothing,
                        diagvalue=nothing,
                        avalue=floatmin(), # smallest non-zero value
                        qˢvalue=0.0,
@@ -381,7 +398,7 @@ function functionality(grsp::GridRSP,
                 grsp.g.ncols,
                 affinities,
                 grsp.g.costfunction,
-                grsp.g.costfunction === nothing ? grsp.costmatrix : mapnz(grsp.g.costfunction, affinities),
+                grsp.g.costfunction === nothing ? grsp.g.costmatrix : mapnz(grsp.g.costfunction, affinities),
                 grsp.g.id_to_grid_coordinate_list,
                 newsource_qualities,
                 newtarget_qualities)
@@ -406,7 +423,7 @@ positive to avoid that the graph becomes disconnected. See `functionality`(@ref)
 for the remaining arguments.
 """
 function criticality(grsp::GridRSP;
-                     invcost=inv(grsp.g.costfunction),
+                     invcost=nothing,
                      diagvalue=nothing,
                      avalue=floatmin(),
                      qˢvalue=0.0,
@@ -454,10 +471,19 @@ When nothing is specified, the diagonal elements won't be adjusted.
 
 """
 function LF_sensitivity(grsp::GridRSP;
-    invcost=inv(grsp.g.costfunction),
+    invcost=nothing,
     exp_prox_scaling::Real=1.,
     unitless::Bool=true,
     diagvalue=nothing)
+
+    if grsp.g.costfunction === nothing
+        throw(ArgumentError("sensitivities are only defined when costs are functions of affinities"))
+    end
+
+    # Check that invcost function has been passed. If not then default to inverse of cost function
+    if invcost === nothing
+        invcost = inv(grsp.g.costfunction)
+    end
 
     if grsp.g.costfunction == Inv() && exp_prox_scaling !== 1.
         throw(ArgumentError("exp_prox_scaling can different from 1 only when using exponential proximity transformation"))
