@@ -454,7 +454,7 @@ end
 
 
 """
-    LF_sensitivity(grsp::GridRSP; invcost=inv(grsp.g.costfunction), exp_prox_scaling::Real=1., unitless::Bool=true)::Matrix{Float64}
+    sensitivity(grsp::GridRSP; invcost=inv(grsp.g.costfunction), exp_prox_scaling::Real=1., unitless::Bool=true)::Matrix{Float64}
 
 Compute the sensitivity of Landscape Functionality with respect to perturbation of
 affinities on incoming edges of a node. Optionally, an inverse
@@ -470,7 +470,7 @@ When nothing is specified, the diagonal elements won't be adjusted.
  - `unitless`: A boolean deciding whether the output is the "unitless" derivative, i.e., ``\\frac{\\mathrm{d} f}{\\mathrm{d} \\log x}``, or the standard derivative
 
 """
-function LF_sensitivity(grsp::GridRSP;
+function sensitivity(grsp::GridRSP;
     invcost=nothing,
     exp_prox_scaling::Real=1.,
     unitless::Bool=true,
@@ -549,7 +549,7 @@ function LF_sensitivity(grsp::GridRSP;
 end
 
 
-function LF_power_mean_sensitivity(grsp::GridRSP; invcost=inv(grsp.g.costfunction))
+function power_mean_sensitivity(grsp::GridRSP; invcost=inv(grsp.g.costfunction))
     # Now assumes grsp.g.costfunction = MinusLog
 
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
@@ -580,7 +580,7 @@ function LF_power_mean_sensitivity(grsp::GridRSP; invcost=inv(grsp.g.costfunctio
 
 end
 
-function LF_sensitivity_simulation(grsp::GridRSP;
+function sensitivity_simulation(grsp::GridRSP;
     exp_prox_scaling::Real=1.,
     unitless::Bool=true,
     diagvalue=nothing)
@@ -629,7 +629,7 @@ end
 
 
 
-function LF_power_mean_sensitivity_simulation(grsp::GridRSP)
+function power_mean_sensitivity_simulation(grsp::GridRSP)
 
     g = grsp.g
 

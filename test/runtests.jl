@@ -506,14 +506,14 @@ end
 
     grsp = ConScape.GridRSP(g, β=0.2)
 
-    S_comp = ConScape.LF_sensitivity(grsp, diagvalue=1.)[1]
-    S_simu = ConScape.LF_sensitivity_simulation(grsp, diagvalue=1.)[1]
+    S_comp = ConScape.sensitivity(grsp, diagvalue=1.)[1]
+    S_simu = ConScape.sensitivity_simulation(grsp, diagvalue=1.)[1]
 
     @test sum(abs.(S_comp - S_simu)./maximum(abs.(S_comp))) ≈ 0 atol=5e-3
 
 
-    S_comp = ConScape.LF_power_mean_sensitivity(grsp)[1]
-    S_simu = ConScape.LF_power_mean_sensitivity_simulation(grsp)[1]
+    S_comp = ConScape.power_mean_sensitivity(grsp)[1]
+    S_simu = ConScape.power_mean_sensitivity_simulation(grsp)[1]
 
     @test sum(abs.(S_comp - S_simu)./maximum(abs.(S_comp))) ≈ 0 atol=5e-3
 
@@ -559,7 +559,7 @@ end
         @test getfield(ConScape, f)(grsp, invcost=ConScape.Inv(), diagvalue=1.0) ≈ getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.Inv(), diagvalue=1.0)
     end
 
-    @test_throws ArgumentError("sensitivities are only defined when costs are functions of affinities") ConScape.LF_sensitivity(grsp_with_costs)
+    @test_throws ArgumentError("sensitivities are only defined when costs are functions of affinities") ConScape.sensitivity(grsp_with_costs)
 end
 
 @testset "Cost functions" begin
