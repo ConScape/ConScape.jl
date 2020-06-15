@@ -6,23 +6,24 @@ datadir = joinpath(@__DIR__(), "..", "data")
     landscape = "sno_2000"
     β = 0.1
 
-    affinities, _ = ConScape.readasc(joinpath(datadir, "affinities_$landscape.asc"))
-    @test affinities[30:32, 30:32] == [
+    affinity_raster, _ = ConScape.readasc(joinpath(datadir, "affinities_$landscape.asc"))
+    @test affinity_raster[30:32, 30:32] == [
         0.680433618733817 0.548574246296093 0.0513858082558727
         0.725725747086108 0.425760212528985 0.0378853709637769
         0.658316359706223 0.549403912723064 0.247374645175878]
+    affinities = ConScape.graph_matrix_from_raster(affinity_raster)
 
     qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_$landscape.asc"))
 
-    g = ConScape.Grid(size(affinities)...,
-        landscape=ConScape.graph_matrix_from_raster(affinities),
+    g = ConScape.Grid(size(affinity_raster)...,
+        affinities=affinities,
         qualities=qualities
         )
 
     @testset "Grid fields" begin
         @test g.ncols == 59
         @test g.nrows == 44
-        @test g.A[1000:1002, 1000:1002] == [
+        @test g.affinities[1000:1002, 1000:1002] == [
             0.0               0.557963581550866 0.0
             0.607917269319296 0.0               0.273319838512689
             0.0               0.557963581550866 0.0]
@@ -34,6 +35,11 @@ datadir = joinpath(@__DIR__(), "..", "data")
             0.10284506027383  0.059244283127482  0.0361260830667015]
         @test g.target_qualities.nzval[1:3] == [
             0.00128399959066883, 0.00289564372117942, 0.000117460697806407]
+        @test g.costfunction == ConScape.MinusLog()
+        @test g.costmatrix.nzval[end-2:end] ≈ [
+            17.339919976251554
+            16.99334638597158
+            17.339919976251554]
     end
 
     @testset "Grid plotting" begin
@@ -45,10 +51,6 @@ datadir = joinpath(@__DIR__(), "..", "data")
     grsp = ConScape.GridRSP(g, β=β)
 
     @testset "GridRSP fields" begin
-        @test grsp.C.nzval[end-2:end] ≈ [
-            17.339919976251554
-            16.99334638597158
-            17.339919976251554]
         @test grsp.Pref.nzval[end-2:end] ≈ [
             0.00031266870414554466,
             0.00018055948867712768,
@@ -74,7 +76,7 @@ datadir = joinpath(@__DIR__(), "..", "data")
 # No need to test this on sno_100 and doesn't deepend on β
 # FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
                     @test ConScape.graph_matrix_from_raster(
-                        affinities,
+                        affinity_raster,
                         neighbors=nn,
                         weight=w,
                         matrix_type=mt) isa ConScape.SparseMatrixCSC
@@ -161,7 +163,7 @@ end
     @testset "Grid fields" begin
         @test g.ncols == 60
         @test g.nrows == 30
-        @test g.A[1000:1002, 1000:1002] == [
+        @test g.affinities[1000:1002, 1000:1002] == [
             0.0 0.5 0.0
             0.5 0.0 0.5
             0.0 0.5 0.0]
@@ -184,10 +186,10 @@ end
 
 
 
-    grsp = ConScape.GridRSP(g, cost=ConScape.MinusLog(), β=β)
+    grsp = ConScape.GridRSP(g, β=β)
 
     @testset "GridRSP fields" begin
-        @test grsp.C.nzval[end-2:end] ≈ [
+        @test grsp.g.costmatrix.nzval[end-2:end] ≈ [
             1.039720770839918
             0.6931471805599453
             0.6931471805599453]
@@ -235,7 +237,7 @@ end
     @testset "Coarse graining: merging pixels to landmarks" begin
         g_coarse = ConScape.Grid(
             size(g)...,
-            landscape=g.A,
+            affinities=g.affinities,
             source_qualities=g.source_qualities,
             target_qualities=ConScape.coarse_graining(g, 3))
 
@@ -377,8 +379,8 @@ end
           0   0 1/4 1/4
           0   0 1/4 1/4]
 
-    g1 = ConScape.Grid(size(l1)..., landscape=ConScape.graph_matrix_from_raster(l1))
-    g2 = ConScape.Grid(size(l2)..., landscape=ConScape.graph_matrix_from_raster(l2))
+    g1 = ConScape.Grid(size(l1)..., affinities=ConScape.graph_matrix_from_raster(l1))
+    g2 = ConScape.Grid(size(l2)..., affinities=ConScape.graph_matrix_from_raster(l2))
 
     @test !ConScape.is_connected(g1)
     @test ConScape.is_connected(g2)
@@ -393,7 +395,7 @@ end
          1/4 0 1/4 1/4
          1/4 0 1/4 1/4]
 
-    g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4))
+    g = ConScape.Grid(size(l)..., affinities=ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4))
 
     @test all(ConScape.least_cost_distance(g, (4,4)) .=== [Inf  NaN  1.0   0.75
                                                            Inf  NaN  0.75  0.5
@@ -406,13 +408,13 @@ end
          1 1]
 
     g = ConScape.Grid(
-      size(l)...,
-      landscape=ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4))
-    C = ConScape.graph_matrix_from_raster(
-      l,
-      neighbors=ConScape.N4,
-      matrix_type=ConScape.CostMatrix)
-    grsp = ConScape.GridRSP(g, C=C, β=2.)
+        size(l)...,
+        affinities=ConScape.graph_matrix_from_raster(l, neighbors=ConScape.N4),
+        costs=ConScape.graph_matrix_from_raster(
+            l,
+            neighbors=ConScape.N4,
+            matrix_type=ConScape.CostMatrix))
+    grsp = ConScape.GridRSP(g, β=2.)
 
     @test maximum(abs.(ConScape.free_energy_distance(grsp) - [
       0.0       1.34197   1.34197   2.34197
@@ -438,7 +440,7 @@ end
     l = rand(4, 4)
     q = rand(4, 4)
 
-    g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l))
+    g = ConScape.Grid(size(l)..., affinities=ConScape.graph_matrix_from_raster(l))
     grsp = ConScape.GridRSP(g, β=0.2)
 
     @test ConScape.betweenness_kweighted(grsp) == ConScape.betweenness_kweighted(grsp; invcost=t -> exp(-t))
@@ -468,7 +470,7 @@ end
          4.330475309063122  2.027890216069076   0.7949298748698876  0.6007738604289302  0.0               ]
 
     g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2))
-    grsp = ConScape.GridRSP(g, cost=ConScape.MinusLog(), β=0.2)
+    grsp = ConScape.GridRSP(g, β=0.2)
     @test ConScape.least_cost_kl_divergence(grsp, (25,50))[10,10] ≈ 80.63375074079197
 end
 
@@ -476,49 +478,93 @@ end
 @testset "Criticality" begin
     m, n = 10, 15
     g = ConScape.perm_wall_sim(m, n, corridorwidths=(2,2),
-      # Qualities decrease by row
-      qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+        # Qualities decrease by row
+        qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
     grsp = ConScape.GridRSP(g, β=0.2)
     @test sum(ConScape.criticality(grsp).nzval .< -1e-5) == 0
 end
 
 
-@testset "Sensitivity" for cost in (ConScape.MinusLog(), ConScape.Inv()),
-                           test_landmarks in (true, false)
-    m, n = 12,16
+@testset "Sensitivity. cost=$cost, test_landmarks=$test_landmarks" for
+    cost in (ConScape.MinusLog(), ConScape.Inv()),
+        test_landmarks in (true, false)
+
+    m, n = 12, 16
+    affinities = ConScape._generate_affinities(m, n, 8)*0.35
 
     if test_landmarks
         target_qualities = zeros(m,n)
         target_qualities[:, Int(floor(n/2)-1):Int(ceil(n/2)+1)] .= 1.
         target_qualities = sparse(target_qualities)
-        g = ConScape.Grid(m, n, target_qualities=target_qualities) #, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+        g = ConScape.Grid(m, n;
+            affinities=affinities,
+            costs=cost,
+            target_qualities=target_qualities) #, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
     else
-        g = ConScape.Grid(m, n)
+        g = ConScape.Grid(m, n; affinities=affinities, costs=cost)
     end
 
-    g.A = 0.35 * g.A
+    grsp = ConScape.GridRSP(g, β=0.2)
 
-    grsp = ConScape.GridRSP(g, β=0.2, cost=cost)
-
-    S_comp = ConScape.LF_sensitivity(grsp, diagvalue=1.)[1]
-    S_simu = ConScape.LF_sensitivity_simulation(grsp, diagvalue=1.)[1]
+    S_comp = ConScape.sensitivity(grsp, diagvalue=1.)[1]
+    S_simu = ConScape.sensitivity_simulation(grsp, diagvalue=1.)[1]
 
     @test sum(abs.(S_comp - S_simu)./maximum(abs.(S_comp))) ≈ 0 atol=5e-3
 
 
-    S_comp = ConScape.LF_power_mean_sensitivity(grsp)[1]
-    S_simu = ConScape.LF_power_mean_sensitivity_simulation(grsp)[1]
+    S_comp = ConScape.power_mean_sensitivity(grsp)[1]
+    S_simu = ConScape.power_mean_sensitivity_simulation(grsp)[1]
 
     @test sum(abs.(S_comp - S_simu)./maximum(abs.(S_comp))) ≈ 0 atol=5e-3
 
 end
 
+@testset "pass cost matrix instead of function" begin
+    m, n = 10, 15
 
+    _g = ConScape.perm_wall_sim(m, n, corridorwidths=(2,2),
+        # Qualities decrease by row
+        qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+
+    g = ConScape.Grid(m, n,
+        affinities=_g.affinities,
+        qualities=_g.source_qualities,
+        costs=ConScape.MinusLog())
+    grsp = ConScape.GridRSP(g, β=0.2)
+
+    g_with_costs = ConScape.Grid(m, n,
+        affinities=_g.affinities,
+        qualities=_g.source_qualities,
+        costs=ConScape.mapnz(ConScape.MinusLog(), _g.affinities))
+    grsp_with_costs = ConScape.GridRSP(g_with_costs, β=0.2)
+
+    @test g_with_costs.costfunction === nothing
+
+    @test ConScape.betweenness_qweighted(grsp) == ConScape.betweenness_qweighted(grsp_with_costs)
+
+    # For betweenness_kweighted and functionality we should have exact match between the two
+    # methods of passing the costs
+    for f in (:betweenness_kweighted, :functionality)
+        @test_throws ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
+        @test getfield(ConScape, f)(grsp, invcost=ConScape.ExpMinus()) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.ExpMinus())
+        @test getfield(ConScape, f)(grsp, invcost=ConScape.Inv(), diagvalue=1.0) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.Inv(), diagvalue=1.0)
+    end
+
+    # ...this is not the case for criticality because we don't set the affinity to zero but a very small
+    # number. Therefore, the costs will get updated when a cost function is suppled but not when cost
+    # matrix is supplied. The difference appear to be small, though, so we can test with ≈
+    for f in (:criticality,)
+        @test_throws ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
+        @test getfield(ConScape, f)(grsp, invcost=ConScape.ExpMinus()) ≈ getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.ExpMinus())
+        @test getfield(ConScape, f)(grsp, invcost=ConScape.Inv(), diagvalue=1.0) ≈ getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.Inv(), diagvalue=1.0)
+    end
+
+    @test_throws ArgumentError("sensitivities are only defined when costs are functions of affinities") ConScape.sensitivity(grsp_with_costs)
+end
 
 @testset "Cost functions" begin
     l = rand(4, 4)
-
-    g = ConScape.Grid(size(l)..., landscape=ConScape.graph_matrix_from_raster(l))
+    affinities = ConScape.graph_matrix_from_raster(l)
 
     for c in [ConScape.MinusLog(),
               ConScape.ExpMinus(),
@@ -526,10 +572,18 @@ end
               ConScape.OddsAgainst(),
               ConScape.OddsFor()]
 
-        h_c = ConScape.GridRSP(g, β=0.2, cost=c)
+        g = ConScape.Grid(
+            size(l)...,
+            affinities=affinities,
+            costs=c)
+
+        h_c = ConScape.GridRSP(g, β=0.2)
         @test h_c isa ConScape.GridRSP
     end
 
-    g.A[1,2] = 1.1 # Causes negative cost for C[1,2] when cost=MinusLog
-    @test_throws ArgumentError ConScape.GridRSP(g, β=0.1, cost=ConScape.MinusLog()) # should raise error, as C[1,2]<0
+    affinities[1,2] = 1.1 # Causes negative cost for C[1,2] when costs=MinusLog
+    @test_throws ArgumentError ConScape.Grid(
+        size(l)...,
+        affinities=affinities,
+        costs=ConScape.MinusLog()) # should raise error, as C[1,2]<0
 end
