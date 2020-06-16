@@ -1,5 +1,11 @@
 image: "julia:1"
 
+stages:
+  - build
+  - test
+  - testdocs
+  - deploy
+
 variables:
   JULIA_DEPOT_PATH: "$CI_PROJECT_DIR/.julia/"
 
@@ -21,20 +27,34 @@ test:
     CODECOV_TOKEN: "0c79cb5b-3787-4892-9d2b-7131a41c35d4"
 
 weave:
+  stage: testdocs
   script:
     # Temporarily add Weave like this until we have a released version of ConScape to use for Weave files
     - julia --project -e 'using Pkg;
                           Pkg.add(PackageSpec(name="Weave"));'
     - julia --project --color=yes examples/make.jl
 
-pages:
-  stage: deploy
+test:docs:
+  stage: testdocs
+  needs: ["test"]
+  dependencies:
+    - test
   script:
     - julia --project=docs -e 'using Pkg; Pkg.instantiate(); Pkg.develop(PackageSpec(path=pwd()))'
     - julia --project=docs --color=yes docs/make.jl
+  artifacts:
+    paths:
+      - docs/build
+  only:
+
+pages:
+  stage: deploy
+  dependencies:
+    - test:docs
+  script:
     - mv docs/build public # move to the directory picked up by Gitlab pages
   artifacts:
     paths:
       - public
   only:
-  - master
+    - master

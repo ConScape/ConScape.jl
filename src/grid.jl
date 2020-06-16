@@ -28,17 +28,22 @@ struct Grid
     target_qualities::SparseMatrixCSC{Float64,Int}
 end
 
-# """
-#     Grid(nrows::Integer, ncols::Integer;
-#               qualities::Matrix=ones(nrows, ncols),
-#               source_qualities::Matrix=qualities,
-#               target_qualities::Matrix=qualities,
-#               nhood_size::Integer=8,
-#               affinities=_generate_affinities(nrows, ncols, nhood_size),
-#               costs=MinusLog())::Grid
+"""
+    Grid(nrows::Integer,
+              ncols::Integer;
+              affinities=nothing,
+              qualities::Matrix=ones(nrows, ncols),
+              source_qualities::Matrix=qualities,
+              target_qualities::AbstractMatrix=qualities,
+              costs::Union{Cost,SparseMatrixCSC{Float64,Int}}=MinusLog(),
+              prune=true)::Grid
 
-# Construct a `Grid` from an `affinities` matrix of type `SparseMatrixCSC`.
-# """
+Construct a `Grid` from an `affinities` matrix of type `SparseMatrixCSC`. It is possible
+to also supply matrices of `source_qualities` and `target_qualities` as well as
+a `costs` function that maps the `affinities` matrix to a `costs` matrix. Alternatively,
+it is possible to supply a matrix to `costs` directly. If `prune=true` (the default), the
+affinity and cost matrices will be pruned to exclude unreachable nodes.
+"""
 function Grid(nrows::Integer,
               ncols::Integer;
               affinities=nothing,
