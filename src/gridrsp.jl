@@ -408,6 +408,56 @@ function connected_habitat(grsp::GridRSP,
 end
 
 """
+    eigmax(grsp::GridRSP;
+        connectivity_function=expected_cost,
+        invcost=nothing,
+        diagvalue=nothing)
+
+Compute the largest eigenvalue of the quality scaled proximities with respect to the
+distance/proximity measure defined by `connectivity_function`. If `connectivity_function`
+is a distance measure then the distances are transformed to proximities by `invcost` which
+defaults to the inverse of the `costfunction` in the underlying `Grid` (if defined). Optionally,
+the diagonal values of the proximity matrix may be set to `diagvalue`.
+"""
+function LinearAlgebra.eigmax(grsp::GridRSP;
+    connectivity_function=expected_cost,
+    invcost=nothing,
+    diagvalue=nothing)
+
+    g = grsp.g
+
+    # Check that invcost function has been passed if no cost function is saved
+    if invcost === nothing
+        if grsp.g.costfunction === nothing
+            throw(ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function."))
+        else
+            invcost = inv(grsp.g.costfunction)
+        end
+    end
+
+    S = connectivity_function(grsp)
+
+    if connectivity_function <: DistanceFunction
+        map!(invcost, S, S)
+    end
+
+    targetidx, targetnodes = _targetidx_and_nodes(g)
+
+    if diagvalue !== nothing
+        for (j, i) in enumerate(targetnodes)
+            S[i, j] = diagvalue
+        end
+    end
+
+    qˢ = [g.source_qualities[i] for i in targetidx]
+    qᵗ = [g.target_qualities[i] for i in targetidx]
+
+    qSq = qˢ .* S[targetnodes, :] .* qᵗ'
+
+    return real(last(sort(eigvals(qSq), by=abs)))
+end
+
+"""
     criticality(grsp::GridRSP[;
                 invcost=inv(grsp.g.costfunction),
                 diagvalue=nothing,
@@ -681,4 +731,3 @@ function power_mean_sensitivity_simulation(grsp::GridRSP)
         g.ncols)), edge_sensitivities
 
 end
-
