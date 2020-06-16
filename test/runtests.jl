@@ -390,17 +390,26 @@ end
 end
 
 @testset "least cost distance" begin
-    l = [1/4 0 1/4 1/4
-         1/4 0 1/4 1/4
-         1/4 0 1/4 1/4
-         1/4 0 1/4 1/4]
+    r = [1/4 0 1/2 1/4
+         1/4 0 1/2 1/4
+         1/4 0 1/2 1/4
+         1/4 0 1/2 1/4]
 
-    g = ConScape.Grid(size(l)..., affinities=ConScape.graph_matrix_from_raster(l,neighbors=ConScape.N4))
+    a = ConScape.graph_matrix_from_raster(r, neighbors=ConScape.N4)
+    c = copy(a)
+    c.nzval .= 1/2
 
-    @test all(ConScape.least_cost_distance(g, (4,4)) .=== [Inf  NaN  1.0   0.75
-                                                           Inf  NaN  0.75  0.5
-                                                           Inf  NaN  0.5   0.25
-                                                           Inf  NaN  0.25  0.0])
+    @testset "c=$c, prune=$prune" for
+        (c, op) in ((ConScape.MinusLog(), <), (c, ==)),
+            prune in (true, false)
+
+        g = ConScape.Grid(size(r)..., affinities=a, costs=c, prune=prune)
+        lc = ConScape.least_cost_distance(g, (4,4))
+        @test all(lc[:, 1:2] .== Inf)
+        # since (4, 3) -> (4, 4) has higher affinity than (3, 4) -> (4, 4), i.e. lower cost
+        # when costs=MinusLog() and identical affinities and costs when using the cost matrix c
+        @test op(lc[4, 3], lc[3, 4])
+    end
 end
 
 @testset "Other distances and proximities" begin

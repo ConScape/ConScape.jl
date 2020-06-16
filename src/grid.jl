@@ -73,7 +73,11 @@ function Grid(nrows::Integer,
     _costfunction, _costmatrix = if costs isa Cost
         costs, mapnz(costs, _affinities)
     else
-        nothing, costs
+        if nrows*ncols != LinearAlgebra.checksquare(costs)
+            n = size(costs, 1)
+            throw(ArgumentError("grid size ($nrows, $ncols) is incomptible with size of cost matrix ($n, $n)"))
+        end
+        nothing, prune ? costs[nonzerocells, nonzerocells] : costs
     end
 
     if any(t -> t < 0, nonzeros(_costmatrix))
@@ -215,27 +219,27 @@ Compute the least cost distance from all the cells in the grid to the the `targe
 
 # Examples
 ```jldoctests
-julia> affinities = [1/4 0 1/4 1/4
-                     1/4 0 1/4 1/4
-                     1/4 0 1/4 1/4
-                     1/4 0 1/4 1/4];
+julia> affinities = [1/4 0 1/2 1/4
+                     1/4 0 1/2 1/4
+                     1/4 0 1/2 1/4
+                     1/4 0 1/2 1/4];
 
 julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities))
 ConScape.Grid of size 4x4
 
 julia> ConScape.least_cost_distance(grid, (4,4))
 4×4 Array{Float64,2}:
- Inf  NaN  0.75  0.75
- Inf  NaN  0.5   0.5
- Inf  NaN  0.25  0.25
- Inf  NaN  0.25  0.0
+ Inf  Inf  2.42602   3.46574
+ Inf  Inf  1.73287   2.77259
+ Inf  Inf  1.03972   1.38629
+ Inf  Inf  0.693147  0.0
 ```
 """
 function least_cost_distance(g::Grid, target::Tuple{Int,Int})
-    graph = SimpleWeightedDiGraph(g.affinities)
+    graph = SimpleWeightedDiGraph(g.costmatrix)
     targetnode = findfirst(isequal(CartesianIndex(target)), g.id_to_grid_coordinate_list)
     distvec = dijkstra_shortest_paths(graph, targetnode).dists
-    distgrid = fill(NaN, g.nrows, g.ncols)
+    distgrid = fill(Inf, g.nrows, g.ncols)
     for (i, c) in enumerate(g.id_to_grid_coordinate_list)
         distgrid[c] = distvec[i]
     end
