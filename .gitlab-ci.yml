@@ -10,29 +10,32 @@ stages:
   - testdocs
   - deploy
 
-variables:
-  JULIA_DEPOT_PATH: "$CI_PROJECT_DIR/.julia/"
-
 before_script:
   # workaround for https://github.com/JuliaDocs/Documenter.jl/issues/686
   - apt-get -qq update; apt-get -y install git
+
+build:
+  stage: build
+  script:
+    - julia -e 'using InteractiveUtils;
+                versioninfo()'
+    - julia --project -e 'using Pkg;
+                          Pkg.instantiate();
+                          Pkg.build("ConScape");
+                          using ConScape;'
 
 test:
   script:
     - julia -e 'using InteractiveUtils;
                 versioninfo()'
-    - mkdir $JULIA_DEPOT_PATH # Pkg3.jl#325
     - julia --project -e 'using Pkg;
-                          Pkg.update();
-                          Pkg.instantiate();
-                          Pkg.build("ConScape");
                           Pkg.test("ConScape"; coverage=true);'
     - julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Codecov.submit_local(process_folder())'
   variables:
     CODECOV_TOKEN: "0c79cb5b-3787-4892-9d2b-7131a41c35d4"
 
 weave:
-  stage: testdocs
+  stage: test
   script:
     # Temporarily add Weave like this until we have a released version of ConScape to use for Weave files
     - julia --project -e 'using Pkg;
@@ -41,7 +44,6 @@ weave:
 
 test:docs:
   stage: testdocs
-  needs: ["test"]
   dependencies:
     - test
   script:
