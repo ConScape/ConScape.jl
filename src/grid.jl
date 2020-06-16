@@ -54,7 +54,7 @@ function Grid(nrows::Integer,
 
     if nrows*ncols != LinearAlgebra.checksquare(affinities)
         n = size(affinities, 1)
-        throw(ArgumentError("grid size ($nrows, $ncols) is incomptible with size of affinity matrix ($n, $n)"))
+        throw(ArgumentError("grid size ($nrows, $ncols) is incompatible with size of affinity matrix ($n, $n)"))
     end
 
     _source_qualities = convert(Matrix{Float64}, source_qualities)
@@ -75,7 +75,7 @@ function Grid(nrows::Integer,
     else
         if nrows*ncols != LinearAlgebra.checksquare(costs)
             n = size(costs, 1)
-            throw(ArgumentError("grid size ($nrows, $ncols) is incomptible with size of cost matrix ($n, $n)"))
+            throw(ArgumentError("grid size ($nrows, $ncols) is incompatible with size of cost matrix ($n, $n)"))
         end
         nothing, prune ? costs[nonzerocells, nonzerocells] : costs
     end

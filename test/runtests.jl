@@ -416,13 +416,30 @@ end
     l = [1 1
          1 1]
 
+    a = ConScape.graph_matrix_from_raster(l, neighbors=ConScape.N4)
+
+    c = ConScape.graph_matrix_from_raster(
+        l,
+        neighbors=ConScape.N4,
+        matrix_type=ConScape.CostMatrix)
+
+    @testset "check shapes of affinity and cost matrices" begin
+        @test_throws ArgumentError("grid size (2, 2) is incompatible with size of affinity matrix (3, 3)") ConScape.Grid(
+            size(l)...,
+            affinities=a[1:end-1, 1:end-1],
+            costs=c)
+
+        @test_throws ArgumentError("grid size (2, 2) is incompatible with size of cost matrix (3, 3)") ConScape.Grid(
+            size(l)...,
+            affinities=a,
+            costs=c[1:end-1, 1:end-1])
+    end
+
     g = ConScape.Grid(
         size(l)...,
-        affinities=ConScape.graph_matrix_from_raster(l, neighbors=ConScape.N4),
-        costs=ConScape.graph_matrix_from_raster(
-            l,
-            neighbors=ConScape.N4,
-            matrix_type=ConScape.CostMatrix))
+        affinities=a,
+        costs=c)
+
     grsp = ConScape.GridRSP(g, β=2.)
 
     @test maximum(abs.(ConScape.free_energy_distance(grsp) - [
