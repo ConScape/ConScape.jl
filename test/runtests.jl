@@ -121,10 +121,12 @@ datadir = joinpath(@__DIR__(), "..", "data")
         end
     end
 
-    @testset "functionality" begin
-        hf = ConScape.functionality(grsp)
+    @testset "connected_habitat" begin
+        hf = ConScape.connected_habitat(grsp)
         @test hf isa SparseMatrixCSC
         @test size(hf) == size(grsp.g.source_qualities)
+
+        ConScape.connected_habitat(grsp, CartesianIndex((20,20)))
     end
 
     @testset "mean_lc_kl_divergence" begin
@@ -223,8 +225,8 @@ end
         @test bet ≈ bet_node
     end
 
-    @testset "functionality" begin
-        @test ConScape.ConScape.functionality(grsp, diagvalue=0.0)[28:30,58:60]' ≈
+    @testset "connected_habitat" begin
+        @test ConScape.ConScape.connected_habitat(grsp, diagvalue=0.0)[28:30,58:60]' ≈
             [11082.654882969266 2664.916100189486 89.420910249988
              10340.977912804196 2465.918728844169 56.970111157896
              11119.132467660969 2662.969749775032 33.280379014217]
@@ -568,9 +570,9 @@ end
 
     @test ConScape.betweenness_qweighted(grsp) == ConScape.betweenness_qweighted(grsp_with_costs)
 
-    # For betweenness_kweighted and functionality we should have exact match between the two
+    # For betweenness_kweighted and connected_habitat we should have exact match between the two
     # methods of passing the costs
-    for f in (:betweenness_kweighted, :functionality)
+    for f in (:betweenness_kweighted, :connected_habitat)
         @test_throws ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
         @test getfield(ConScape, f)(grsp, invcost=ConScape.ExpMinus()) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.ExpMinus())
         @test getfield(ConScape, f)(grsp, invcost=ConScape.Inv(), diagvalue=1.0) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.Inv(), diagvalue=1.0)

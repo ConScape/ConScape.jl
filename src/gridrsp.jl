@@ -300,10 +300,10 @@ function least_cost_kl_divergence(grsp::GridRSP, target::Tuple{Int,Int})
 end
 
 """
-    functionality(grsp::GridRSP; [connectivity_function=expected_cost,
+    connected_habitat(grsp::GridRSP; [connectivity_function=expected_cost,
         invcost=inv(grsp.g.costfunction), diagvalue=nothing])::Matrix{Float64}
 
-Compute RSP functionality of all nodes. Optionally, an inverse
+Compute RSP connected_habitat of all nodes. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
 distances to convert it to a matrix of proximities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the proximities.
@@ -317,10 +317,10 @@ If `connectivity_function` is a `DistanceFunction`, then it is used for computin
 is converted to proximities using `invcost`. If `connectivity_function` is a `ProximityFunction`,
 then proximities are computed directly using it. The default is `expected_cost`.
 """
-function functionality(grsp::GridRSP;
-                       connectivity_function=expected_cost,
-                       invcost=nothing,
-                       diagvalue=nothing)
+function connected_habitat(grsp::GridRSP;
+                           connectivity_function=expected_cost,
+                           invcost=nothing,
+                           diagvalue=nothing)
 
     # Check that invcost function has been passed if no cost function is saved
     if invcost === nothing
@@ -337,10 +337,10 @@ function functionality(grsp::GridRSP;
         map!(invcost, S, S)
     end
 
-    return functionality(grsp, S, diagvalue=diagvalue)
+    return connected_habitat(grsp, S, diagvalue=diagvalue)
 end
 
-function functionality(grsp::GridRSP, S::Matrix; diagvalue::Union{Nothing,Real}=nothing)
+function connected_habitat(grsp::GridRSP, S::Matrix; diagvalue::Union{Nothing,Real}=nothing)
 
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
 
@@ -353,7 +353,7 @@ function functionality(grsp::GridRSP, S::Matrix; diagvalue::Union{Nothing,Real}=
     qˢ = [grsp.g.source_qualities[i] for i in grsp.g.id_to_grid_coordinate_list]
     qᵗ = [grsp.g.target_qualities[i] for i in targetidx]
 
-    funvec = RSP_functionality(qˢ, qᵗ, S)
+    funvec = connected_habitat(qˢ, qᵗ, S)
 
     func = sparse([ij[1] for ij in grsp.g.id_to_grid_coordinate_list],
                   [ij[2] for ij in grsp.g.id_to_grid_coordinate_list],
@@ -364,13 +364,13 @@ function functionality(grsp::GridRSP, S::Matrix; diagvalue::Union{Nothing,Real}=
     return func
 end
 
-function functionality(grsp::GridRSP,
-                       cell::CartesianIndex{2};
-                       invcost=nothing,
-                       diagvalue=nothing,
-                       avalue=floatmin(), # smallest non-zero value
-                       qˢvalue=0.0,
-                       qᵗvalue=0.0)
+function connected_habitat(grsp::GridRSP,
+                           cell::CartesianIndex{2};
+                           invcost=nothing,
+                           diagvalue=nothing,
+                           avalue=floatmin(), # smallest non-zero value
+                           qˢvalue=0.0,
+                           qᵗvalue=0.0)
 
     if avalue <= 0.0
         throw("Affinity value has to be positive. Otherwise the graph will become disconnected.")
@@ -382,7 +382,7 @@ function functionality(grsp::GridRSP,
 
     # Check that cell is in targetidx
     if cell ∉ targetidx
-        throw(ArgumentError("Computing adjusted functionality is only supported for target cells"))
+        throw(ArgumentError("Computing adjusted connected_habitat is only supported for target cells"))
     end
 
     affinities = copy(grsp.g.affinities)
@@ -405,7 +405,7 @@ function functionality(grsp::GridRSP,
 
     newh = GridRSP(newg, β=grsp.β)
 
-    return functionality(newh; diagvalue=diagvalue, invcost=invcost)
+    return connected_habitat(newh; diagvalue=diagvalue, invcost=invcost)
 end
 
 """
@@ -419,8 +419,7 @@ end
 Compute the landscape criticality for each target cell by setting setting affinities
 for the cell to `avalue` as well as the source and target qualities associated with
 the cell to `qˢvalue` and `qᵗvalue` respectively. It is required that `avalue` is
-positive to avoid that the graph becomes disconnected. See `functionality`(@ref)
-for the remaining arguments.
+positive to avoid that the graph becomes disconnected.
 """
 function criticality(grsp::GridRSP;
                      invcost=nothing,
@@ -431,11 +430,11 @@ function criticality(grsp::GridRSP;
 
     targetidx = CartesianIndex.(findnz(grsp.g.target_qualities)[1:2]...)
     nl = length(targetidx)
-    reference_functionality = sum(functionality(grsp, invcost=invcost, diagvalue=diagvalue))
-    critvec = fill(reference_functionality, nl)
+    reference_connected_habitat = sum(connected_habitat(grsp, invcost=invcost, diagvalue=diagvalue))
+    critvec = fill(reference_connected_habitat, nl)
 
     @showprogress 1 "Computing criticality..." for i in 1:nl
-        critvec[i] -= sum(functionality(
+        critvec[i] -= sum(connected_habitat(
             grsp,
             targetidx[i];
             invcost=invcost,
@@ -585,7 +584,7 @@ function sensitivity_simulation(grsp::GridRSP;
     unitless::Bool=true,
     diagvalue=nothing)
 
-    lf = functionality(grsp, diagvalue=diagvalue)
+    lf = connected_habitat(grsp, diagvalue=diagvalue)
     g = grsp.g
 
     epsi = 1e-6
@@ -608,7 +607,7 @@ function sensitivity_simulation(grsp::GridRSP;
                 g.target_qualities)
 
             new_grsp = GridRSP(new_g, β=grsp.β)
-            new_lf = functionality(new_grsp, diagvalue=diagvalue)
+            new_lf = connected_habitat(new_grsp, diagvalue=diagvalue)
 
             edge_sensitivities[i,j] = sum(new_lf - lf)/epsi # (gnew.affinities[i,j]-g.affinities[i,j])
             if unitless
@@ -641,7 +640,7 @@ function power_mean_sensitivity_simulation(grsp::GridRSP)
     K = copy(grsp.Z)
     K ./= [grsp.Z[targetnodes[i],i] for i in 1:length(targetnodes)]'
     K .^= inv(grsp.β) # \mathcal{Z}^{1/β}
-    lf = sum(RSP_functionality(qˢ, qᵗ, K))
+    lf = sum(connected_habitat(qˢ, qᵗ, K))
 
     epsi = 1e-6
 
@@ -667,7 +666,7 @@ function power_mean_sensitivity_simulation(grsp::GridRSP)
             new_K = copy(new_grsp.Z)
             new_K ./= [new_grsp.Z[targetnodes[i], i] for i in 1:length(targetnodes)]'
             new_K .^= inv(new_grsp.β) # \mathcal{Z}^{1/β}
-            new_lf = sum(RSP_functionality(qˢ, qᵗ, new_K))
+            new_lf = sum(connected_habitat(qˢ, qᵗ, new_K))
 
             edge_sensitivities[i,j] = (new_lf - lf)/epsi # (gnew.affinities[i,j]-g.affinities[i,j])
         end
