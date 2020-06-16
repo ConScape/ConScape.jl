@@ -1,10 +1,13 @@
 using Documenter
 using ConScape
 
+DocMeta.setdocmeta!(ConScape, :DocTestSetup, :(using ConScape); recursive=true)
+
 makedocs(
     sitename = "ConScape",
     format = Documenter.HTML(),
-    modules = [ConScape]
+    modules = [ConScape],
+    strict = true
 )
 
 # Documenter can also automatically deploy documentation to gh-pages.

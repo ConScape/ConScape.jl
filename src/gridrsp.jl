@@ -21,7 +21,6 @@ end
 
 Construct a GridRSP from a `g::Grid` based on a `cost::Cost` type and the temperature `β::Real`.
 """
-
 function GridRSP(g::Grid; β=nothing)
 
     Pref = _Pref(g.affinities)
