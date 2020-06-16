@@ -2,6 +2,7 @@ name = "ConScape"
 uuid = "2ba2d6f2-f651-5162-bda8-601e45ce5244"
 
 [deps]
+ArnoldiMethod = "ec485272-7323-5ecc-a04f-4719b315124d"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 LightGraphs = "093fc24a-ae57-5d10-9952-331d41423f4d"
@@ -11,3 +12,11 @@ ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+ArnoldiMethod = "0.0.4"
+LaTeXStrings = "1.1"
+LightGraphs = "1.3"
+Plots = "1.4"
+ProgressMeter = "1.3"
+SimpleWeightedGraphs = "1.1"
