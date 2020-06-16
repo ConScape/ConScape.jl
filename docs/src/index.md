@@ -39,7 +39,7 @@ ConScape.least_cost_distance
 ConScape.sum_neighborhood
 ```
 
-### Habitat
+### GridRSP (Randomized Shortest Path)
 ```@docs
 ConScape.GridRSP
 ConScape.expected_cost
