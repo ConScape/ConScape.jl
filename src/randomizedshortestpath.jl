@@ -74,10 +74,10 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
 end
 
 function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
-                                   Z::AbstractMatrix,
-                                   qˢ::AbstractVector,
-                                   qᵗ::AbstractVector,
-                                   targetnodes::AbstractVector)
+                                        Z::AbstractMatrix,
+                                        qˢ::AbstractVector,
+                                        qᵗ::AbstractVector,
+                                        targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
     Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
@@ -168,9 +168,9 @@ end
 
 
 function RSP_expected_cost(W::SparseMatrixCSC,
-                             C::SparseMatrixCSC,
-                             Z::AbstractMatrix,
-                             landmarks::AbstractVector)
+                           C::SparseMatrixCSC,
+                           Z::AbstractMatrix,
+                           landmarks::AbstractVector)
 
     if axes(W) != axes(C)
         throw(DimensionMismatch(""))
@@ -205,7 +205,7 @@ RSP_survival_probability(Z::AbstractMatrix, β::Real, landmarks::AbstractVector)
 RSP_power_mean_proximity(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
     RSP_survival_probability(Z, β, landmarks).^(1/β)
 
-function RSP_functionality(qˢ::AbstractVector, # Source qualities
+function connected_habitat(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities
                            S::AbstractMatrix)  # Matrix of proximities
 
@@ -215,14 +215,14 @@ end
 
 
 function LF_sensitivity(A::SparseMatrixCSC,
-                                   C::SparseMatrixCSC,
-                                   β::Real,
-                                   W::SparseMatrixCSC,
-                                   Z::AbstractMatrix,
-                                   K::AbstractMatrix,  # diff_K_D (but can be any weighting matrix)
-                                   qˢ::AbstractVector,
-                                   qᵗ::AbstractVector,
-                                   lmarks::AbstractVector)
+                        C::SparseMatrixCSC,
+                        β::Real,
+                        W::SparseMatrixCSC,
+                        Z::AbstractMatrix,
+                        K::AbstractMatrix,  # diff_K_D (but can be any weighting matrix)
+                        qˢ::AbstractVector,
+                        qᵗ::AbstractVector,
+                        lmarks::AbstractVector)
 
     Zⁱ = inv.(Z)
     Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
@@ -283,16 +283,16 @@ end
 
 
 function LF_sensitivity_old(qˢ::AbstractVector, # Source qualities
-                        qᵗ::AbstractVector, # Target qualities
-                        A::SparseMatrixCSC,
-                        C::SparseMatrixCSC,
-                        β::Real,
-                        diff_C_A::SparseMatrixCSC,
-                        diff_K_D::AbstractMatrix,
-                        W::SparseMatrixCSC,
-                        Z::AbstractMatrix,
-                        invcost::Any,
-                        landmarks::AbstractVector)
+                            qᵗ::AbstractVector, # Target qualities
+                            A::SparseMatrixCSC,
+                            C::SparseMatrixCSC,
+                            β::Real,
+                            diff_C_A::SparseMatrixCSC,
+                            diff_K_D::AbstractMatrix,
+                            W::SparseMatrixCSC,
+                            Z::AbstractMatrix,
+                            invcost::Any,
+                            landmarks::AbstractVector)
 
     n = size(A,1)
     Zⁱ = inv.(Z)
