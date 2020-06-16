@@ -37,6 +37,7 @@ ConScape.is_connected
 ConScape.largest_subgraph
 ConScape.least_cost_distance
 ConScape.sum_neighborhood
+ConScape.coarse_graining
 ```
 
 ### GridRSP (Randomized Shortest Path)
