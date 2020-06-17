@@ -259,8 +259,18 @@ end
                                          (ConScape.survival_probability, 1.3475609129305437e7),
                                          (ConScape.power_mean_proximity, 3.279995546746518e6))
 
-        @test ConScape.eigmax(grsp,
-            connectivity_function=connectivity_function) ≈ val
+        vˡ, λ, vʳ = ConScape.eigmax(grsp,
+            connectivity_function=connectivity_function)
+
+        # Compute the weighted proximity matrix to check results
+        S   = connectivity_function(grsp)
+        if connectivity_function <: ConScape.DistanceFunction
+            map!(ConScape.ExpMinus(), S, S)
+        end
+        qSq = grsp.g.source_qualities[:] .* S .* grsp.g.target_qualities[:]'
+
+        @test λ ≈ val
+        @test qSq*vʳ ≈ vʳ*λ
     end
 
     @testset "Coarse graining: merging pixels to landmarks" begin
@@ -279,14 +289,15 @@ end
 
         g_coarse_rsp = ConScape.GridRSP(g_coarse, β=β)
 
-        @testset "eigmax, connectivity_function=$connectivity_function" for 
+        @testset "eigmax, connectivity_function=$connectivity_function" for
             (connectivity_function, val) in ((ConScape.expected_cost       , 2.7249231390873615e7),
                                              (ConScape.free_energy_distance, 2.7217089009360086e7),
                                              (ConScape.survival_probability, 3.0731253357215535e7),
                                              (ConScape.power_mean_proximity, 2.7217089009360246e7))
 
-            @test ConScape.eigmax(g_coarse_rsp,
-                connectivity_function=connectivity_function) ≈ val
+            vˡ, λ, vʳ = ConScape.eigmax(g_coarse_rsp,
+                connectivity_function=connectivity_function)
+            @test λ ≈ val
         end
     end
 

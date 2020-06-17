@@ -411,18 +411,16 @@ end
     eigmax(grsp::GridRSP;
         connectivity_function=expected_cost,
         invcost=nothing,
-        diagvalue=nothing)
+        diagvalue=nothing,
+        tol=1e-14)
 
-Compute the largest eigenvalue of the quality scaled proximities with respect to the
-distance/proximity measure defined by `connectivity_function`. If `connectivity_function`
-is a distance measure then the distances are transformed to proximities by `invcost` which
-defaults to the inverse of the `costfunction` in the underlying `Grid` (if defined). Optionally,
-the diagonal values of the proximity matrix may be set to `diagvalue`.
+Compute the largest eigenvalue triple (left vector, value, and right vector) of the quality scaled proximities with respect to the distance/proximity measure defined by `connectivity_function`. If `connectivity_function` is a distance measure then the distances are transformed to proximities by `invcost` which defaults to the inverse of the `costfunction` in the underlying `Grid` (if defined). Optionally, the diagonal values of the proximity matrix may be set to `diagvalue`. The `tol` argument specifies the convergence tolerance in the Arnoldi based eigensolver.
 """
 function LinearAlgebra.eigmax(grsp::GridRSP;
     connectivity_function=expected_cost,
     invcost=nothing,
-    diagvalue=nothing)
+    diagvalue=nothing,
+    tol=1e-14)
 
     g = grsp.g
 
@@ -449,12 +447,40 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
         end
     end
 
-    qˢ = [g.source_qualities[i] for i in targetidx]
+    qˢ = [g.source_qualities[i] for i in g.id_to_grid_coordinate_list]
     qᵗ = [g.target_qualities[i] for i in targetidx]
 
-    qSq = qˢ .* S[targetnodes, :] .* qᵗ'
+    # quality scaled proximity matrix
+    qSq = qˢ .* S .* qᵗ'
 
-    return real(last(sort(eigvals(qSq), by=abs)))
+    # square submatrix defined by extracting the rows corresponding to landmarks
+    qSq₀₀ = qSq[targetnodes,:]
+
+    # size of the full problem
+    n = prod(size(g))
+
+    # node ids for the non-landmarks
+    p₁ = setdiff(1:n, targetnodes)
+
+    # use an Arnoldi based eigensolver to compute the largest (absolute) eigenvalue and right vector (of submatrix)
+    Fps     = partialschur(qSq₀₀, nev=1, tol=tol)
+    λ₀, vʳ₀ = partialeigen(Fps[1])
+
+    # construct full right vector
+    vʳ = fill(NaN, n)
+    vʳ[targetnodes] = vʳ₀
+    vʳ[p₁] = qSq[p₁,:]*vʳ₀/λ₀[1]
+
+    # compute left vector (of submatrix) by shift-invert
+    Flu = lu(qSq₀₀ - λ₀[1]*I)
+    vˡ₀ = ldiv!(Flu', rand(length(targetidx)))
+    rmul!(vˡ₀, inv(vˡ₀[1]))
+
+    # construct full left vector
+    vˡ = zeros(n)
+    vˡ[targetnodes] = vˡ₀
+
+    return vˡ, λ₀[1], vʳ
 end
 
 """
