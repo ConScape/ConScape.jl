@@ -1,7 +1,7 @@
 module ConScape
 
     using SparseArrays, LinearAlgebra
-    using LightGraphs, Plots, SimpleWeightedGraphs, ProgressMeter
+    using LightGraphs, Plots, SimpleWeightedGraphs, ProgressMeter, ArnoldiMethod
 
     # Randomized shortest path algorithms
     include("randomizedshortestpath.jl")
