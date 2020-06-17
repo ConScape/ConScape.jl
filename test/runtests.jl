@@ -236,6 +236,16 @@ end
         @test ConScape.ConScape.mean_lc_kl_divergence(grsp) ≈ 1.0667623231698838e14
     end
 
+    @testset "eigmax, connectivity_function=$connectivity_function" for
+        (connectivity_function, val) in ((ConScape.expected_cost       , 5.576850282179157e6),
+                                         (ConScape.free_energy_distance, 3.2799955467465096e6),
+                                         (ConScape.survival_probability, 1.3475609129305437e7),
+                                         (ConScape.power_mean_proximity, 3.279995546746518e6))
+
+        @test ConScape.eigmax(grsp,
+            connectivity_function=connectivity_function) ≈ val
+    end
+
     @testset "Coarse graining: merging pixels to landmarks" begin
         g_coarse = ConScape.Grid(
             size(g)...,
@@ -249,6 +259,18 @@ end
             0.0     0.0 0.0 0.0     0.0
             0.0     0.0 0.0 0.0     0.0
             0.0 14031.0 0.0 0.0 14004.0]
+
+        g_coarse_rsp = ConScape.GridRSP(g_coarse, β=β)
+
+        @testset "eigmax, connectivity_function=$connectivity_function" for 
+            (connectivity_function, val) in ((ConScape.expected_cost       , 2.7249231390873615e7),
+                                             (ConScape.free_energy_distance, 2.7217089009360086e7),
+                                             (ConScape.survival_probability, 3.0731253357215535e7),
+                                             (ConScape.power_mean_proximity, 2.7217089009360246e7))
+
+            @test ConScape.eigmax(g_coarse_rsp,
+                connectivity_function=connectivity_function) ≈ val
+        end
     end
 
     @testset "Show methods" begin
@@ -283,6 +305,12 @@ end
             [15, 15, 45, 45],
             [sq[10, 15], sq[20, 15], sq[10, 45], sq[20, 45]],
             30, 60))
+
+    g2 = ConScape.perm_wall_sim(
+        30,
+        60,
+        corridorwidths=(3,2),
+        qualities=sq)
 
     @testset "Grid plotting" begin
         @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
