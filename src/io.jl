@@ -12,13 +12,31 @@ readasc(fn::String; kwargs...) = open(t -> readasc(t; kwargs...), fn, "r")
 
 function readasc(io::IOStream; nodatavalue=0.0)
 
-    metadatalines = 6
-
     d = Dict()
-    for i in 1:metadatalines
-        s = split(readline(io))
-        push!(d, lowercase(first(s))=>parse(Int, last(s)))
-    end
+
+    # NCOLS
+    s = split(readline(io))
+    push!(d, lowercase(first(s))=>parse(Int, last(s)))
+
+    # NROWS
+    s = split(readline(io))
+    push!(d, lowercase(first(s))=>parse(Int, last(s)))
+
+    # XLLCORNER
+    s = split(readline(io))
+    push!(d, lowercase(first(s))=>parse(Float64, last(s)))
+
+    # YLLCORNER
+    s = split(readline(io))
+    push!(d, lowercase(first(s))=>parse(Float64, last(s)))
+
+    # CELLSIZE
+    s = split(readline(io))
+    push!(d, lowercase(first(s))=>parse(Float64, last(s)))
+
+    # NODATA_VALUE
+    s = split(readline(io))
+    push!(d, lowercase(first(s))=>parse(Int, last(s)))
 
     m = readdlm(io)
 
@@ -36,7 +54,12 @@ end
 
 writeasc(fn::String, m::Matrix{<:Real}; kwargs...) = open(t -> writeasc(t, m; kwargs...), fn, "w")
 
-function writeasc(io::IOStream, m::Matrix{<:Real}; xllcorner::Integer=0, yllcorner::Integer=0, cellsize::Union{Nothing,Integer}=nothing, nodatavalue::Integer=-9999)
+function writeasc(io::IOStream, m::Matrix{<:Real};
+    xllcorner::Real=0,
+    yllcorner::Real=0,
+    cellsize::Union{Nothing,Real}=nothing,
+    nodatavalue::Integer=-9999)
+
     if cellsize === missing
         throw(ArgumentError("please provide a cell size"))
     end
