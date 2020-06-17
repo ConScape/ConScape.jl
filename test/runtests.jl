@@ -1,17 +1,36 @@
 using ConScape, Test, SparseArrays
 
 datadir = joinpath(@__DIR__(), "..", "data")
+_tempdir = mkdir(tempname())
 
 @testset "sno_2000" begin
     landscape = "sno_2000"
     β = 0.1
 
     affinity_raster, _ = ConScape.readasc(joinpath(datadir, "affinities_$landscape.asc"))
-    @test affinity_raster[30:32, 30:32] == [
-        0.680433618733817 0.548574246296093 0.0513858082558727
-        0.725725747086108 0.425760212528985 0.0378853709637769
-        0.658316359706223 0.549403912723064 0.247374645175878]
+
+    @testset "writeasc and readasc roundtrip" for
+        (xllcorner, yllcorner, cellsize) in ((1, 2, 7),
+                                             (1.1, 2.2, 7.7))
+
+        filename = joinpath(_tempdir, "sno.asc")
+        ConScape.writeasc(filename, affinity_raster,
+            xllcorner=xllcorner,
+            yllcorner=yllcorner,
+            cellsize=cellsize)
+        _raster, _meta = ConScape.readasc(filename)
+
+        @test _raster == affinity_raster
+        @test _meta["xllcorner"] == xllcorner
+        @test _meta["yllcorner"] == yllcorner
+        @test _meta["cellsize"] == cellsize
+    end
+
     affinities = ConScape.graph_matrix_from_raster(affinity_raster)
+    @test affinities[1000:1002, 1000:1002] == [
+        0.0               0.00031508895477488 0.0
+        0.133336775193571 0.0                 0.00119533310704962
+        0.0               0.00031508895477488 0.0]
 
     qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_$landscape.asc"))
 
@@ -185,8 +204,6 @@ end
         @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
         @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
     end
-
-
 
     grsp = ConScape.GridRSP(g, β=β)
 
