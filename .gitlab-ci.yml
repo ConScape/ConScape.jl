@@ -10,10 +10,6 @@ stages:
   - testdocs
   - deploy
 
-before_script:
-  # workaround for https://github.com/JuliaDocs/Documenter.jl/issues/686
-  - apt-get -qq update; apt-get -y install git
-
 build:
   stage: build
   script:
@@ -47,6 +43,8 @@ test:docs:
   dependencies:
     - test
   script:
+    # workaround for https://github.com/JuliaDocs/Documenter.jl/issues/686
+    - apt-get -qq update; apt-get -y install git
     - julia --project=docs -e 'using Pkg; Pkg.instantiate(); Pkg.develop(PackageSpec(path=pwd()))'
     - julia --project=docs --color=yes docs/make.jl
   artifacts:
