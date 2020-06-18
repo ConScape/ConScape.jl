@@ -247,6 +247,24 @@ end
             [11082.654882969266 2664.916100189486 89.420910249988
              10340.977912804196 2465.918728844169 56.970111157896
              11119.132467660969 2662.969749775032 33.280379014217]
+
+       @test ConScape.ConScape.connected_habitat(grsp, diagvalue=0.0,
+            connectivity_function=ConScape.free_energy_distance)[28:30,58:60] ≈ [
+                 93.0825   140.907    362.669
+                 41.1656    63.2089   159.685
+                  3.65643    4.04458    4.23555] rtol=1e-3
+
+       @test ConScape.ConScape.connected_habitat(grsp, diagvalue=0.0,
+            connectivity_function=ConScape.survival_probability)[28:30,58:60] ≈ [
+                 74141.1   72293.9    72294.7
+                 27854.8   27066.5    26995.2
+                  1151.38    765.195    391.131] rtol=1e-3
+
+        @test ConScape.ConScape.connected_habitat(grsp, diagvalue=0.0,
+            connectivity_function=ConScape.power_mean_proximity)[28:30,58:60] ≈ [
+                 93.0825   140.907    362.669
+                 41.1656    63.2089   159.685
+                  3.65643    4.04458    4.23555] rtol=1e-3
     end
 
     @testset "mean_lc_kl_divergence" begin
@@ -630,7 +648,11 @@ end
     # methods of passing the costs
     for f in (:betweenness_kweighted, :connected_habitat)
         @test_throws ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
+
+        @test getfield(ConScape, f)(grsp_with_costs, connectivity_function=ConScape.survival_probability) isa AbstractMatrix
+
         @test getfield(ConScape, f)(grsp, invcost=ConScape.ExpMinus()) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.ExpMinus())
+
         @test getfield(ConScape, f)(grsp, invcost=ConScape.Inv(), diagvalue=1.0) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.Inv(), diagvalue=1.0)
     end
 

@@ -99,21 +99,22 @@ end
 
 
 """
-    betweenness_kweighted(grsp::GridRSP; [invcost=inv(grsp.g.costfunction), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
+    betweenness_kweighted(grsp::GridRSP;
+        connectivity_function=expected_cost,
+        invcost=inv(grsp.g.costfunction),
+        diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
 
-Compute RSP betweenness of all nodes weighted with proximity. Optionally, an inverse
-cost function can be passed. The function will be applied elementwise to the matrix of
-distances to convert it to a matrix of proximities. If no inverse cost function is
-passed the the inverse of the cost function is used for the conversion of distances.
+Compute RSP betweenness of all nodes weighted with proximities computed with respect to the distance/proximity measure defined by `connectivity_function`. Optionally, an inverse cost function can be passed. The function will be applied elementwise to the matrix of distances to convert it to a matrix of proximities. If no inverse cost function is passed the the inverse of the cost function is used for the conversion of distances.
 
-The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
-of proximities, i.e. after applying the inverse cost function to the matrix of distances.
-When nothing is specified, the diagonal elements won't be adjusted.
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix of proximities, i.e. after applying the inverse cost function to the matrix of distances. When nothing is specified, the diagonal elements won't be adjusted.
 """
-function betweenness_kweighted(grsp::GridRSP; invcost=nothing, diagvalue=nothing)
+function betweenness_kweighted(grsp::GridRSP;
+    connectivity_function=expected_cost,
+    invcost=nothing,
+    diagvalue=nothing)
 
     # Check that invcost function has been passed if no cost function is saved
-    if invcost === nothing
+    if invcost === nothing && connectivity_function <: DistanceFunction
         if grsp.g.costfunction === nothing
             throw(ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function."))
         else
@@ -121,7 +122,12 @@ function betweenness_kweighted(grsp::GridRSP; invcost=nothing, diagvalue=nothing
         end
     end
 
-    proximities = map(invcost, expected_cost(grsp))
+    proximities = connectivity_function(grsp)
+
+    if connectivity_function <: DistanceFunction
+        map!(invcost, proximities, proximities)
+    end
+
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
 
     if diagvalue !== nothing
@@ -299,8 +305,10 @@ function least_cost_kl_divergence(grsp::GridRSP, target::Tuple{Int,Int})
 end
 
 """
-    connected_habitat(grsp::GridRSP; [connectivity_function=expected_cost,
-        invcost=inv(grsp.g.costfunction), diagvalue=nothing])::Matrix{Float64}
+    connected_habitat(grsp::GridRSP;
+        connectivity_function=expected_cost,
+        invcost=inv(grsp.g.costfunction),
+        diagvalue=nothing)::Matrix{Float64}
 
 Compute RSP connected_habitat of all nodes. Optionally, an inverse
 cost function can be passed. The function will be applied elementwise to the matrix of
@@ -322,7 +330,7 @@ function connected_habitat(grsp::GridRSP;
                            diagvalue=nothing)
 
     # Check that invcost function has been passed if no cost function is saved
-    if invcost === nothing
+    if invcost === nothing && connectivity_function <: DistanceFunction
         if grsp.g.costfunction === nothing
             throw(ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function."))
         else
@@ -425,7 +433,7 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
     g = grsp.g
 
     # Check that invcost function has been passed if no cost function is saved
-    if invcost === nothing
+    if invcost === nothing && connectivity_function <: DistanceFunction
         if grsp.g.costfunction === nothing
             throw(ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function."))
         else
