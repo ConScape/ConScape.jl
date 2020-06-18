@@ -466,6 +466,55 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
     Fps     = partialschur(qSq₀₀, nev=1, tol=tol)
     λ₀, vʳ₀ = partialeigen(Fps[1])
 
+    # Some notes on handling intended or unintended landmarks. When the Grid includes landmarks,
+    # the proximity matrix is no longer square since columns corresponding to non-landmarks are
+    # zero and have been removed. If we denote the full (and therefore square) quality scaled
+    # proximity matrix Sq then the rectangular landmark proximity matrix can be written as Sq*P₀
+    # where P=(P₀ P₁) is a permutation matrix where P₁ moves all the zero columns to the end. The
+    # act of the matrix P₀ correspond to indexing with the vector `targetnodes`.
+    #
+    # We'd like compute the largest eigen value of Sq but we only have Sq*P₀ and would like to
+    # avoid constructing the full Sq if possible. I.e. we'd like to solve |Sq - λI| == 0 witout
+    # constructing Sq. Since P is a permutation matrix, |Sq - λ*I| = |P'*Sq*P - λI| and we can
+    # expand to
+    #                   |/ P₀'*Sq*P₀   P₀'*Sq*P₁ \     |   | / P₀'*Sq*P₀ - λI   0   \|
+    # |P'*Sq*P - λ*I| = ||                       | - λI| = | |                      ||
+    #                   |\ P₁'*Sq*P₀   P₀'*Sq*P₁ /     |   | \    P₁'*Sq*P₀    -λI  /|
+    #
+    # since Sq*P₁ = 0. If Sq is n x n and P₀ is n x k then the expressions above show that
+    # |Sq - λ*I| == 0 has n - k zero roots and that the non-zero roots are the same as the roots
+    # of |P₀'*Sq*P₀ - λI| == 0. Hence we can compute the largest eigenvalue of Sq simply by
+    # computing the largest eigenvalue of P₀'*Sq*P₀.
+    #
+    # To compute the corresponding left and right vectors, we can rewrite the defitions of the
+    # left and right eigenvalue problem. Starting the right (usual) right problem
+    #
+    # Sq*v        = v*λ
+    #
+    # P'*Sq*P*P'v = P'*v*λ
+    #
+    # P'*Sq*P*ṽ   = ṽ*λ
+    #
+    # where ṽ = P'*v. We can again expand the blocks to get
+    #
+    #  / P₀'*Sq*P₀   0 \/ ṽ₀ \   / ṽ₀ \
+    #  |               ||    | = |    |*λ
+    #  \ P₁'*Sq*P₀   0 /\ ṽ₁ /   \ ṽ₁ /
+    #
+    # / P₀'*Sq*P₀*ṽ₀ \   / ṽ₀*λ \
+    # |              | = |      |
+    # \ P₁'*Sq*P₀*ṽ₀ /   \ ṽ₁*λ /
+    #                                                                 P₁'*Sq*P₀*ṽ₀
+    # which shows the ṽ₀ is just an eigenvector of P₀'*Sq*P₀ and ṽ₁ = ------------
+    #                                                                       λ
+    # For the left problem Sq'*w = w*λ, similar calculations leads to
+    #
+    # / (Sq*P₀)'*P₀*w̃₀ + (Sq*P₀)*P₁'*w̃₁ = w̃₀*λ \
+    # |                                        |
+    # \              0                  = w̃₁*λ /
+    #
+    # which shows the w̃₀ is simply a right eigenvector of P₀'*Sq*P₀ and w̃₀ = 0.
+
     # construct full right vector
     vʳ = fill(NaN, n)
     vʳ[targetnodes] = vʳ₀
