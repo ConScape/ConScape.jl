@@ -465,7 +465,7 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
     qSq₀₀ = qSq[targetnodes,:]
 
     # size of the full problem
-    n = prod(size(g))
+    n = size(g.affinities, 1)
 
     # node ids for the non-landmarks
     p₁ = setdiff(1:n, targetnodes)
