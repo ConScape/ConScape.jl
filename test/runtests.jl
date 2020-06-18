@@ -18,12 +18,21 @@ _tempdir = mkdir(tempname())
             xllcorner=xllcorner,
             yllcorner=yllcorner,
             cellsize=cellsize)
+
         _raster, _meta = ConScape.readasc(filename)
 
         @test _raster == affinity_raster
         @test _meta["xllcorner"] == xllcorner
         @test _meta["yllcorner"] == yllcorner
         @test _meta["cellsize"] == cellsize
+
+        filename2 = joinpath(_tempdir, "sno2.asc")
+
+        ConScape.writeasc(filename2, affinity_raster, _meta)
+
+        _raster2, _meta2 = ConScape.readasc(filename2)
+        @test _raster == _raster2
+        @test all(_meta[k] == _meta2[k] for k in keys(_meta))
     end
 
     affinities = ConScape.graph_matrix_from_raster(affinity_raster)

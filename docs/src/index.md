@@ -62,6 +62,7 @@ ConScape.sensitivity
 ConScape.graph_matrix_from_raster
 ConScape.mapnz
 ConScape.readasc
+ConScape.writeasc
 ```
 
 This package is derived from the Python package [reindeers](https://bitbucket.org/rdevooght/reindeers.git).
