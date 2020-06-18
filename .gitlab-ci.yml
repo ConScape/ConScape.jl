@@ -40,7 +40,16 @@ weave:
     # Temporarily add Weave like this until we have a released version of ConScape to use for Weave files
     - julia --project -e 'using Pkg;
                           Pkg.add(PackageSpec(name="Weave"));'
+    # Temporarily add Optim and IJulia like this
+    - julia --project -e 'using Pkg;
+                          Pkg.add(PackageSpec(name="Optim"));'
+    - julia --project -e 'using Pkg;
+                          Pkg.add(PackageSpec(name="IJulia"));'
     - julia --project --color=yes examples/make.jl
+  artifacts:
+    paths:
+      - examples/html
+      - examples/notebooks
 
 test:docs:
   stage: testdocs

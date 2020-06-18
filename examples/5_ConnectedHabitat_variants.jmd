@@ -1,0 +1,148 @@
+
+```julia
+using ConScape
+```
+
+# Data import and GridRSP creation
+
+```julia
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+```julia
+mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
+hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
+```
+
+```julia
+g = ConScape.Grid(size(mov_prob)...,
+                      affinities=ConScape.graph_matrix_from_raster(mov_prob),
+                      qualities=hab_qual,
+                      costs=ConScape.MinusLog());
+```
+
+```julia
+h = ConScape.GridRSP(g, β=0.001);
+```
+
+# Amount of Connected GridRSP
+
+## Summed Expected Cost
+
+```julia
+func = ConScape.connected_habitat(h, invcost=x -> exp(-x/2000));
+```
+
+```julia
+ConScape.heatmap(Array(func), yflip=true)
+```
+
+```julia
+sum(func)
+```
+
+```julia
+targetidx, targetnodes = ConScape._targetidx_and_nodes(h.g)
+qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
+qᵗ = [h.g.target_qualities[i] for i in targetidx]
+```
+
+```julia
+similarities = map(t -> iszero(t) ? t : exp(-t/2000), ConScape.expected_cost(h));
+```
+
+```julia
+ConScape.plot_values(g, similarities[4300,:])
+```
+
+```julia
+func1 = qˢ .* similarities * qᵗ
+
+@time sum(func1)
+```
+
+```julia
+sum(func)
+```
+
+```julia
+ConScape.plot_values(g, func1)
+```
+
+```julia
+landscape = qˢ .* similarities .* qᵗ'
+```
+
+```julia
+@time sum(func1)
+```
+
+## Eigenvalue Expected Cost
+
+```julia
+@time vˡ, λ, vʳ = ConScape.eigmax(h, connectivity_function=ConScape.expected_cost, invcost=t -> iszero(t) ? t : exp(-t/2000))
+
+λ
+```
+
+```julia
+ConScape.plot_values(g, real.(vʳ))
+```
+
+```julia
+ConScape.plot_values(g, real.(vˡ))
+```
+
+```julia
+using Plots
+plot(func1, real.(vʳ), seriestype = :scatter, legend=false, xlabel="sum", ylabel="eigenvector")
+```
+
+## Survival
+
+```julia
+similarities = h.Z;
+```
+
+```julia
+ConScape.plot_values(g, similarities[4300,:])
+```
+
+```julia
+func3 = qˢ .* similarities * qᵗ
+
+@time sum(func3)
+```
+
+```julia
+ConScape.plot_values(g, func3)
+```
+
+```julia
+plot(func1, func3, seriestype = :scatter, legend=false, xlabel="sum", ylabel="eigenvector")
+```
+
+## Probability of Connectivity
+
+```julia
+lcps = reduce(hcat, [ConScape.least_cost_distance(g, Tuple(i))[g.id_to_grid_coordinate_list] for i in targetidx])
+ConScape.plot_values(g, lcps[4300,:])
+```
+
+```julia
+similarities = map(t -> iszero(t) ? t : exp(-t/2.5), lcps);
+```
+
+```julia
+ConScape.plot_values(g, similarities[4300,:])
+```
+
+```julia
+pc = qˢ .* similarities * qᵗ
+
+@time sum(pc)
+```
+
+```julia
+ConScape.plot_values(g, pc)
+```

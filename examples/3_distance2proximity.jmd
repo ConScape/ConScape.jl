@@ -1,0 +1,105 @@
+
+```julia
+using ConScape
+```
+
+# Step 1: data import and Grid creation
+
+```julia
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+```julia
+mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
+hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
+```
+
+```julia
+beta = 0.001
+g = ConScape.Grid(size(mov_prob)...,
+                  affinities=ConScape.graph_matrix_from_raster(mov_prob),
+                  qualities=hab_qual,
+                  costs=ConScape.MinusLog())
+h = ConScape.GridRSP(g, β=beta);
+```
+
+```julia
+tmp = zeros(5345)
+tmp[4300] = 1
+ConScape.plot_values(g, tmp, title="Target (or is it Source?) Pixel")
+```
+
+# Step 2: Euclidean distances
+
+```julia
+euclid = zeros(length(g.id_to_grid_coordinate_list),length(g.id_to_grid_coordinate_list));
+```
+
+```julia
+x = [i[1] for i in g.id_to_grid_coordinate_list];
+y = [i[2] for i in g.id_to_grid_coordinate_list]
+
+for i in 1:size(euclid)[1]
+    for j in 1:size(euclid)[2]
+        euclid[i,j] = sqrt((x[i]-x[j])^2+(y[i]-y[j])^2)
+    end
+end
+```
+
+```julia
+ConScape.plot_values(g, euclid[:,4300], title="Euclidean Distance")
+```
+
+# Step 3: RSP Expected Cost Distances
+
+```julia
+dists = ConScape.expected_cost(h);
+```
+
+```julia
+ConScape.plot_values(g, dists[:,4300], title="RSP Expected Cost Distance")
+```
+
+```julia
+using Plots
+plot(euclid[:,4300], dists[:,4300], seriestype = :scatter, legend=false, xlabel="Euclidean Distance", ylabel="Expected Cost")
+```
+
+```julia
+ConScape.plot_values(g, map!(x -> exp(-x/1000),dists[:,4300],dists[:,4300]), title="RSP Expected Cost Proximity (log)")
+```
+
+```julia
+ConScape.plot_values(g, map!(x -> x<350 ? 1 : 350/x,dists[:,4300],dists[:,4300]), title="RSP Expected Cost Proximity (inv)")
+```
+
+```julia
+plot(map!(x -> exp(-x/1000),dists[:,4300],dists[:,4300]), map!(x -> x<350 ? 1 : 350/x,dists[:,4300],dists[:,4300]), seriestype = :scatter, legend=false, xlabel="log", ylabel="inv")
+```
+
+# Step 4: Survival Proximity
+
+```julia
+surv_prob = h.Z;
+tmp = surv_prob[:,4300]
+map!(t -> t>1 ? 1 : t,  tmp, tmp)
+
+ConScape.plot_values(g, tmp, title="Survival proximity")
+```
+
+```julia
+using Plots
+surv_prob = h.Z;
+tmp = surv_prob[:,4300]
+map!(t -> t>1 ? 1 : t,  tmp, tmp)
+
+plot(euclid[:,4300], tmp, seriestype = :scatter, legend=false, xlabel="Euclidean Distance", ylabel="Surival Probability")
+```
+
+```julia
+plot(dists[:,4300], tmp, seriestype = :scatter, legend=false, xlabel="Expected Cost", ylabel="Surival Probability")
+```
+
+```julia
+plot(map!(x -> exp(-x/1000),dists[:,4300],dists[:,4300]), tmp, seriestype = :scatter, legend=false, xlabel="Expected Cost Proximity", ylabel="Surival Probability")
+```

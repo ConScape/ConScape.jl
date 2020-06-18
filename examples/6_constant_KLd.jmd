@@ -1,0 +1,205 @@
+
+```julia
+using ConScape
+using Optim
+```
+
+# Data import and GridRSP creation
+
+```julia
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+```julia
+mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
+hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
+```
+
+```julia
+g = ConScape.Grid(size(mov_prob)...,
+                  affinities=ConScape.graph_matrix_from_raster(mov_prob),
+                  qualities=hab_qual,
+                  costs=ConScape.MinusLog())
+```
+
+```julia
+h = ConScape.GridRSP(g, β=1.0);
+```
+
+# Set fixed KL-divergence
+
+```julia
+maxkld = ConScape.mean_lc_kl_divergence(h);
+maxkld
+```
+
+```julia
+target_mean_D_KL = 0.5*maxkld
+target_mean_D_KL
+```
+
+```julia
+function mean_D_KL_difference(β, G, target_mean_D_KL)
+    mean_D_KL = ConScape.mean_kl_divergence(ConScape.GridRSP(G; β=β))
+    return (mean_D_KL-target_mean_D_KL)^2
+end
+```
+
+```julia
+r=optimize(_β -> mean_D_KL_difference(_β, g, target_mean_D_KL), 0.0, 3.0; iterations=20)
+```
+
+```julia
+sqrt(r.minimum)/target_mean_D_KL
+```
+
+```julia
+new_beta = r.minimizer
+new_beta
+```
+
+```julia
+h = ConScape.GridRSP(g, β=new_beta);
+```
+
+```julia
+ConScape.mean_kl_divergence(h)
+```
+
+```julia
+target_mean_D_KL
+```
+
+# Corridor example with constant KLd
+
+```julia
+function perm_wall_sim(nrows::Integer,
+    ncols::Integer;
+    scaling::Float64=0.5,
+    wallwidth::Integer=3,
+    wallposition::Float64=0.5,
+    corr_width::Integer=3, # corridorwidths::NTuple{N,Int}=(3,3),
+    corr_position::Float64=0.5, # corridorpositions=(0.35,0.7),
+    impossible_affinity::Real=1e-20,
+    qualities::Matrix=ones(nrows, ncols),
+    kwargs...) where N
+
+    R = 1. *ones(nrows,ncols)
+    x_center = floor(ncols/2)+1
+    x_min = x_center-floor(wallwidth/2)
+    xs = Vector{Int}(x_min:x_min+wallwidth-1)
+
+
+    y_center = floor(nrows/2)+1
+    y_min = y_center-floor(corr_width/2)
+    ys = y_min:y_min+corr_width-1
+    ys = setdiff(1:nrows, ys)
+
+
+    R[ys, xs] .= impossible_affinity
+    qualities[ys, xs] .= impossible_affinity
+    A = ConScape.graph_matrix_from_raster(R,neighbors=ConScape.N8)
+    return ConScape.Grid(nrows,ncols,affinities=A,qualities=qualities)
+end
+```
+
+```julia
+nrows,ncols = 21, 41
+
+g = perm_wall_sim(nrows, ncols, corr_width=3,
+                           corr_position=0.5,
+                           impossible_affinity=0.,
+                           # Qualities decrease by row
+                           qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
+
+
+β = 10.0
+```
+
+```julia
+h = ConScape.GridRSP(g, β=β);
+```
+
+```julia
+maxkld = ConScape.mean_lc_kl_divergence(h);
+maxkld
+```
+
+```julia
+100*ConScape.mean_kl_divergence(h)/maxkld
+```
+
+```julia
+dist = ConScape.expected_cost(h);
+```
+
+```julia
+target_node = Int(ceil((ncols-1)/2 - 3)*nrows + ceil((nrows+1)/2))
+
+ConScape.plot_values(g, dist[:,target_node])
+```
+
+```julia
+target_kld = ConScape.mean_kl_divergence(h)
+```
+
+```julia
+g2 = perm_wall_sim(nrows, ncols, corr_width=7,
+                           corr_position=0.5,
+                           impossible_affinity=0.,
+                           # Qualities decrease by row
+                           qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
+```
+
+```julia
+h2 = ConScape.GridRSP(g2, β=β);
+```
+
+```julia
+dist2 = ConScape.expected_cost(h2);
+```
+
+```julia
+ConScape.mean_kl_divergence(h2)
+```
+
+```julia
+target_kld
+```
+
+```julia
+r=optimize(_β -> mean_D_KL_difference(_β, g2, target_kld), 0.0, 3.0;iterations=20)
+```
+
+```julia
+sqrt(r.minimum)/target_kld
+```
+
+```julia
+new_beta = r.minimizer
+new_beta
+```
+
+```julia
+h3 = ConScape.GridRSP(g2, β=new_beta);
+```
+
+```julia
+dist3 = ConScape.expected_cost(h3);
+```
+
+```julia
+using Plots
+values_orig = ConScape.plot_values(g, map(t -> exp(-t/0.5), dist[:,target_node]))
+Plots.contour(values_orig,fill=true,levels=10, c=:plasma)
+```
+
+```julia
+values_wide = ConScape.plot_values(g2, map(t -> exp(-t/0.5), dist2[:,target_node]))
+Plots.contour(values_wide,fill=true,levels=10, c=:plasma)
+```
+
+```julia
+values_consKL = ConScape.plot_values(g2, map(t -> exp(-t/0.5), dist3[:,target_node]))
+Plots.contour(values_consKL,fill=true,levels=10, c=:plasma)
+```

@@ -1,0 +1,75 @@
+
+```julia
+using ConScape
+```
+
+# Step 1: data import and Grid creation
+
+```julia
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+```julia
+mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "prob_panther_cropped.asc"))
+mov_cost, meta_c = ConScape.readasc(joinpath(datadir, "mort_panther_cropped.asc"))
+hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "prob_panther_cropped.asc"))
+```
+
+```julia
+map!(t -> t<0 ? 0 : t,  mov_cost, mov_cost)
+map!(t -> t<0 ? 0 : t,  mov_prob, mov_prob)
+map!(t -> t<0 ? 0 : t,  hab_qual, hab_qual)
+```
+
+```julia
+affinities = ConScape.graph_matrix_from_raster(mov_prob)
+g = ConScape.Grid(size(mov_prob)...,
+                      affinities=affinities,
+                      costs=map(t -> t>0 ? -log(1 - t) : t,  affinities),
+                      qualities=hab_qual)
+```
+
+```julia
+meta_p
+```
+
+```julia
+meta_c
+```
+
+# Step 2: GridRSP creation
+
+```julia
+g2 = ConScape.Grid(size(mov_prob)...,
+                   affinities=ConScape.graph_matrix_from_raster(mov_cost),
+                   qualities=hab_qual);
+ConScape.plot_indegrees(g2)
+```
+
+```julia
+h = ConScape.GridRSP(g, β=1.0)
+```
+
+show survival:
+
+```julia
+tmp = zeros(17212)
+tmp[15000] = 1
+ConScape.plot_values(g, tmp, title="Target (or is it Source?) Pixel")
+```
+
+```julia
+pb = ConScape.survival_probability(h);
+```
+
+```julia
+ConScape.plot_values(g, map!(t -> t==1 ? NaN : t,  pb[:,15000], pb[:,15000]), title="Survival Probability")
+```
+
+```julia
+func = ConScape.connected_habitat(h, connectivity_function=ConScape.survival_probability, invcost=ConScape.ExpMinus())
+```
+
+```julia
+ConScape.heatmap(Array(func), yflip=true, title="Cumulative Connected Habitat (Survival)")
+```
