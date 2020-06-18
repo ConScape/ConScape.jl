@@ -25,7 +25,7 @@ struct Grid
     costmatrix::SparseMatrixCSC{Float64,Int}
     id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
     source_qualities::Matrix{Float64}
-    target_qualities::SparseMatrixCSC{Float64,Int}
+    target_qualities::AbstractMatrix{Float64}
 end
 
 """
@@ -62,8 +62,8 @@ function Grid(nrows::Integer,
         throw(ArgumentError("grid size ($nrows, $ncols) is incompatible with size of affinity matrix ($n, $n)"))
     end
 
-    _source_qualities = convert(Matrix{Float64}, source_qualities)
-    _target_qualities = convert(SparseMatrixCSC{Float64,Int}, target_qualities)
+    _source_qualities = convert(Matrix{Float64}        , source_qualities)
+    _target_qualities = convert(AbstractMatrix{Float64}, target_qualities)
 
     # Prune
     _id_to_grid_coordinate_list = if prune
@@ -127,8 +127,12 @@ end
 
 # Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices
+_targetidx(q::Matrix, grididxs::Vector) = grididxs
+_targetidx(q::SparseMatrixCSC, grididxs::Vector) =
+    CartesianIndex.(findnz(q)[1:2]...) ∩ grididxs
+
 function _targetidx_and_nodes(g::Grid)
-    targetidx = CartesianIndex.(findnz(g.target_qualities)[1:2]...) ∩ g.id_to_grid_coordinate_list
+    targetidx = _targetidx(g.target_qualities, g.id_to_grid_coordinate_list)
     targetnodes = findall(
         t -> t ∈ targetidx,
         g.id_to_grid_coordinate_list)

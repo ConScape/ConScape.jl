@@ -560,7 +560,7 @@ function criticality(grsp::GridRSP;
                      qˢvalue=0.0,
                      qᵗvalue=0.0)
 
-    targetidx = CartesianIndex.(findnz(grsp.g.target_qualities)[1:2]...)
+    targetidx, _ = _targetidx_and_nodes(grsp.g)
     nl = length(targetidx)
     reference_connected_habitat = sum(connected_habitat(grsp, invcost=invcost, diagvalue=diagvalue))
     critvec = fill(reference_connected_habitat, nl)
@@ -576,11 +576,10 @@ function criticality(grsp::GridRSP;
             qᵗvalue=qᵗvalue))
     end
 
-    return SparseMatrixCSC(grsp.g.target_qualities.m,
-                           grsp.g.target_qualities.n,
-                           copy(grsp.g.target_qualities.colptr),
-                           copy(grsp.g.target_qualities.rowval),
-                           critvec)
+    landscape = fill(NaN, size(grsp.g))
+    landscape[targetidx] = critvec
+
+    return landscape
 end
 
 
