@@ -17,6 +17,6 @@ end
 
 for f in files
     @info "weaving $f"
-    weave(      joinpath(examplespath, f), out_path=htmldir)
+    # weave(      joinpath(examplespath, f), out_path=htmldir)
     convert_doc(joinpath(examplespath, f), joinpath(examplespath, "notebooks", first(split(f, "."))*".ipynb"))
 end
