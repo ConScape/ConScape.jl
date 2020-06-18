@@ -513,7 +513,7 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
     # |                                        |
     # \              0                  = w̃₁*λ /
     #
-    # which shows the w̃₀ is simply a right eigenvector of P₀'*Sq*P₀ and w̃₀ = 0.
+    # which shows that w̃₀ is simply a right eigenvector of P₀'*Sq*P₀ and w̃₁ = 0.
 
     # construct full right vector
     vʳ = fill(NaN, n)
