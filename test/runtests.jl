@@ -707,3 +707,21 @@ end
         affinities=affinities,
         costs=ConScape.MinusLog()) # should raise error, as C[1,2]<0
 end
+
+@testset "Avoid NaNs when Z has tiny values" begin
+    mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
+
+    q = zeros(size(mov_prob))
+    q[60,70]   = 1
+    q[50, 105] = 1
+    g = ConScape.Grid(size(mov_prob)...,
+        affinities=ConScape.graph_matrix_from_raster(mov_prob),
+        qualities=q,
+        costs=ConScape.MinusLog());
+    grsp = ConScape.GridRSP(g, β=2.5);
+    betw = ConScape.betweenness_qweighted(grsp)
+    @test betw[58:60, 78:80] ≈ [
+        0.397426   0.170278   0.348822
+        1.42686    1.65378    1.419
+        0.0554379  0.0192699  0.185261] rtol=1e-3
+end

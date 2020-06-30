@@ -19,7 +19,7 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
                                    targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
-    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
+    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
 
     qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
     sumqˢ = sum(qˢ)
@@ -57,7 +57,7 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
     end
 
     Zⁱ = inv.(Z)
-    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
+    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
 
     KZⁱ = qˢ .* S .* qᵗ'
     k = vec(sum(KZⁱ, dims=1))
@@ -80,7 +80,7 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
                                         targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
-    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
+    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
 
     # FIXME: This should be only done when actually size(Z,2) < size(Z,1)/K where K ≈ 10 or so.
     # Otherwise we just compute many of the elements of Z twice...
@@ -130,7 +130,7 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
                                         targetnodes::AbstractVector)
 
     Zⁱ = inv.(Z)
-    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
+    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
 
     K̂ = qˢ .* K .* qᵗ'
     k̂ = vec(sum(K̂, dims=1))
@@ -213,7 +213,6 @@ function connected_habitat(qˢ::AbstractVector, # Source qualities
 end
 
 
-
 function LF_sensitivity(A::SparseMatrixCSC,
                         C::SparseMatrixCSC,
                         β::Real,
@@ -225,7 +224,7 @@ function LF_sensitivity(A::SparseMatrixCSC,
                         lmarks::AbstractVector)
 
     Zⁱ = inv.(Z)
-    Zⁱ[Z.==0] .= 1 # To prevent Inf*0 later...
+    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
 
     K̂ = qˢ .* K .* qᵗ'
     k̂ = vec(sum(K̂, dims=1))
@@ -279,6 +278,7 @@ function LF_sensitivity(A::SparseMatrixCSC,
 
     return S_aff, S_cost
 end
+
 
 function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
                                    qᵗ::AbstractVector, # Target qualities
