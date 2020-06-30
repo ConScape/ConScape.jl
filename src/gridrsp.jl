@@ -19,7 +19,7 @@ end
 """
     GridRSP(g::Grid; β=nothing)::GridRSP
 
-Construct a GridRSP from a `g::Grid` based on a `cost::Cost` type and the temperature `β::Real`.
+Construct a GridRSP from a `g::Grid` based on the temperature parameter `β::Real`.
 """
 function GridRSP(g::Grid; β=nothing)
 
@@ -622,7 +622,7 @@ function sensitivity(grsp::GridRSP;
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
 
     # Derivative of costs w.r.t. affinities:
-    # TODO: Implement these as properties of Costs:
+    # TODO: Implement these as properties of Transformations:
     K = map(distance_transformation, expected_cost(grsp) ./ exp_prox_scaling)
 
     if diagvalue !== nothing

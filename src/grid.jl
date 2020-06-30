@@ -1,9 +1,9 @@
-abstract type Cost end
-struct MinusLog     <: Cost end
-struct ExpMinus     <: Cost end
-struct Inv          <: Cost end
-struct OddsAgainst  <: Cost end
-struct OddsFor      <: Cost end
+abstract type Transformation end
+struct MinusLog     <: Transformation end
+struct ExpMinus     <: Transformation end
+struct Inv          <: Transformation end
+struct OddsAgainst  <: Transformation end
+struct OddsFor      <: Transformation end
 
 (::MinusLog)(x::Number)     = -log(x)
 (::ExpMinus)(x::Number)     = exp(-x)
@@ -21,7 +21,7 @@ struct Grid
     nrows::Int
     ncols::Int
     affinities::SparseMatrixCSC{Float64,Int}
-    costfunction::Union{Nothing,Cost}
+    costfunction::Union{Nothing,Transformation}
     costmatrix::SparseMatrixCSC{Float64,Int}
     id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
     source_qualities::Matrix{Float64}
@@ -35,7 +35,7 @@ end
               qualities::Matrix=ones(nrows, ncols),
               source_qualities::Matrix=qualities,
               target_qualities::AbstractMatrix=qualities,
-              costs::Union{Cost,SparseMatrixCSC{Float64,Int}}=MinusLog(),
+              costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
               prune=true)::Grid
 
 Construct a `Grid` from an `affinities` matrix of type `SparseMatrixCSC`. It is possible
@@ -50,7 +50,7 @@ function Grid(nrows::Integer,
               qualities::Matrix=ones(nrows, ncols),
               source_qualities::Matrix=qualities,
               target_qualities::AbstractMatrix=qualities,
-              costs::Union{Cost,SparseMatrixCSC{Float64,Int}}=MinusLog(),
+              costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
               prune=true)
 
     if affinities === nothing
@@ -75,7 +75,7 @@ function Grid(nrows::Integer,
         vec(CartesianIndices((nrows, ncols)))
     end
 
-    _costfunction, _costmatrix = if costs isa Cost
+    _costfunction, _costmatrix = if costs isa Transformation
         costs, mapnz(costs, _affinities)
     else
         if nrows*ncols != LinearAlgebra.checksquare(costs)
