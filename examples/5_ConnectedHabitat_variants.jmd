@@ -30,7 +30,7 @@ h = ConScape.GridRSP(g, β=0.001);
 ## Summed Expected Cost
 
 ```julia
-func = ConScape.connected_habitat(h, invcost=x -> exp(-x/2000));
+func = ConScape.connected_habitat(h, distance_transformation=x -> exp(-x/2000));
 ```
 
 ```julia
@@ -80,7 +80,7 @@ landscape = qˢ .* similarities .* qᵗ'
 ## Eigenvalue Expected Cost
 
 ```julia
-@time vˡ, λ, vʳ = ConScape.eigmax(h, connectivity_function=ConScape.expected_cost, invcost=t -> iszero(t) ? t : exp(-t/2000))
+@time vˡ, λ, vʳ = ConScape.eigmax(h, connectivity_function=ConScape.expected_cost, distance_transformation=t -> iszero(t) ? t : exp(-t/2000))
 
 λ
 ```

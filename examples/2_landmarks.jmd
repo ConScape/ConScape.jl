@@ -94,8 +94,8 @@ beta=0.01
 ```
 
 ```julia
-func = ConScape.connected_habitat(h, invcost=x -> exp(-x/75));
-func_coarse = ConScape.connected_habitat(h_coarse, invcost=x -> exp(-x/75));
+func = ConScape.connected_habitat(h, distance_transformation=x -> exp(-x/75));
+func_coarse = ConScape.connected_habitat(h_coarse, distance_transformation=x -> exp(-x/75));
 ```
 
 ```julia
@@ -122,8 +122,8 @@ cor(vec(qbetw)[.!(isnan.(vec(qbetw)))], vec(qbetw_coarse)[.!(isnan.(vec(qbetw_co
 ```
 
 ```julia
-kbetw = ConScape.betweenness_kweighted(h, invcost=x -> exp(-x/75));
-kbetw_coarse = ConScape.betweenness_kweighted(h_coarse, invcost=x -> exp(-x/75));
+kbetw = ConScape.betweenness_kweighted(h, distance_transformation=x -> exp(-x/75));
+kbetw_coarse = ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/75));
 ```
 
 ```julia
@@ -145,7 +145,7 @@ for i in 1:length(coarseness)
                       costs=ConScape.MinusLog(), );
 
     @time h_coarse = ConScape.GridRSP(g_coarse, β=beta);
-    func_coarse = ConScape.connected_habitat(h_coarse, invcost=x -> exp(-x/75));
+    func_coarse = ConScape.connected_habitat(h_coarse, distance_transformation=x -> exp(-x/75));
 
     est_func[i] = sum(func_coarse)
     cor_func[i] = cor(findnz(func)[3], findnz(func_coarse)[3])
@@ -214,7 +214,7 @@ for i in 1:length(coarseness)
                       costs=ConScape.MinusLog());
 
     @time h_coarse = ConScape.GridRSP(g_coarse, β=beta);
-    kbetw_coarse = ConScape.betweenness_kweighted(h_coarse, invcost=x -> exp(-x/75));
+    kbetw_coarse = ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/75));
 
     cor_kbetw[i] = cor(vec(kbetw)[.!(isnan.(vec(kbetw)))], vec(kbetw_coarse)[.!(isnan.(vec(kbetw_coarse)))])
 end
