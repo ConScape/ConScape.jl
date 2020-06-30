@@ -96,7 +96,7 @@ ConScape.plot_values(g, map!(x -> exp(-x/75),dists[:,4300],dists[:,4300]), title
 # Step 3: Amount of Connected Habitat
 
 ```julia
-func = ConScape.connected_habitat(h, invcost=x -> exp(-x/75));
+func = ConScape.connected_habitat(h, distance_transformation=x -> exp(-x/75));
 ```
 
 ```julia
@@ -190,11 +190,11 @@ plot(b1,b2,b3,b4,b5,b6, layout = (2,3), size = (2*200, 3*100), dpi=150)
 ## Proximity weighted
 
 ```julia
-ConScape.heatmap(ConScape.betweenness_kweighted(h, invcost=x -> exp(-x/75)), yflip=true, title="Proximity-weighted Movement Flow")
+ConScape.heatmap(ConScape.betweenness_kweighted(h, distance_transformation=x -> exp(-x/75)), yflip=true, title="Proximity-weighted Movement Flow")
 ```
 
 ```julia
-ConScape.heatmap(ConScape.betweenness_kweighted(h, invcost=x -> exp(-x/75)), yflip=true, title="Proximity-weighted Movement Flow")
+ConScape.heatmap(ConScape.betweenness_kweighted(h, distance_transformation=x -> exp(-x/75)), yflip=true, title="Proximity-weighted Movement Flow")
 # savefig("output_figures/figure_Pweighted_flow.png")
 ```
 
@@ -220,7 +220,7 @@ h_2000 = ConScape.GridRSP(g_2000, β=0.1);
 
 ```julia
 # Commented out since it's too expensive to run during CI
-# crit = ConScape.criticality(h_2000, invcost=x -> exp(-x/75))
+# crit = ConScape.criticality(h_2000, distance_transformation=x -> exp(-x/75))
 ```
 
 ```julia

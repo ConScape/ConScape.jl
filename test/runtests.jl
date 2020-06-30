@@ -137,16 +137,16 @@ _tempdir = mkdir(tempname())
             @test bet_edge_sum[21:23, 31:33] ≈ bet[21:23, 31:33]
 
             # This is a regression test based on values that we currently believe to be correct
-            bet = ConScape.betweenness_kweighted(grsp, invcost=t -> exp(-t/50))
+            bet = ConScape.betweenness_kweighted(grsp, distance_transformation=t -> exp(-t/50))
             @test bet[21:23, 31:33] ≈ [
                 980.5828087688377 1307.981162399926 1602.8445739784497
                 826.0710054834001 1883.0940077789735 1935.4450344630702
                 676.9212075214159 2228.2700913772774 2884.0409495023364]
 
-            @test ConScape.betweenness_kweighted(grsp, invcost=one)[g.id_to_grid_coordinate_list] ≈
+            @test ConScape.betweenness_kweighted(grsp, distance_transformation=one)[g.id_to_grid_coordinate_list] ≈
                 ConScape.betweenness_qweighted(grsp)[g.id_to_grid_coordinate_list]
 
-            @test ConScape.edge_betweenness_kweighted(grsp, invcost=one) ≈
+            @test ConScape.edge_betweenness_kweighted(grsp, distance_transformation=one) ≈
                 ConScape.edge_betweenness_qweighted(grsp)
         end
     end
@@ -559,7 +559,7 @@ end
     g = ConScape.Grid(size(l)..., affinities=ConScape.graph_matrix_from_raster(l))
     grsp = ConScape.GridRSP(g, β=0.2)
 
-    @test ConScape.betweenness_kweighted(grsp) == ConScape.betweenness_kweighted(grsp; invcost=t -> exp(-t))
+    @test ConScape.betweenness_kweighted(grsp) == ConScape.betweenness_kweighted(grsp; distance_transformation=t -> exp(-t))
 end
 
 @testset "least cost kl divergence" begin
@@ -661,22 +661,22 @@ end
     # For betweenness_kweighted and connected_habitat we should have exact match between the two
     # methods of passing the costs
     for f in (:betweenness_kweighted, :connected_habitat)
-        @test_throws ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
+        @test_throws ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
 
         @test getfield(ConScape, f)(grsp_with_costs, connectivity_function=ConScape.survival_probability) isa AbstractMatrix
 
-        @test getfield(ConScape, f)(grsp, invcost=ConScape.ExpMinus()) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.ExpMinus())
+        @test getfield(ConScape, f)(grsp, distance_transformation=ConScape.ExpMinus()) == getfield(ConScape, f)(grsp_with_costs, distance_transformation=ConScape.ExpMinus())
 
-        @test getfield(ConScape, f)(grsp, invcost=ConScape.Inv(), diagvalue=1.0) == getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.Inv(), diagvalue=1.0)
+        @test getfield(ConScape, f)(grsp, distance_transformation=ConScape.Inv(), diagvalue=1.0) == getfield(ConScape, f)(grsp_with_costs, distance_transformation=ConScape.Inv(), diagvalue=1.0)
     end
 
     # ...this is not the case for criticality because we don't set the affinity to zero but a very small
     # number. Therefore, the costs will get updated when a cost function is suppled but not when cost
     # matrix is supplied. The difference appear to be small, though, so we can test with ≈
     for f in (:criticality,)
-        @test_throws ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
-        @test getfield(ConScape, f)(grsp, invcost=ConScape.ExpMinus()) ≈ getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.ExpMinus())
-        @test getfield(ConScape, f)(grsp, invcost=ConScape.Inv(), diagvalue=1.0) ≈ getfield(ConScape, f)(grsp_with_costs, invcost=ConScape.Inv(), diagvalue=1.0)
+        @test_throws ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
+        @test getfield(ConScape, f)(grsp, distance_transformation=ConScape.ExpMinus()) ≈ getfield(ConScape, f)(grsp_with_costs, distance_transformation=ConScape.ExpMinus())
+        @test getfield(ConScape, f)(grsp, distance_transformation=ConScape.Inv(), diagvalue=1.0) ≈ getfield(ConScape, f)(grsp_with_costs, distance_transformation=ConScape.Inv(), diagvalue=1.0)
     end
 
     @test_throws ArgumentError("sensitivities are only defined when costs are functions of affinities") ConScape.sensitivity(grsp_with_costs)

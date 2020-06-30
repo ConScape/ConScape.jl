@@ -19,7 +19,7 @@ end
 """
     GridRSP(g::Grid; β=nothing)::GridRSP
 
-Construct a GridRSP from a `g::Grid` based on a `cost::Cost` type and the temperature `β::Real`.
+Construct a GridRSP from a `g::Grid` based on the temperature parameter `β::Real`.
 """
 function GridRSP(g::Grid; β=nothing)
 
@@ -101,7 +101,7 @@ end
 """
     betweenness_kweighted(grsp::GridRSP;
         connectivity_function=expected_cost,
-        invcost=inv(grsp.g.costfunction),
+        distance_transformation=inv(grsp.g.costfunction),
         diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
 
 Compute RSP betweenness of all nodes weighted with proximities computed with respect to the distance/proximity measure defined by `connectivity_function`. Optionally, an inverse cost function can be passed. The function will be applied elementwise to the matrix of distances to convert it to a matrix of proximities. If no inverse cost function is passed the the inverse of the cost function is used for the conversion of distances.
@@ -110,22 +110,22 @@ The optional `diagvalue` element specifies which value to use for the diagonal o
 """
 function betweenness_kweighted(grsp::GridRSP;
     connectivity_function=expected_cost,
-    invcost=nothing,
+    distance_transformation=nothing,
     diagvalue=nothing)
 
-    # Check that invcost function has been passed if no cost function is saved
-    if invcost === nothing && connectivity_function <: DistanceFunction
+    # Check that distance_transformation function has been passed if no cost function is saved
+    if distance_transformation === nothing && connectivity_function <: DistanceFunction
         if grsp.g.costfunction === nothing
-            throw(ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function."))
+            throw(ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function."))
         else
-            invcost = inv(grsp.g.costfunction)
+            distance_transformation = inv(grsp.g.costfunction)
         end
     end
 
     proximities = connectivity_function(grsp)
 
     if connectivity_function <: DistanceFunction
-        map!(invcost, proximities, proximities)
+        map!(distance_transformation, proximities, proximities)
     end
 
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
@@ -155,7 +155,7 @@ end
 
 
 """
-    edge_betweenness_kweighted(grsp::GridRSP; [invcost=inv(grsp.g.costfunction), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
+    edge_betweenness_kweighted(grsp::GridRSP; [distance_transformation=inv(grsp.g.costfunction), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
 
     Compute RSP betweenness of all edges weighted by qualities of source s and target t and the proximity between s and t. Returns a
     sparse matrix where element (i,j) is the betweenness of edge (i,j).
@@ -164,9 +164,9 @@ end
     of proximities, i.e. after applying the inverse cost function to the matrix of expected costs.
     When nothing is specified, the diagonal elements won't be adjusted.
 """
-function edge_betweenness_kweighted(grsp::GridRSP; invcost=inv(grsp.g.costfunction), diagvalue=nothing)
+function edge_betweenness_kweighted(grsp::GridRSP; distance_transformation=inv(grsp.g.costfunction), diagvalue=nothing)
 
-    proximities = map(invcost, expected_cost(grsp))
+    proximities = map(distance_transformation, expected_cost(grsp))
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
 
     if diagvalue !== nothing
@@ -307,7 +307,7 @@ end
 """
     connected_habitat(grsp::GridRSP;
         connectivity_function=expected_cost,
-        invcost=inv(grsp.g.costfunction),
+        distance_transformation=inv(grsp.g.costfunction),
         diagvalue=nothing)::Matrix{Float64}
 
 Compute RSP connected_habitat of all nodes. Optionally, an inverse
@@ -321,27 +321,27 @@ When nothing is specified, the diagonal elements won't be adjusted.
 
 `connectivity_function` determines which function is used for computing the matrix of proximities.
 If `connectivity_function` is a `DistanceFunction`, then it is used for computing distances, which
-is converted to proximities using `invcost`. If `connectivity_function` is a `ProximityFunction`,
+is converted to proximities using `distance_transformation`. If `connectivity_function` is a `ProximityFunction`,
 then proximities are computed directly using it. The default is `expected_cost`.
 """
 function connected_habitat(grsp::GridRSP;
                            connectivity_function=expected_cost,
-                           invcost=nothing,
+                           distance_transformation=nothing,
                            diagvalue=nothing)
 
-    # Check that invcost function has been passed if no cost function is saved
-    if invcost === nothing && connectivity_function <: DistanceFunction
+    # Check that distance_transformation function has been passed if no cost function is saved
+    if distance_transformation === nothing && connectivity_function <: DistanceFunction
         if grsp.g.costfunction === nothing
-            throw(ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function."))
+            throw(ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function."))
         else
-            invcost = inv(grsp.g.costfunction)
+            distance_transformation = inv(grsp.g.costfunction)
         end
     end
 
     S = connectivity_function(grsp)
 
     if connectivity_function <: DistanceFunction
-        map!(invcost, S, S)
+        map!(distance_transformation, S, S)
     end
 
     return connected_habitat(grsp, S, diagvalue=diagvalue)
@@ -373,7 +373,7 @@ end
 
 function connected_habitat(grsp::GridRSP,
                            cell::CartesianIndex{2};
-                           invcost=nothing,
+                           distance_transformation=nothing,
                            diagvalue=nothing,
                            avalue=floatmin(), # smallest non-zero value
                            qˢvalue=0.0,
@@ -412,39 +412,39 @@ function connected_habitat(grsp::GridRSP,
 
     newh = GridRSP(newg, β=grsp.β)
 
-    return connected_habitat(newh; diagvalue=diagvalue, invcost=invcost)
+    return connected_habitat(newh; diagvalue=diagvalue, distance_transformation=distance_transformation)
 end
 
 """
     eigmax(grsp::GridRSP;
         connectivity_function=expected_cost,
-        invcost=nothing,
+        distance_transformation=nothing,
         diagvalue=nothing,
         tol=1e-14)
 
-Compute the largest eigenvalue triple (left vector, value, and right vector) of the quality scaled proximities with respect to the distance/proximity measure defined by `connectivity_function`. If `connectivity_function` is a distance measure then the distances are transformed to proximities by `invcost` which defaults to the inverse of the `costfunction` in the underlying `Grid` (if defined). Optionally, the diagonal values of the proximity matrix may be set to `diagvalue`. The `tol` argument specifies the convergence tolerance in the Arnoldi based eigensolver.
+Compute the largest eigenvalue triple (left vector, value, and right vector) of the quality scaled proximities with respect to the distance/proximity measure defined by `connectivity_function`. If `connectivity_function` is a distance measure then the distances are transformed to proximities by `distance_transformation` which defaults to the inverse of the `costfunction` in the underlying `Grid` (if defined). Optionally, the diagonal values of the proximity matrix may be set to `diagvalue`. The `tol` argument specifies the convergence tolerance in the Arnoldi based eigensolver.
 """
 function LinearAlgebra.eigmax(grsp::GridRSP;
     connectivity_function=expected_cost,
-    invcost=nothing,
+    distance_transformation=nothing,
     diagvalue=nothing,
     tol=1e-14)
 
     g = grsp.g
 
-    # Check that invcost function has been passed if no cost function is saved
-    if invcost === nothing && connectivity_function <: DistanceFunction
+    # Check that distance_transformation function has been passed if no cost function is saved
+    if distance_transformation === nothing && connectivity_function <: DistanceFunction
         if grsp.g.costfunction === nothing
-            throw(ArgumentError("no invcost function supplied and cost matrix in Grid isn't based on a cost function."))
+            throw(ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function."))
         else
-            invcost = inv(grsp.g.costfunction)
+            distance_transformation = inv(grsp.g.costfunction)
         end
     end
 
     S = connectivity_function(grsp)
 
     if connectivity_function <: DistanceFunction
-        map!(invcost, S, S)
+        map!(distance_transformation, S, S)
     end
 
     targetidx, targetnodes = _targetidx_and_nodes(g)
@@ -542,7 +542,7 @@ end
 
 """
     criticality(grsp::GridRSP[;
-                invcost=inv(grsp.g.costfunction),
+                distance_transformation=inv(grsp.g.costfunction),
                 diagvalue=nothing,
                 avalue=floatmin(),
                 qˢvalue=0.0,
@@ -554,7 +554,7 @@ the cell to `qˢvalue` and `qᵗvalue` respectively. It is required that `avalue
 positive to avoid that the graph becomes disconnected.
 """
 function criticality(grsp::GridRSP;
-                     invcost=nothing,
+                     distance_transformation=nothing,
                      diagvalue=nothing,
                      avalue=floatmin(),
                      qˢvalue=0.0,
@@ -562,14 +562,14 @@ function criticality(grsp::GridRSP;
 
     targetidx, _ = _targetidx_and_nodes(grsp.g)
     nl = length(targetidx)
-    reference_connected_habitat = sum(connected_habitat(grsp, invcost=invcost, diagvalue=diagvalue))
+    reference_connected_habitat = sum(connected_habitat(grsp, distance_transformation=distance_transformation, diagvalue=diagvalue))
     critvec = fill(reference_connected_habitat, nl)
 
     @showprogress 1 "Computing criticality..." for i in 1:nl
         critvec[i] -= sum(connected_habitat(
             grsp,
             targetidx[i];
-            invcost=invcost,
+            distance_transformation=distance_transformation,
             diagvalue=diagvalue,
             avalue=avalue,
             qˢvalue=qˢvalue,
@@ -584,7 +584,7 @@ end
 
 
 """
-    sensitivity(grsp::GridRSP; invcost=inv(grsp.g.costfunction), exp_prox_scaling::Real=1., unitless::Bool=true)::Matrix{Float64}
+    sensitivity(grsp::GridRSP; distance_transformation=inv(grsp.g.costfunction), exp_prox_scaling::Real=1., unitless::Bool=true)::Matrix{Float64}
 
 Compute the sensitivity of Landscape Functionality with respect to perturbation of
 affinities on incoming edges of a node. Optionally, an inverse
@@ -601,7 +601,7 @@ When nothing is specified, the diagonal elements won't be adjusted.
 
 """
 function sensitivity(grsp::GridRSP;
-    invcost=nothing,
+    distance_transformation=nothing,
     exp_prox_scaling::Real=1.,
     unitless::Bool=true,
     diagvalue=nothing)
@@ -610,9 +610,9 @@ function sensitivity(grsp::GridRSP;
         throw(ArgumentError("sensitivities are only defined when costs are functions of affinities"))
     end
 
-    # Check that invcost function has been passed. If not then default to inverse of cost function
-    if invcost === nothing
-        invcost = inv(grsp.g.costfunction)
+    # Check that distance_transformation function has been passed. If not then default to inverse of cost function
+    if distance_transformation === nothing
+        distance_transformation = inv(grsp.g.costfunction)
     end
 
     if grsp.g.costfunction == Inv() && exp_prox_scaling !== 1.
@@ -622,8 +622,8 @@ function sensitivity(grsp::GridRSP;
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
 
     # Derivative of costs w.r.t. affinities:
-    # TODO: Implement these as properties of Costs:
-    K = map(invcost, expected_cost(grsp) ./ exp_prox_scaling)
+    # TODO: Implement these as properties of Transformations:
+    K = map(distance_transformation, expected_cost(grsp) ./ exp_prox_scaling)
 
     if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
@@ -679,7 +679,7 @@ function sensitivity(grsp::GridRSP;
 end
 
 
-function power_mean_sensitivity(grsp::GridRSP; invcost=inv(grsp.g.costfunction))
+function power_mean_sensitivity(grsp::GridRSP; distance_transformation=inv(grsp.g.costfunction))
     # Now assumes grsp.g.costfunction = MinusLog
 
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)

@@ -67,7 +67,7 @@ ConScape.plot_values(g, map!(t -> t==1 ? NaN : t,  pb[:,15000], pb[:,15000]), ti
 ```
 
 ```julia
-func = ConScape.connected_habitat(h, connectivity_function=ConScape.survival_probability, invcost=ConScape.ExpMinus())
+func = ConScape.connected_habitat(h, connectivity_function=ConScape.survival_probability, distance_transformation=ConScape.ExpMinus())
 ```
 
 ```julia
