@@ -10,21 +10,21 @@ struct power_mean_proximity  <: ProximityFunction end
 
 struct GridRSP
     g::Grid
-    β::Float64
+    θ::Float64
     Pref::SparseMatrixCSC{Float64,Int}
     W::SparseMatrixCSC{Float64,Int}
     Z::Matrix{Float64}
 end
 
 """
-    GridRSP(g::Grid; β=nothing)::GridRSP
+    GridRSP(g::Grid; θ=nothing)::GridRSP
 
-Construct a GridRSP from a `g::Grid` based on the temperature parameter `β::Real`.
+Construct a GridRSP from a `g::Grid` based on the temperature parameter `θ::Real`.
 """
-function GridRSP(g::Grid; β=nothing)
+function GridRSP(g::Grid; θ=nothing)
 
     Pref = _Pref(g.affinities)
-    W    = _W(Pref, β, g.costmatrix)
+    W    = _W(Pref, θ, g.costmatrix)
 
     @debug("Computing fundamental matrix of non-absorbing paths (Z). Please be patient...")
     targetidx, targetnodes = _targetidx_and_nodes(g)
@@ -35,10 +35,10 @@ function GridRSP(g::Grid; β=nothing)
                                  length(targetnodes)))
     # Check that values in Z are not too small:
     if minimum(Z)*minimum(nonzeros(g.costmatrix .* W)) == 0
-        @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing β."
+        @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try increasing θ."
     end
 
-    return GridRSP(g, β, Pref, W, Z)
+    return GridRSP(g, θ, Pref, W, Z)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", grsp::GridRSP)
@@ -201,17 +201,17 @@ end
 
 function free_energy_distance(grsp::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
-    return RSP_free_energy_distance(grsp.Z, grsp.β, targetnodes)
+    return RSP_free_energy_distance(grsp.Z, grsp.θ, targetnodes)
 end
 
 function survival_probability(grsp::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
-    return RSP_survival_probability(grsp.Z, grsp.β, targetnodes)
+    return RSP_survival_probability(grsp.Z, grsp.θ, targetnodes)
 end
 
 function power_mean_proximity(grsp::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
-    return RSP_power_mean_proximity(grsp.Z, grsp.β, targetnodes)
+    return RSP_power_mean_proximity(grsp.Z, grsp.θ, targetnodes)
 end
 
 """
@@ -223,7 +223,7 @@ function mean_kl_divergence(grsp::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
     qs = [grsp.g.source_qualities[i] for i in grsp.g.id_to_grid_coordinate_list]
     qt = [grsp.g.target_qualities[i] for i in grsp.g.id_to_grid_coordinate_list ∩ targetidx]
-    return qs'*(RSP_free_energy_distance(grsp.Z, grsp.β, targetnodes) - expected_cost(grsp))*qt*grsp.β
+    return qs'*(RSP_free_energy_distance(grsp.Z, grsp.θ, targetnodes) - expected_cost(grsp))*qt*inv(grsp.θ)
 end
 
 
@@ -410,7 +410,7 @@ function connected_habitat(grsp::GridRSP,
                 newsource_qualities,
                 newtarget_qualities)
 
-    newh = GridRSP(newg, β=grsp.β)
+    newh = GridRSP(newg, θ=grsp.θ)
 
     return connected_habitat(newh; diagvalue=diagvalue, distance_transformation=distance_transformation)
 end
@@ -650,7 +650,7 @@ function sensitivity(grsp::GridRSP;
     S_e_aff, S_e_cost = LF_sensitivity(
         grsp.g.affinities,
         grsp.g.costmatrix,
-        grsp.β,
+        grsp.θ,
         grsp.W,
         grsp.Z,
         diff_K_D,
@@ -696,7 +696,7 @@ function power_mean_sensitivity(grsp::GridRSP; distance_transformation=inv(grsp.
     # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
     # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
 
-    S_e_total, S_e_aff, S_e_cost = LF_power_mean_sensitivity(qˢ, qᵗ, grsp.g.affinities, grsp.β, diff_C_A, grsp.W, grsp.Z, targetnodes)
+    S_e_total, S_e_aff, S_e_cost = LF_power_mean_sensitivity(qˢ, qᵗ, grsp.g.affinities, grsp.θ, diff_C_A, grsp.W, grsp.Z, targetnodes)
 
     node_sensitivity_vec = vec(sum(S_e_total, dims=1))
 
@@ -737,7 +737,7 @@ function sensitivity_simulation(grsp::GridRSP;
                 g.source_qualities,
                 g.target_qualities)
 
-            new_grsp = GridRSP(new_g, β=grsp.β)
+            new_grsp = GridRSP(new_g, θ=grsp.θ)
             new_lf = connected_habitat(new_grsp, diagvalue=diagvalue)
 
             edge_sensitivities[i,j] = sum(new_lf - lf)/epsi # (gnew.affinities[i,j]-g.affinities[i,j])
@@ -770,7 +770,7 @@ function power_mean_sensitivity_simulation(grsp::GridRSP)
 
     K = copy(grsp.Z)
     K ./= [grsp.Z[targetnodes[i],i] for i in 1:length(targetnodes)]'
-    K .^= inv(grsp.β) # \mathcal{Z}^{1/β}
+    K .^= grsp.θ # \mathcal{Z}^θ
     lf = sum(connected_habitat(qˢ, qᵗ, K))
 
     epsi = 1e-6
@@ -792,11 +792,11 @@ function power_mean_sensitivity_simulation(grsp::GridRSP)
                 g.source_qualities,
                 g.target_qualities)
 
-            new_grsp = GridRSP(new_g, β=grsp.β)
+            new_grsp = GridRSP(new_g, θ=grsp.θ)
 
             new_K = copy(new_grsp.Z)
             new_K ./= [new_grsp.Z[targetnodes[i], i] for i in 1:length(targetnodes)]'
-            new_K .^= inv(new_grsp.β) # \mathcal{Z}^{1/β}
+            new_K .^= new_grsp.θ # \mathcal{Z}^θ
             new_lf = sum(connected_habitat(qˢ, qᵗ, new_K))
 
             edge_sensitivities[i,j] = (new_lf - lf)/epsi # (gnew.affinities[i,j]-g.affinities[i,j])

@@ -1,13 +1,13 @@
 _Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
 
-function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
+function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
 
     n = LinearAlgebra.checksquare(Pref)
     if LinearAlgebra.checksquare(C) != n
         throw(DimensionMismatch("Pref and C must have same size"))
     end
 
-    W = Pref .* exp.((-).(β) .* C)
+    W = Pref .* exp.((-).(C) .* inv(θ))
     replace!(W, NaN => 0.0)
     return W
 end
@@ -196,14 +196,14 @@ function RSP_expected_cost(W::SparseMatrixCSC,
     return C̄
 end
 
-RSP_free_energy_distance(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
-    -log.(RSP_survival_probability(Z, β, landmarks))./β
+RSP_free_energy_distance(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector) =
+    -log.(RSP_survival_probability(Z, θ, landmarks)).*θ
 
-RSP_survival_probability(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
+RSP_survival_probability(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector) =
     Z .* inv.([Z[i, j] for (j, i) in enumerate(landmarks)])'
 
-RSP_power_mean_proximity(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
-    RSP_survival_probability(Z, β, landmarks).^(1/β)
+RSP_power_mean_proximity(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector) =
+    RSP_survival_probability(Z, θ, landmarks).^θ
 
 function connected_habitat(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities
@@ -215,7 +215,7 @@ end
 
 function LF_sensitivity(A::SparseMatrixCSC,
                         C::SparseMatrixCSC,
-                        β::Real,
+                        θ::Real,
                         W::SparseMatrixCSC,
                         Z::AbstractMatrix,
                         K::AbstractMatrix,  # diff_K_D (but can be any weighting matrix)
@@ -268,9 +268,9 @@ function LF_sensitivity(A::SparseMatrixCSC,
     # kΣ .*= W
 
     kΣ_node = sum(kΣ, dims=2)
-    Ae = sum(A,dims=2)
+    Ae = sum(A, dims=2)
 
-    S_cost = kB + β*kΣ
+    S_cost = kB + kΣ/θ
 
     Idx = W.>0
     Aⁱ = mapnz(x -> inv(x), A)
@@ -283,7 +283,7 @@ end
 function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
                                    qᵗ::AbstractVector, # Target qualities
                                    A::SparseMatrixCSC,
-                                   β::Real,
+                                   θ::Real,
                                    diff_C_A::SparseMatrixCSC,
                                    W::SparseMatrixCSC,
                                    Z::AbstractMatrix,
@@ -291,7 +291,7 @@ function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
 
     K = copy(Z)
     K ./= [Z[landmarks[i],i] for i in 1:length(landmarks)]'
-    K .^= inv(β) # \mathcal{Z}^{1/β}
+    K .^= θ # \mathcal{Z}^θ
 
     rowsums = sum(A,dims=2)
 
@@ -302,7 +302,7 @@ function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
 
     Idx = A.>0
     Aⁱ = ConScape.mapnz(inv, A)
-    S_e_aff = (bet_edge_k.*Aⁱ .- (bet_node_k./rowsums).*Idx)./β
+    S_e_aff = (bet_edge_k.*Aⁱ .- (bet_node_k./rowsums).*Idx).*θ
 
     return S_e_aff .+ S_e_cost.*diff_C_A, S_e_aff, S_e_cost
 
