@@ -160,10 +160,8 @@ function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, im
     if impossible_affinity > 0
         affinities[node_list_idx,:] = impossible_affinity*(affinities[node_list_idx,:] .> 0)
         affinities[:,node_list_idx] = impossible_affinity*(affinities[:,node_list_idx] .> 0)
-        for i in node_list
-            source_qualities[i] .= 0
-            target_qualities[i] .= 0
-        end
+        source_qualities[node_list] .= 0
+        target_qualities[node_list] .= 0
     elseif impossible_affinity == 0
         # Delete the nodes completely:
         num_of_removed = length(node_list_idx)
@@ -174,10 +172,8 @@ function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, im
         affinities = affinities[:,nodes_to_keep]
     end
 
-    for i in node_list
-        source_qualities[i] .= 0
-        target_qualities[i] .= 0
-    end
+    source_qualities[node_list] .= 0
+    target_qualities[node_list] .= 0
 
     # Generate a new Grid based on the modified affinities
     return Grid(size(g)...,
