@@ -54,7 +54,6 @@ ConScape.least_cost_kl_divergence
 ConScape.connected_habitat
 ConScape.eigmax
 ConScape.criticality
-ConScape.sensitivity
 ```
 
 ### Utility functions
