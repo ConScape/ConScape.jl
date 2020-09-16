@@ -8,7 +8,7 @@ function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
     end
 
     W = Pref .* exp.((-).(C) .* inv(θ))
-    replace!(W, NaN => 0.0)
+    replace!(W.nzval, NaN => 0.0)
     return W
 end
 
@@ -60,15 +60,20 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
     Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
 
     KZⁱ = qˢ .* S .* qᵗ'
-    k = vec(sum(KZⁱ, dims=1))
 
-    KZⁱ .*= Zⁱ
+    # If any of the values of KZⁱ is above one then there is a risk of overflow.
+    # Hence, we scale the matrix and apply the scale factor by the end of the
+    # computation.
+    λ = max(1.0, maximum(KZⁱ))
+    k = vec(sum(KZⁱ, dims=1)) * inv(λ)
+
+    KZⁱ .*= inv.(λ) .* Zⁱ
     for j in axis2
         KZⁱ[landmarks[j], j] -= k[j] .* Zⁱ[landmarks[j], j]
     end
 
     ZKZⁱt = (I - W)'\KZⁱ
-    ZKZⁱt .*= Z
+    ZKZⁱt .*= λ .* Z
 
     return vec(sum(ZKZⁱt, dims=2)) # diag(Z * KZⁱ')
 end

@@ -208,14 +208,15 @@ function largest_subgraph(g::Grid)
     scci = sort(scc[i])
 
     # Extract the adjacency matrix of the largest subgraph
-    affinities = convert(SparseMatrixCSC{Float64,Int}, graph[scci])
+    affinities = g.affinities[scci, scci]
+    # affinities = convert(SparseMatrixCSC{Float64,Int}, graph[scci])
 
     return Grid(
         g.nrows,
         g.ncols,
         affinities,
         g.costfunction,
-        g.costfunction === nothing ? g.costmatrix : mapnz(g.costfunction, affinities),
+        g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinities),
         g.id_to_grid_coordinate_list[scci],
         g.source_qualities,
         g.target_qualities)
@@ -262,11 +263,9 @@ end
 A helper-function, used by coarse_graining, that computes the sum of pixels within a npix neighborhood around the target rc.
 """
 function sum_neighborhood(g, rc, npix)
-    getrows = (rc[1] - floor(Int, npix/2)):(rc[1] + (ceil(Int, npix/2)-1))
-    getcols = (rc[2] - floor(Int, npix/2)):(rc[2] + (ceil(Int, npix/2)-1))
-    neigh_rc = Base.product(getrows, getcols)
-
-    return tr(g.target_qualities[vec(first.(neigh_rc)), vec(last.(neigh_rc))])
+    getrows = (rc[1] - floor(Int, npix/2)):(rc[1] + (ceil(Int, npix/2) - 1))
+    getcols = (rc[2] - floor(Int, npix/2)):(rc[2] + (ceil(Int, npix/2) - 1))
+    return sum(g.target_qualities[getrows, getcols])
 end
 
 

@@ -688,3 +688,24 @@ end
         1.42686    1.65378    1.419
         0.0554379  0.0192699  0.185261] rtol=1e-3
 end
+
+@testset "Avoid overflow in k-weighted betweenness" begin
+    mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_200.asc"))
+    hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_200.asc"))
+
+    g = ConScape.Grid(size(mov_prob)...,
+        affinities=ConScape.graph_matrix_from_raster(mov_prob),
+        qualities=hab_qual,
+        costs=ConScape.graph_matrix_from_raster(map(x -> -log(x), mov_prob)))
+
+    g_coarse = ConScape.Grid(size(mov_prob)...,
+        affinities=ConScape.graph_matrix_from_raster(mov_prob),
+        source_qualities=hab_qual,
+        target_qualities=ConScape.coarse_graining(g, 200),
+        costs=ConScape.graph_matrix_from_raster(map(x -> -log(x), mov_prob)))
+
+    h_coarse = ConScape.GridRSP(g_coarse, θ=1.0)
+
+    kbetw = @time ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/100))
+    @test count(!isnan, kbetw) == 128176
+end
