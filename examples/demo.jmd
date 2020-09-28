@@ -22,7 +22,7 @@ ConScape.plot_outdegrees(g)
 
 
 ```julia
-h = ConScape.GridRSP(g, cost=ConScape.MinusLog(), θ=5.0);
+h = ConScape.GridRSP(g, cost=ConScape.MinusLog(), β=0.2);
 ```
 
 ```julia

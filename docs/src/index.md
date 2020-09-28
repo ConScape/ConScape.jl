@@ -12,10 +12,10 @@ g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2), costs=ConScape.MinusLog
 ConScape.plot_outdegrees(g)
 ```
 
-From a `Grid`, we can now create a `GridRSP` which we can use to compute the randomized shortest path based quality weighted betweenness with the temperature parameter `θ=5.0`.
+From a `Grid`, we can now create a `GridRSP` which we can use to compute the randomized shortest path based quality weighted betweenness with the temperature parameter `β=0.2`.
 
 ```@example 1
-h = ConScape.GridRSP(g, θ=5.0)
+h = ConScape.GridRSP(g, β=0.2)
 bet_q = ConScape.betweenness_qweighted(h)
 ConScape.heatmap(bet_q, yflip=true)
 ```
