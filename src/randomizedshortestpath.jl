@@ -1,13 +1,13 @@
 _Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
 
-function _W(Pref::SparseMatrixCSC, β::Real, C::SparseMatrixCSC)
+function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
 
     n = LinearAlgebra.checksquare(Pref)
     if LinearAlgebra.checksquare(C) != n
         throw(DimensionMismatch("Pref and C must have same size"))
     end
 
-    W = Pref .* exp.((-).(β) .* C)
+    W = Pref .* exp.((-).(θ) .* C)
     replace!(W.nzval, NaN => 0.0)
 
     return W
@@ -202,14 +202,14 @@ function RSP_expected_cost(W::SparseMatrixCSC,
     return C̄
 end
 
-RSP_free_energy_distance(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
-    -log.(RSP_survival_probability(Z, β, landmarks))./β
+RSP_free_energy_distance(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector) =
+    -log.(RSP_survival_probability(Z, θ, landmarks))./θ
 
-RSP_survival_probability(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
+RSP_survival_probability(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector) =
     Z .* inv.([Z[i, j] for (j, i) in enumerate(landmarks)])'
 
-RSP_power_mean_proximity(Z::AbstractMatrix, β::Real, landmarks::AbstractVector) =
-    RSP_survival_probability(Z, β, landmarks).^(1/β)
+RSP_power_mean_proximity(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector) =
+    RSP_survival_probability(Z, θ, landmarks).^(1/θ)
 
 function connected_habitat(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities

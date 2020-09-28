@@ -15,12 +15,12 @@ hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
 ```
 
 ```julia
-beta = 0.001
+theta = 0.001
 g = ConScape.Grid(size(mov_prob)...,
                   affinities=ConScape.graph_matrix_from_raster(mov_prob),
                   qualities=hab_qual,
                   costs=ConScape.MinusLog())
-h = ConScape.GridRSP(g, β=beta);
+h = ConScape.GridRSP(g, θ=theta);
 ```
 
 ```julia

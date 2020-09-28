@@ -23,7 +23,7 @@ g = ConScape.Grid(size(mov_prob)...,
 ```
 
 ```julia
-h = ConScape.GridRSP(g, β=1.0);
+h = ConScape.GridRSP(g, θ=1.0);
 ```
 
 # Set fixed KL-divergence
@@ -39,14 +39,14 @@ target_mean_D_KL
 ```
 
 ```julia
-function mean_D_KL_difference(β, G, target_mean_D_KL)
-    mean_D_KL = ConScape.mean_kl_divergence(ConScape.GridRSP(G; β=β))
+function mean_D_KL_difference(θ, G, target_mean_D_KL)
+    mean_D_KL = ConScape.mean_kl_divergence(ConScape.GridRSP(G; θ=θ))
     return (mean_D_KL-target_mean_D_KL)^2
 end
 ```
 
 ```julia
-r=optimize(_β -> mean_D_KL_difference(_β, g, target_mean_D_KL), 0.0, 3.0; iterations=20)
+r=optimize(_θ -> mean_D_KL_difference(_θ, g, target_mean_D_KL), 0.0, 3.0; iterations=20)
 ```
 
 ```julia
@@ -54,12 +54,12 @@ sqrt(r.minimum)/target_mean_D_KL
 ```
 
 ```julia
-new_beta = r.minimizer
-new_beta
+new_theta = r.minimizer
+new_theta
 ```
 
 ```julia
-h = ConScape.GridRSP(g, β=new_beta);
+h = ConScape.GridRSP(g, θ=new_theta);
 ```
 
 ```julia
@@ -113,11 +113,11 @@ g = perm_wall_sim(nrows, ncols, corr_width=3,
                            qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
 
 
-β = 10.0
+θ = 10.0
 ```
 
 ```julia
-h = ConScape.GridRSP(g, β=β);
+h = ConScape.GridRSP(g, θ=θ);
 ```
 
 ```julia
@@ -152,7 +152,7 @@ g2 = perm_wall_sim(nrows, ncols, corr_width=7,
 ```
 
 ```julia
-h2 = ConScape.GridRSP(g2, β=β);
+h2 = ConScape.GridRSP(g2, θ=θ);
 ```
 
 ```julia
@@ -168,7 +168,7 @@ target_kld
 ```
 
 ```julia
-r=optimize(_β -> mean_D_KL_difference(_β, g2, target_kld), 0.0, 3.0;iterations=20)
+r=optimize(_θ -> mean_D_KL_difference(_θ, g2, target_kld), 0.0, 3.0;iterations=20)
 ```
 
 ```julia
@@ -176,12 +176,12 @@ sqrt(r.minimum)/target_kld
 ```
 
 ```julia
-new_beta = r.minimizer
-new_beta
+new_theta = r.minimizer
+new_theta
 ```
 
 ```julia
-h3 = ConScape.GridRSP(g2, β=new_beta);
+h3 = ConScape.GridRSP(g2, θ=new_theta);
 ```
 
 ```julia

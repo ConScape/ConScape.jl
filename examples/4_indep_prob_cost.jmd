@@ -47,7 +47,7 @@ ConScape.plot_indegrees(g2)
 ```
 
 ```julia
-h = ConScape.GridRSP(g, β=1.0)
+h = ConScape.GridRSP(g, θ=1.0)
 ```
 
 show survival:

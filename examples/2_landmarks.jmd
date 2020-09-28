@@ -78,19 +78,19 @@ g_coarse = ConScape.Grid(size(mov_prob)...,
 ```
 
 ```julia
-beta = 1.0
+theta = 1.0
 ```
 
 ```julia
-beta=0.01
+theta=0.01
 ```
 
 ```julia
-@time h = ConScape.GridRSP(g, β=beta);
+@time h = ConScape.GridRSP(g, θ=theta);
 ```
 
 ```julia
-@time h_coarse = ConScape.GridRSP(g_coarse, β=beta);
+@time h_coarse = ConScape.GridRSP(g_coarse, θ=theta);
 ```
 
 ```julia
@@ -144,7 +144,7 @@ for i in 1:length(coarseness)
                       target_qualities=coarse_graining(g, coarseness[i]),
                       costs=ConScape.MinusLog(), );
 
-    @time h_coarse = ConScape.GridRSP(g_coarse, β=beta);
+    @time h_coarse = ConScape.GridRSP(g_coarse, θ=theta);
     func_coarse = ConScape.connected_habitat(h_coarse, distance_transformation=x -> exp(-x/75));
 
     est_func[i] = sum(func_coarse)
@@ -186,7 +186,7 @@ for i in 1:length(coarseness)
                       target_qualities=coarse_graining(g, coarseness[i]),
                       costs=ConScape.MinusLog(), );
 
-    @time h_coarse = ConScape.GridRSP(g_coarse, β=beta);
+    @time h_coarse = ConScape.GridRSP(g_coarse, θ=theta);
     qbetw_coarse = ConScape.betweenness_qweighted(h_coarse);
 
     cor_qbetw[i] = cor(vec(qbetw)[.!(isnan.(vec(qbetw)))], vec(qbetw_coarse)[.!(isnan.(vec(qbetw_coarse)))])
@@ -213,7 +213,7 @@ for i in 1:length(coarseness)
                       target_qualities=coarse_graining(g, coarseness[i]),
                       costs=ConScape.MinusLog());
 
-    @time h_coarse = ConScape.GridRSP(g_coarse, β=beta);
+    @time h_coarse = ConScape.GridRSP(g_coarse, θ=theta);
     kbetw_coarse = ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/75));
 
     cor_kbetw[i] = cor(vec(kbetw)[.!(isnan.(vec(kbetw)))], vec(kbetw_coarse)[.!(isnan.(vec(kbetw_coarse)))])

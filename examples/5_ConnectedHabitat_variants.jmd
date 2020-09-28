@@ -22,7 +22,7 @@ g = ConScape.Grid(size(mov_prob)...,
 ```
 
 ```julia
-h = ConScape.GridRSP(g, β=0.001);
+h = ConScape.GridRSP(g, θ=0.001);
 ```
 
 # Amount of Connected GridRSP

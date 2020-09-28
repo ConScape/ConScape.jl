@@ -5,7 +5,7 @@ _tempdir = mkdir(tempname())
 
 @testset "sno_2000" begin
     landscape = "sno_2000"
-    β = 0.1
+    θ = 0.1
 
     affinity_raster, _ = ConScape.readasc(joinpath(datadir, "affinities_$landscape.asc"))
 
@@ -78,7 +78,7 @@ _tempdir = mkdir(tempname())
         @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
     end
 
-    grsp = ConScape.GridRSP(g, β=β)
+    grsp = ConScape.GridRSP(g, θ=θ)
 
     @testset "GridRSP fields" begin
         @test grsp.Pref.nzval[end-2:end] ≈ [
@@ -103,7 +103,7 @@ _tempdir = mkdir(tempname())
         nn in (ConScape.N4, ConScape.N8),
             w in (ConScape.TargetWeight, ConScape.AverageWeight),
                 mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
-# No need to test this on sno_100 and doesn't deepend on β
+# No need to test this on sno_100 and doesn't deepend on θ
 # FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
                     @test ConScape.graph_matrix_from_raster(
                         affinity_raster,
@@ -184,7 +184,7 @@ end
 
 
 @testset "wall full" begin
-    β = 0.2
+    θ = 0.2
 
     # Create the same landscape in Julia
     g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2),
@@ -219,7 +219,7 @@ end
         @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
     end
 
-    grsp = ConScape.GridRSP(g, β=β)
+    grsp = ConScape.GridRSP(g, θ=θ)
 
     @testset "GridRSP fields" begin
         @test grsp.g.costmatrix.nzval[end-2:end] ≈ [
@@ -319,7 +319,7 @@ end
             0.0     0.0 0.0 0.0     0.0
             0.0 14031.0 0.0 0.0 14004.0]
 
-        g_coarse_rsp = ConScape.GridRSP(g_coarse, β=β)
+        g_coarse_rsp = ConScape.GridRSP(g_coarse, θ=θ)
 
         @testset "eigmax, connectivity_function=$connectivity_function" for
             (connectivity_function, val) in ((ConScape.expected_cost       , 2.7249231390873615e7),
@@ -378,7 +378,7 @@ end
         @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
     end
 
-    grsp = ConScape.GridRSP(g, β=0.2)
+    grsp = ConScape.GridRSP(g, θ=0.2)
 
     @testset "Show methods" begin
         b = IOBuffer()
@@ -428,7 +428,7 @@ end
         @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
     end
 
-    grsp = ConScape.GridRSP(g, β=0.2)
+    grsp = ConScape.GridRSP(g, θ=0.2)
 
     @testset "Show methods" begin
         b = IOBuffer()
@@ -530,7 +530,7 @@ end
         affinities=a,
         costs=c)
 
-    grsp = ConScape.GridRSP(g, β=2.)
+    grsp = ConScape.GridRSP(g, θ=2.)
 
     @test maximum(abs.(ConScape.free_energy_distance(grsp) - [
       0.0       1.34197   1.34197   2.34197
@@ -557,7 +557,7 @@ end
     q = rand(4, 4)
 
     g = ConScape.Grid(size(l)..., affinities=ConScape.graph_matrix_from_raster(l))
-    grsp = ConScape.GridRSP(g, β=0.2)
+    grsp = ConScape.GridRSP(g, θ=0.2)
 
     @test ConScape.betweenness_kweighted(grsp) == ConScape.betweenness_kweighted(grsp; distance_transformation=t -> exp(-t))
 end
@@ -586,7 +586,7 @@ end
          4.330475309063122  2.027890216069076   0.7949298748698876  0.6007738604289302  0.0               ]
 
     g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2))
-    grsp = ConScape.GridRSP(g, β=0.2)
+    grsp = ConScape.GridRSP(g, θ=0.2)
     @test ConScape.least_cost_kl_divergence(grsp, (25,50))[10,10] ≈ 80.63375074079197
 end
 
@@ -596,7 +596,7 @@ end
     g = ConScape.perm_wall_sim(m, n, corridorwidths=(2,2),
         # Qualities decrease by row
         qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
-    grsp = ConScape.GridRSP(g, β=0.2)
+    grsp = ConScape.GridRSP(g, θ=0.2)
     @test sum(t -> isnan(t) ? 0.0 : t, ConScape.criticality(grsp) .< -1e-5) == 0
 end
 
@@ -611,13 +611,13 @@ end
         affinities=_g.affinities,
         qualities=_g.source_qualities,
         costs=ConScape.MinusLog())
-    grsp = ConScape.GridRSP(g, β=0.2)
+    grsp = ConScape.GridRSP(g, θ=0.2)
 
     g_with_costs = ConScape.Grid(m, n,
         affinities=_g.affinities,
         qualities=_g.source_qualities,
         costs=ConScape.mapnz(ConScape.MinusLog(), _g.affinities))
-    grsp_with_costs = ConScape.GridRSP(g_with_costs, β=0.2)
+    grsp_with_costs = ConScape.GridRSP(g_with_costs, θ=0.2)
 
     @test g_with_costs.costfunction === nothing
 
@@ -660,7 +660,7 @@ end
             affinities=affinities,
             costs=c)
 
-        h_c = ConScape.GridRSP(g, β=0.2)
+        h_c = ConScape.GridRSP(g, θ=0.2)
         @test h_c isa ConScape.GridRSP
     end
 
@@ -681,7 +681,7 @@ end
         affinities=ConScape.graph_matrix_from_raster(mov_prob),
         qualities=q,
         costs=ConScape.MinusLog());
-    grsp = ConScape.GridRSP(g, β=2.5);
+    grsp = ConScape.GridRSP(g, θ=2.5);
     betw = ConScape.betweenness_qweighted(grsp)
     @test betw[58:60, 78:80] ≈ [
         0.397426   0.170278   0.348822
