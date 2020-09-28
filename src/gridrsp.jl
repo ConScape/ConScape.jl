@@ -19,7 +19,7 @@ end
 """
     GridRSP(g::Grid; θ=nothing)::GridRSP
 
-Construct a GridRSP from a `g::Grid` based on the temperature parameter `θ::Real`.
+Construct a GridRSP from a `g::Grid` based on the inverse temperature parameter `θ::Real`.
 """
 function GridRSP(g::Grid; θ=nothing)
 
@@ -35,7 +35,7 @@ function GridRSP(g::Grid; θ=nothing)
                                  length(targetnodes)))
     # Check that values in Z are not too small:
     if minimum(Z)*minimum(nonzeros(g.costmatrix .* W)) == 0
-        @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try increasing θ."
+        @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
     end
 
     return GridRSP(g, θ, Pref, W, Z)
@@ -223,7 +223,7 @@ function mean_kl_divergence(grsp::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
     qs = [grsp.g.source_qualities[i] for i in grsp.g.id_to_grid_coordinate_list]
     qt = [grsp.g.target_qualities[i] for i in grsp.g.id_to_grid_coordinate_list ∩ targetidx]
-    return qs'*(RSP_free_energy_distance(grsp.Z, grsp.θ, targetnodes) - expected_cost(grsp))*qt*inv(grsp.θ)
+    return qs'*(RSP_free_energy_distance(grsp.Z, grsp.θ, targetnodes) - expected_cost(grsp))*qt*grsp.θ
 end
 
 

@@ -46,7 +46,7 @@ end
 ```
 
 ```julia
-r=optimize(_θ -> mean_D_KL_difference(_θ, g, target_mean_D_KL), 0.3, 1e6; iterations=20)
+r=optimize(_θ -> mean_D_KL_difference(_θ, g, target_mean_D_KL), 0.0, 3.0; iterations=20)
 ```
 
 ```julia
@@ -54,12 +54,12 @@ sqrt(r.minimum)/target_mean_D_KL
 ```
 
 ```julia
-new_θ = r.minimizer
-new_θ
+new_theta = r.minimizer
+new_theta
 ```
 
 ```julia
-h = ConScape.GridRSP(g, θ=new_θ);
+h = ConScape.GridRSP(g, θ=new_theta);
 ```
 
 ```julia
@@ -113,7 +113,7 @@ g = perm_wall_sim(nrows, ncols, corr_width=3,
                            qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
 
 
-θ = 0.1
+θ = 10.0
 ```
 
 ```julia
@@ -168,7 +168,7 @@ target_kld
 ```
 
 ```julia
-r=optimize(_θ -> mean_D_KL_difference(_θ, g2, target_kld), 0.3, 1e6; iterations=20)
+r=optimize(_θ -> mean_D_KL_difference(_θ, g2, target_kld), 0.0, 3.0;iterations=20)
 ```
 
 ```julia
@@ -176,12 +176,12 @@ sqrt(r.minimum)/target_kld
 ```
 
 ```julia
-new_θ = r.minimizer
-new_θ
+new_theta = r.minimizer
+new_theta
 ```
 
 ```julia
-h3 = ConScape.GridRSP(g2, θ=new_θ);
+h3 = ConScape.GridRSP(g2, θ=new_theta);
 ```
 
 ```julia

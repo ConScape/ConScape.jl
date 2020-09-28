@@ -7,8 +7,9 @@ function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
         throw(DimensionMismatch("Pref and C must have same size"))
     end
 
-    W = Pref .* exp.((-).(C) .* inv(θ))
+    W = Pref .* exp.((-).(θ) .* C)
     replace!(W.nzval, NaN => 0.0)
+
     return W
 end
 
@@ -202,13 +203,13 @@ function RSP_expected_cost(W::SparseMatrixCSC,
 end
 
 RSP_free_energy_distance(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector) =
-    -log.(RSP_survival_probability(Z, θ, landmarks)).*θ
+    -log.(RSP_survival_probability(Z, θ, landmarks))./θ
 
 RSP_survival_probability(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector) =
     Z .* inv.([Z[i, j] for (j, i) in enumerate(landmarks)])'
 
 RSP_power_mean_proximity(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector) =
-    RSP_survival_probability(Z, θ, landmarks).^θ
+    RSP_survival_probability(Z, θ, landmarks).^(1/θ)
 
 function connected_habitat(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities

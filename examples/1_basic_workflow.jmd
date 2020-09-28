@@ -125,7 +125,7 @@ ConScape.heatmap(ConScape.betweenness_qweighted(h), yflip=true, title="Quality-w
 # savefig("figure_Qweighted_flow.png")
 ```
 
-Effect of θ:
+Effect of theta:
 
 ```julia
 tmp = zeros(g.nrows, g.ncols)
@@ -141,11 +141,11 @@ ConScape.heatmap(g_tmp.source_qualities, yflip=true)
 ```
 
 ```julia
-θ = (0.4, 1.0, 2.0, 10.0, 100.0, 1000.0)
+thetas = (2.5, 1.0, 0.5, 0.1, 0.01, 0.001)
 betw = [copy(mov_prob), copy(mov_prob), copy(mov_prob), copy(mov_prob), copy(mov_prob), copy(mov_prob)]
 
-for i in 1:length(θs)
-    h_tmp = ConScape.GridRSP(g_tmp, θ=θs[i]);
+for i in 1:length(thetas)
+    h_tmp = ConScape.GridRSP(g_tmp, θ=thetas[i]);
     betw[i] = ConScape.betweenness_qweighted(h_tmp)
 end
 ```
@@ -155,33 +155,33 @@ using Plots
 ```
 
 ```julia
-b1 = ConScape.heatmap(betw[1], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=0.4",
+b1 =ConScape.heatmap(betw[1], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=2.5",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b2 = ConScape.heatmap(betw[2], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=1.0",
+b2 =ConScape.heatmap(betw[2], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=1.0",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b3 = ConScape.heatmap(betw[3], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=2.0",
+b3 =ConScape.heatmap(betw[3], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.5",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b4 = ConScape.heatmap(betw[4], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=10.0",
+b4 =ConScape.heatmap(betw[4], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.1",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b5 = ConScape.heatmap(betw[5], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=100.0",
+b5 =ConScape.heatmap(betw[5], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.01",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b6 = ConScape.heatmap(betw[6], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=1000.0",
+b6 =ConScape.heatmap(betw[6], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.001",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
 plot(b1,b2,b3,b4,b5,b6, layout = (2,3), size = (2*200, 3*100), dpi=150)
 ```
 
 ```julia
-b1 = ConScape.heatmap(betw[1], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=0.4",
+b1 =ConScape.heatmap(betw[1], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=2.5",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b2 = ConScape.heatmap(betw[2], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=1.0",
+b2 =ConScape.heatmap(betw[2], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=1.0",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b3 = ConScape.heatmap(betw[3], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=2.0",
+b3 =ConScape.heatmap(betw[3], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.5",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b4 = ConScape.heatmap(betw[4], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=10.0",
+b4 =ConScape.heatmap(betw[4], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.1",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b5 = ConScape.heatmap(betw[5], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=100.0",
+b5 =ConScape.heatmap(betw[5], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.01",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b6 = ConScape.heatmap(betw[6], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="θ=1000.0",
+b6 =ConScape.heatmap(betw[6], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.001",
     titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
 plot(b1,b2,b3,b4,b5,b6, layout = (2,3), size = (2*200, 3*100), dpi=150)
 # savefig("output_figures/figure_thetas.png")
@@ -215,7 +215,7 @@ g_2000 = ConScape.Grid(size(mov_prob_2000)...,
                       affinities=ConScape.graph_matrix_from_raster(mov_prob_2000),
                       qualities=hab_qual_2000,
                       costs=ConScape.MinusLog())
-h_2000 = ConScape.GridRSP(g_2000, θ=10.0);
+h_2000 = ConScape.GridRSP(g_2000, θ=0.1);
 ```
 
 ```julia
