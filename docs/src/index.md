@@ -33,7 +33,7 @@ end
 ### Grid
 ```@docs
 ConScape.Grid
-ConScape.is_connected
+ConScape.is_strongly_connected
 ConScape.largest_subgraph
 ConScape.least_cost_distance
 ConScape.sum_neighborhood
