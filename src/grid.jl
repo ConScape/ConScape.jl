@@ -89,6 +89,10 @@ function Grid(nrows::Integer,
         throw(ArgumentError("The cost matrix can have only non-negative elements. Perhaps you should change the cost function?"))
     end
 
+    if ne(difference(SimpleDiGraph(_costmatrix), SimpleDiGraph(_affinities))) > 0
+        throw(ArgumentError("cost matrix contains edges not present in the affinity matrix"))
+    end
+
     Grid(
         nrows,
         ncols,
@@ -195,7 +199,8 @@ will have the same size as the input `Grid` but only nodes associated with the
 largest subgraph of the affinities will be active.
 """
 function largest_subgraph(g::Grid)
-    # Convert adjacency matrix to graph
+    # Convert cost matrix to graph
+    # graph = SimpleWeightedDiGraph(g.costmatrix, permute=false)
     graph = SimpleWeightedDiGraph(g.affinities, permute=false)
 
     # Find the subgraphs

@@ -1,6 +1,6 @@
 using ConScape, Test, SparseArrays
 
-datadir = joinpath(@__DIR__(), "..", "data")
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 _tempdir = mkdir(tempname())
 
 @testset "sno_2000" begin
@@ -708,4 +708,16 @@ end
 
     kbetw = @time ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/100))
     @test count(!isnan, kbetw) == 128176
+end
+
+@test "Test that cost edges are contained in the affinity edges"
+    @test_throws ArgumentError("cost matrix contains edges not present in the affinity matrix") ConScape.Grid(2, 2,
+        affinities=sparse(
+            [3, 4, 1, 4, 2, 3],
+            [1, 2, 3, 3, 4, 4],
+            [1.0, 1, 1, 1, 1, 1]),
+        costs=sparse(
+            [2, 3, 1, 4, 1, 4, 2, 3],
+            [1, 1, 2, 2, 3, 3, 4, 4],
+            [1.0, 1, 1, 1, 1, 1, 1, 1]))
 end
