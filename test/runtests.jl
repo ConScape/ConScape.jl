@@ -1,6 +1,6 @@
 using ConScape, Test, SparseArrays
 
-datadir = joinpath(@__DIR__(), "..", "data")
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 _tempdir = mkdir(tempname())
 
 @testset "sno_2000" begin
@@ -469,11 +469,11 @@ end
           0   0 1/4 1/4
           0   0 1/4 1/4]
 
-    g1 = ConScape.Grid(size(l1)..., affinities=ConScape.graph_matrix_from_raster(l1))
+    g1 = ConScape.Grid(size(l1)..., affinities=ConScape.graph_matrix_from_raster(l1), prune=false)
     g2 = ConScape.Grid(size(l2)..., affinities=ConScape.graph_matrix_from_raster(l2))
 
-    @test !ConScape.is_connected(g1)
-    @test ConScape.is_connected(g2)
+    @test !ConScape.is_strongly_connected(g1)
+    @test ConScape.is_strongly_connected(g2)
     for f in fieldnames(typeof(g1))
         @test getfield(ConScape.largest_subgraph(g1), f) == getfield(g2, f)
     end
@@ -696,16 +696,28 @@ end
     g = ConScape.Grid(size(mov_prob)...,
         affinities=ConScape.graph_matrix_from_raster(mov_prob),
         qualities=hab_qual,
-        costs=ConScape.graph_matrix_from_raster(map(x -> -log(x), mov_prob)))
+        costs=ConScape.MinusLog())
 
     g_coarse = ConScape.Grid(size(mov_prob)...,
         affinities=ConScape.graph_matrix_from_raster(mov_prob),
         source_qualities=hab_qual,
         target_qualities=ConScape.coarse_graining(g, 200),
-        costs=ConScape.graph_matrix_from_raster(map(x -> -log(x), mov_prob)))
+        costs=ConScape.MinusLog())
 
     h_coarse = ConScape.GridRSP(g_coarse, θ=1.0)
 
     kbetw = @time ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/100))
-    @test count(!isnan, kbetw) == 128176
+    @test count(!isnan, kbetw) == 128175
+end
+
+@testset "Test that cost edges are contained in the affinity edges" begin
+    @test_throws ArgumentError("cost graph contains edges not present in the affinity graph") ConScape.Grid(2, 2,
+        affinities=sparse(
+            [3, 4, 1, 4, 2, 3],
+            [1, 2, 3, 3, 4, 4],
+            [1.0, 1, 1, 1, 1, 1]),
+        costs=sparse(
+            [2, 3, 1, 4, 1, 4, 2, 3],
+            [1, 1, 2, 2, 3, 3, 4, 4],
+            [1.0, 1, 1, 1, 1, 1, 1, 1]))
 end

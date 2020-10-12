@@ -66,39 +66,50 @@ function Grid(nrows::Integer,
     _target_qualities = convert(AbstractMatrix{Float64}, target_qualities)
 
     # Prune
-    _id_to_grid_coordinate_list = if prune
-        nonzerocells = findall(!iszero, vec(sum(affinities, dims=1)))
-        _affinities = affinities[nonzerocells, nonzerocells]
-        vec(CartesianIndices((nrows, ncols)))[nonzerocells]
-    else
-        _affinities = affinities
-        vec(CartesianIndices((nrows, ncols)))
-    end
+    # id_to_grid_coordinate_list = if prune
+    #     nonzerocells = findall(!iszero, vec(sum(affinities, dims=1)))
+    #     _affinities = affinities[nonzerocells, nonzerocells]
+    #     vec(CartesianIndices((nrows, ncols)))[nonzerocells]
+    # else
+    #     _affinities = affinities
+    #     vec(CartesianIndices((nrows, ncols)))
+    # end
+    id_to_grid_coordinate_list = vec(CartesianIndices((nrows, ncols)))
 
-    _costfunction, _costmatrix = if costs isa Transformation
-        costs, mapnz(costs, _affinities)
+    costfunction, costmatrix = if costs isa Transformation
+        costs, mapnz(costs, affinities)
     else
         if nrows*ncols != LinearAlgebra.checksquare(costs)
             n = size(costs, 1)
             throw(ArgumentError("grid size ($nrows, $ncols) is incompatible with size of cost matrix ($n, $n)"))
         end
-        nothing, prune ? costs[nonzerocells, nonzerocells] : costs
+        nothing, costs
     end
 
-    if any(t -> t < 0, nonzeros(_costmatrix))
-        throw(ArgumentError("The cost matrix can have only non-negative elements. Perhaps you should change the cost function?"))
+    if any(t -> t < 0, nonzeros(costmatrix))
+        throw(ArgumentError("The cost graph can have only non-negative edge weights. Perhaps you should change the cost function?"))
     end
 
-    Grid(
+    if ne(difference(SimpleDiGraph(costmatrix), SimpleDiGraph(affinities))) > 0
+        throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
+    end
+
+    g = Grid(
         nrows,
         ncols,
-        _affinities,
-        _costfunction,
-        _costmatrix,
-        _id_to_grid_coordinate_list,
+        affinities,
+        costfunction,
+        costmatrix,
+        id_to_grid_coordinate_list,
         _source_qualities,
         _target_qualities,
     )
+
+    if prune
+        return largest_subgraph(g)
+    else
+        return g
+    end
 end
 
 Base.size(g::Grid) = (g.nrows, g.ncols)
@@ -166,7 +177,7 @@ function plot_indegrees(g::Grid; kwargs...)
 end
 
 """
-    is_connected(g::Grid)::Bool
+    is_strongly_connected(g::Grid)::Bool
 
 Test if graph defined by Grid is fully connected.
 
@@ -178,14 +189,14 @@ julia> affinities = [1/4 0 1/4 1/4
                      1/4 0 1/4 1/4
                      1/4 0 1/4 1/4];
 
-julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities))
+julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities), prune=false)
 ConScape.Grid of size 4x4
 
-julia> ConScape.is_connected(grid)
+julia> ConScape.is_strongly_connected(grid)
 false
 ```
 """
-LightGraphs.is_connected(g::Grid) = is_connected(SimpleWeightedDiGraph(g.affinities))
+LightGraphs.is_strongly_connected(g::Grid) = is_strongly_connected(SimpleWeightedDiGraph(g.affinities))
 
 """
     largest_subgraph(g::Grid)::Grid
@@ -195,17 +206,24 @@ will have the same size as the input `Grid` but only nodes associated with the
 largest subgraph of the affinities will be active.
 """
 function largest_subgraph(g::Grid)
-    # Convert adjacency matrix to graph
-    graph = SimpleWeightedDiGraph(g.affinities, permute=false)
+    # Convert cost matrix to graph
+    graph = SimpleWeightedDiGraph(g.costmatrix, permute=false)
 
     # Find the subgraphs
     scc = strongly_connected_components(graph)
+
+    @info "cost graph contains $(length(scc)) strongly connected subgraphs"
 
     # Find the largest subgraph
     i = argmax(length.(scc))
 
     # extract node list and sort it
     scci = sort(scc[i])
+
+    ndiffnodes = size(g.costmatrix, 1) - length(scci)
+    if ndiffnodes > 0
+        @info "removing $ndiffnodes nodes from affinity and cost graphs"
+    end
 
     # Extract the adjacency matrix of the largest subgraph
     affinities = g.affinities[scci, scci]
@@ -235,6 +253,8 @@ julia> affinities = [1/4 0 1/2 1/4
                      1/4 0 1/2 1/4];
 
 julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities))
+[ Info: cost graph contains 6 strongly connected subgraphs
+[ Info: removing 8 nodes from affinity and cost graphs
 ConScape.Grid of size 4x4
 
 julia> ConScape.least_cost_distance(grid, (4,4))

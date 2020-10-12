@@ -252,7 +252,6 @@ function least_cost_kl_divergence(C::SparseMatrixCSC, Pref::SparseMatrixCSC, tar
     parents = dsp.parents
     parents[targetnode] = targetnode
 
-    # from = LinearIndices((grsp.g.nrows, grsp.g.ncols))[grsp.g.id_to_grid_coordinate_list]
     from = collect(1:n)
     to   = copy(parents)
 
@@ -269,7 +268,6 @@ function least_cost_kl_divergence(C::SparseMatrixCSC, Pref::SparseMatrixCSC, tar
                 continue
             end
             v = Pref[fromᵢ, toᵢ]
-            # v = grsp.Pref[toᵢ, fromᵢ]
             kl_div[i] += -log(v)
             from[i] = parents[toᵢ]
         end
