@@ -227,34 +227,3 @@ h_2000 = ConScape.GridRSP(g_2000, θ=0.1);
 # ConScape.heatmap(crit, yflip=true, title="criticality")
 #savefig("output_figures/criticality.png")
 ```
-
-## Sensitivity based on the derivative
-
-```julia
-sens, _ = ConScape.sensitivity(h_2000, exp_prox_scaling=75.)
-```
-
-```julia
-ConScape.heatmap(Array(sens), yflip=true, title="sensitivity")
-```
-
-```julia
-senss = Array(sens)
-map!(t -> t>1000 ? 0 : t,  senss, senss)
-map!(t -> t==0 ? NaN : t,  senss, senss)
-#map!(t -> t<0 ? 0 : t,  senss, senss)
-
-#map!(t -> t>250 ? 250 : t,  senss, senss)
-#map!(t -> t>400 ? 400 : t,  senss, senss)
-#map!(t -> log(t+1),  senss, senss)
-
-ConScape.heatmap(senss, yflip=true, title="sensitivity")
-#savefig("output_figures/sensitivity.png")
-```
-
-```julia
-# ConScape.writeasc(joinpath("./input_maps/", "sensitivity.asc"), senss,
-    # xllcorner=meta_q["xllcorner"], yllcorner=meta_q["yllcorner"],
-    # cellsize=meta_q["cellsize"], nodatavalue = -999)
-```
-
