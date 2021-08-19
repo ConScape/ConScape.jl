@@ -285,7 +285,9 @@ A helper-function, used by coarse_graining, that computes the sum of pixels with
 function sum_neighborhood(g, rc, npix)
     getrows = (rc[1] - floor(Int, npix/2)):(rc[1] + (ceil(Int, npix/2) - 1))
     getcols = (rc[2] - floor(Int, npix/2)):(rc[2] + (ceil(Int, npix/2) - 1))
-    return sum(g.target_qualities[getrows, getcols])
+    # pixels outside of the landscape are encoded with NaNs but we don't want
+    # the NaNs to propagate to the coarse grained values
+    return sum(t -> isnan(t) ? 0.0 : t, g.target_qualities[getrows, getcols])
 end
 
 
@@ -299,8 +301,14 @@ function coarse_graining(g, npix)
     getrows = (floor(Int, npix/2)+1):npix:(g.nrows-ceil(Int, npix/2)+1)
     getcols = (floor(Int, npix/2)+1):npix:(g.ncols-ceil(Int, npix/2)+1)
     coarse_target_rc = Base.product(getrows, getcols)
-    coarse_target_ids = vec([findfirst(isequal(CartesianIndex(ij)),
-                                       g.id_to_grid_coordinate_list) for ij in coarse_target_rc])
+    coarse_target_ids = vec(
+        [
+            findfirst(
+                isequal(CartesianIndex(ij)),
+                g.id_to_grid_coordinate_list
+            ) for ij in coarse_target_rc
+        ]
+    )
     coarse_target_rc = [ij for ij in coarse_target_rc if !ismissing(ij)]
     filter!(!ismissing, coarse_target_ids)
     V = [sum_neighborhood(g, ij, npix) for ij in coarse_target_rc]
