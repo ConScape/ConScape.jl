@@ -109,7 +109,7 @@ ConScape.heatmap(Array(func), yflip=true, title="Connected Habitat")
 ```
 
 ```julia
-sum(func)
+sum(t -> isfinite(t) ? t : 0.0, func)
 ```
 
 # Step 4: Movement Flow
@@ -209,7 +209,7 @@ mov_prob_2000, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_2000.asc"))
 hab_qual_2000, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_2000.asc"))
 
 # hack for the sensitivity:
-hab_qual_2000[(mov_prob_2000.>0) .== (hab_qual_2000.==0)] .= 1e-20;
+hab_qual_2000[(mov_prob_2000.>0) .== isnan.(hab_qual_2000)] .= 1e-20;
 
 g_2000 = ConScape.Grid(size(mov_prob_2000)...,
                       affinities=ConScape.graph_matrix_from_raster(mov_prob_2000),
@@ -224,10 +224,7 @@ h_2000 = ConScape.GridRSP(g_2000, θ=0.1);
 ```
 
 ```julia
-# critt = Array(crit)
-# map!(t -> t==0 ? NaN : t,  critt, critt)
-
-# ConScape.heatmap(critt, yflip=true, title="criticality")
+# ConScape.heatmap(crit, yflip=true, title="criticality")
 #savefig("output_figures/criticality.png")
 ```
 
