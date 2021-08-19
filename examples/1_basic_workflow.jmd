@@ -17,7 +17,7 @@ hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
 
 ```julia
 # hack for the sensitivity:
-hab_qual[(mov_prob.>0) .== (hab_qual.==0)] .= 1e-20;
+hab_qual[(mov_prob.>0) .== isnan.(hab_qual)] .= 1e-20;
 ```
 
 ```julia

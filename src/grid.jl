@@ -160,7 +160,7 @@ end
 
 function plot_outdegrees(g::Grid; kwargs...)
     values = sum(g.affinities, dims=2)
-    canvas = zeros(g.nrows, g.ncols)
+    canvas = fill(NaN, g.nrows, g.ncols)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
@@ -169,7 +169,7 @@ end
 
 function plot_indegrees(g::Grid; kwargs...)
     values = sum(g.affinities, dims=1)
-    canvas = zeros(g.nrows, g.ncols)
+    canvas = fill(NaN, g.nrows, g.ncols)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end

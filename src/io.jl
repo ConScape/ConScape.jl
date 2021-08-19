@@ -10,7 +10,7 @@ readasc
 
 readasc(fn::String; kwargs...) = open(t -> readasc(t; kwargs...), fn, "r")
 
-function readasc(io::IOStream; nodata_value=0.0)
+function readasc(io::IOStream; nodata_value=NaN)
 
     d = Dict()
 
