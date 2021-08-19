@@ -69,8 +69,7 @@ function writeasc(io::IOStream, m::Matrix{<:Real};
         throw(ArgumentError("please provide a cell size"))
     end
 
-    mcopy = copy(m)
-    replace!(m, NaN => nodata_value)
+    m = replace(m, NaN => nodata_value)
 
     write(io, string("NCOLS "       , size(m, 2) , "\n"))
     write(io, string("NROWS "       , size(m, 1) , "\n"))

@@ -21,7 +21,7 @@ _tempdir = mkdir(tempname())
 
         _raster, _meta = ConScape.readasc(filename)
 
-        @test _raster == affinity_raster
+        @test isequal(_raster, affinity_raster) # contain NaNs
         @test _meta["xllcorner"] == xllcorner
         @test _meta["yllcorner"] == yllcorner
         @test _meta["cellsize"] == cellsize
@@ -31,7 +31,7 @@ _tempdir = mkdir(tempname())
         ConScape.writeasc(filename2, affinity_raster, _meta)
 
         _raster2, _meta2 = ConScape.readasc(filename2)
-        @test _raster == _raster2
+        @test isequal(_raster, _raster2) # contain NaNs
         @test all(_meta[k] == _meta2[k] for k in keys(_meta))
     end
 
