@@ -159,7 +159,9 @@ _tempdir = mkdir(tempname())
         @test ch isa Matrix{Float64}
         @test size(ch) == size(grsp.g.source_qualities)
 
-        @test ConScape.connected_habitat(grsp, CartesianIndex((20,20))) isa Matrix{Float64}
+        cl = ConScape.connected_habitat(grsp, CartesianIndex((20,20)))
+        @test cl isa Matrix{Float64}
+        @test sum(replace(cl, NaN => 0.0)) ≈ 109.4795495188798
     end
 
     @testset "mean_lc_kl_divergence" begin
