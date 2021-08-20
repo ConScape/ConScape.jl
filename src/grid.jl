@@ -258,7 +258,7 @@ julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matri
 ConScape.Grid of size 4x4
 
 julia> ConScape.least_cost_distance(grid, (4,4))
-4×4 Array{Float64,2}:
+4×4 Matrix{Float64}:
  Inf  Inf  2.42602   3.46574
  Inf  Inf  1.73287   2.77259
  Inf  Inf  1.03972   1.38629
