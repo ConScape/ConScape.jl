@@ -10,7 +10,7 @@ readasc
 
 readasc(fn::String; kwargs...) = open(t -> readasc(t; kwargs...), fn, "r")
 
-function readasc(io::IOStream; nodata_value=0.0)
+function readasc(io::IOStream; nodata_value=NaN)
 
     d = Dict()
 
@@ -69,8 +69,7 @@ function writeasc(io::IOStream, m::Matrix{<:Real};
         throw(ArgumentError("please provide a cell size"))
     end
 
-    mcopy = copy(m)
-    replace!(m, NaN => nodata_value)
+    m = replace(m, NaN => nodata_value)
 
     write(io, string("NCOLS "       , size(m, 2) , "\n"))
     write(io, string("NROWS "       , size(m, 1) , "\n"))

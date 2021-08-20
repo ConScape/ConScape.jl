@@ -360,11 +360,10 @@ function connected_habitat(grsp::GridRSP, S::Matrix; diagvalue::Union{Nothing,Re
 
     funvec = connected_habitat(qˢ, qᵗ, S)
 
-    func = sparse([ij[1] for ij in grsp.g.id_to_grid_coordinate_list],
-                  [ij[2] for ij in grsp.g.id_to_grid_coordinate_list],
-                  funvec,
-                  grsp.g.nrows,
-                  grsp.g.ncols)
+    func = fill(NaN, grsp.g.nrows, grsp.g.ncols)
+    for (ij, x) in zip(grsp.g.id_to_grid_coordinate_list, funvec)
+        func[ij] = x
+    end
 
     return func
 end

@@ -93,7 +93,12 @@ The values are computed as either the value of the target cell (TargetWeight) or
 of the cell affinities (costs) weighted by the grid distance (AverageWeight). The values can be computed with
 respect to eight neighbors (`N8`) or four neighbors (`N4`).
 """
-function graph_matrix_from_raster(R::Matrix; matrix_type=AffinityMatrix, neighbors::Tuple=N8, weight=TargetWeight)
+function graph_matrix_from_raster(
+    R::Matrix;
+    matrix_type=AffinityMatrix,
+    neighbors::Tuple=N8,
+    weight=TargetWeight
+)
     m, n = size(R)
 
     # Initialize the buffers of the SparseMatrixCSC
@@ -110,8 +115,8 @@ function graph_matrix_from_raster(R::Matrix; matrix_type=AffinityMatrix, neighbo
                 else
                     # Target node
                     rijk = R[i + ki, j + kj]
-                    if iszero(rijk)
-                        # Don't include zero similaritiers
+                    if iszero(rijk) || isnan(rijk)
+                        # Don't include zero or NaN similaritiers
                         continue
                     end
 

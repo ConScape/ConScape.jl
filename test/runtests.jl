@@ -21,7 +21,7 @@ _tempdir = mkdir(tempname())
 
         _raster, _meta = ConScape.readasc(filename)
 
-        @test _raster == affinity_raster
+        @test isequal(_raster, affinity_raster) # contain NaNs
         @test _meta["xllcorner"] == xllcorner
         @test _meta["yllcorner"] == yllcorner
         @test _meta["cellsize"] == cellsize
@@ -31,7 +31,7 @@ _tempdir = mkdir(tempname())
         ConScape.writeasc(filename2, affinity_raster, _meta)
 
         _raster2, _meta2 = ConScape.readasc(filename2)
-        @test _raster == _raster2
+        @test isequal(_raster, _raster2) # contain NaNs
         @test all(_meta[k] == _meta2[k] for k in keys(_meta))
     end
 
@@ -42,6 +42,9 @@ _tempdir = mkdir(tempname())
         0.0               0.00031508895477488 0.0]
 
     qualities , _ = ConScape.readasc(joinpath(datadir, "qualities_$landscape.asc"))
+    # FIXME! We'd have to handle this somehow in the library
+    @test_broken isnan.(affinity_raster) == isnan.(qualities)
+    qualities[(affinity_raster .> 0) .& isnan.(qualities)] .= 1e-20
 
     g = ConScape.Grid(size(affinity_raster)...,
         affinities=affinities,
@@ -152,11 +155,13 @@ _tempdir = mkdir(tempname())
     end
 
     @testset "connected_habitat" begin
-        hf = ConScape.connected_habitat(grsp)
-        @test hf isa SparseMatrixCSC
-        @test size(hf) == size(grsp.g.source_qualities)
+        ch = ConScape.connected_habitat(grsp)
+        @test ch isa Matrix{Float64}
+        @test size(ch) == size(grsp.g.source_qualities)
 
-        ConScape.connected_habitat(grsp, CartesianIndex((20,20)))
+        cl = ConScape.connected_habitat(grsp, CartesianIndex((20,20)))
+        @test cl isa Matrix{Float64}
+        @test sum(replace(cl, NaN => 0.0)) ≈ 109.4795495188798
     end
 
     @testset "mean_lc_kl_divergence" begin
@@ -693,6 +698,12 @@ end
     mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_200.asc"))
     hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_200.asc"))
 
+    # FIXME! We'd have to handle this somehow in the library
+    @test_broken isnan.(mov_prob) == isnan.(hab_qual)
+    non_matches = findall(xor.(isnan.(mov_prob), isnan.(hab_qual)))
+    mov_prob[non_matches] .= 1e-20
+    hab_qual[non_matches] .= 1e-20
+
     g = ConScape.Grid(size(mov_prob)...,
         affinities=ConScape.graph_matrix_from_raster(mov_prob),
         qualities=hab_qual,
@@ -707,7 +718,7 @@ end
     h_coarse = ConScape.GridRSP(g_coarse, θ=1.0)
 
     kbetw = @time ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/100))
-    @test count(!isnan, kbetw) == 128175
+    @test count(!isnan, kbetw) == 128234
 end
 
 @testset "Test that cost edges are contained in the affinity edges" begin
