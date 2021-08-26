@@ -13,7 +13,7 @@ using ConScape
 
 ```julia
 g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2),
-                           qualities=copy(reshape(collect(1800:-1:1), 60, 30)'));
+    qualities=copy(reshape(collect(1800:-1:1), 60, 30)'));
 ```
 
 ```julia
@@ -22,11 +22,11 @@ ConScape.plot_outdegrees(g)
 
 
 ```julia
-h = ConScape.GridRSP(g, cost=ConScape.MinusLog(), θ=0.2);
+h = ConScape.GridRSP(g, θ=0.2);
 ```
 
 ```julia
-Cg = ConScape.SimpleWeightedGraph(h.C)
+Cg = ConScape.SimpleWeightedGraph(h.g.costmatrix)
 @time distances_all2L_shortestpath = ConScape.floyd_warshall_shortest_paths(Cg).dists
 ```
 
@@ -45,7 +45,7 @@ ConScape.heatmap(bet_q, yflip=true)
 ```
 
 ```julia
-@time ConScape.expected_costs(h)
+@time ConScape.expected_cost(h)
 ```
 
 ```julia

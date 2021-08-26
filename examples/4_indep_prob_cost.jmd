@@ -24,9 +24,9 @@ map!(t -> t<0 ? 0 : t,  hab_qual, hab_qual)
 ```julia
 affinities = ConScape.graph_matrix_from_raster(mov_prob)
 g = ConScape.Grid(size(mov_prob)...,
-                      affinities=affinities,
-                      costs=map(t -> t>0 ? -log(1 - t) : t,  affinities),
-                      qualities=hab_qual)
+    affinities=affinities,
+    costs=map(t -> t>0 ? -log(1 - t) : t,  affinities),
+    qualities=hab_qual)
 ```
 
 ```julia
@@ -41,8 +41,8 @@ meta_c
 
 ```julia
 g2 = ConScape.Grid(size(mov_prob)...,
-                   affinities=ConScape.graph_matrix_from_raster(mov_cost),
-                   qualities=hab_qual);
+    affinities=ConScape.graph_matrix_from_raster(mov_cost),
+    qualities=hab_qual);
 ConScape.plot_indegrees(g2)
 ```
 
@@ -63,7 +63,7 @@ pb = ConScape.survival_probability(h);
 ```
 
 ```julia
-ConScape.plot_values(g, map!(t -> t==1 ? NaN : t,  pb[:,15000], pb[:,15000]), title="Survival Probability")
+ConScape.plot_values(g, map(t -> t==1 ? NaN : t, pb[:,15000]), title="Survival Probability")
 ```
 
 ```julia

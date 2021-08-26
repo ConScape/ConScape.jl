@@ -16,10 +16,16 @@ hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
 ```
 
 ```julia
+non_matches = findall(xor.(isnan.(mov_prob), isnan.(hab_qual)))
+mov_prob[non_matches] .= 1e-20
+hab_qual[non_matches] .= 1e-20;
+```
+
+```julia
 g = ConScape.Grid(size(mov_prob)...,
-                  affinities=ConScape.graph_matrix_from_raster(mov_prob),
-                  qualities=hab_qual,
-                  costs=ConScape.MinusLog())
+    affinities=ConScape.graph_matrix_from_raster(mov_prob),
+    qualities=hab_qual,
+    costs=ConScape.MinusLog())
 ```
 
 ```julia
@@ -41,12 +47,12 @@ target_mean_D_KL
 ```julia
 function mean_D_KL_difference(θ, G, target_mean_D_KL)
     mean_D_KL = ConScape.mean_kl_divergence(ConScape.GridRSP(G; θ=θ))
-    return (mean_D_KL-target_mean_D_KL)^2
+    return (mean_D_KL - target_mean_D_KL)^2
 end
 ```
 
 ```julia
-r=optimize(_θ -> mean_D_KL_difference(_θ, g, target_mean_D_KL), 0.0, 3.0; iterations=20)
+r = optimize(_θ -> mean_D_KL_difference(_θ, g, target_mean_D_KL), 0.0, 3.0; iterations=20)
 ```
 
 ```julia
@@ -73,44 +79,14 @@ target_mean_D_KL
 # Corridor example with constant KLd
 
 ```julia
-function perm_wall_sim(nrows::Integer,
-    ncols::Integer;
-    scaling::Float64=0.5,
-    wallwidth::Integer=3,
-    wallposition::Float64=0.5,
-    corr_width::Integer=3, # corridorwidths::NTuple{N,Int}=(3,3),
-    corr_position::Float64=0.5, # corridorpositions=(0.35,0.7),
-    impossible_affinity::Real=1e-20,
-    qualities::Matrix=ones(nrows, ncols),
-    kwargs...) where N
+nrows, ncols = 21, 41
 
-    R = 1. *ones(nrows,ncols)
-    x_center = floor(ncols/2)+1
-    x_min = x_center-floor(wallwidth/2)
-    xs = Vector{Int}(x_min:x_min+wallwidth-1)
-
-
-    y_center = floor(nrows/2)+1
-    y_min = y_center-floor(corr_width/2)
-    ys = y_min:y_min+corr_width-1
-    ys = setdiff(1:nrows, ys)
-
-
-    R[ys, xs] .= impossible_affinity
-    qualities[ys, xs] .= impossible_affinity
-    A = ConScape.graph_matrix_from_raster(R,neighbors=ConScape.N8)
-    return ConScape.Grid(nrows,ncols,affinities=A,qualities=qualities)
-end
-```
-
-```julia
-nrows,ncols = 21, 41
-
-g = perm_wall_sim(nrows, ncols, corr_width=3,
-                           corr_position=0.5,
-                           impossible_affinity=0.,
-                           # Qualities decrease by row
-                           qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
+g = ConScape.perm_wall_sim(nrows, ncols;
+    corridorwidths=(3,),
+    corridorpositions=(0.5,),
+    impossible_affinity=0.,
+    # Qualities decrease by row
+    qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
 
 
 θ = 10.0
@@ -144,11 +120,12 @@ target_kld = ConScape.mean_kl_divergence(h)
 ```
 
 ```julia
-g2 = perm_wall_sim(nrows, ncols, corr_width=7,
-                           corr_position=0.5,
-                           impossible_affinity=0.,
-                           # Qualities decrease by row
-                           qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
+g2 = ConScape.perm_wall_sim(nrows, ncols;
+    corridorwidths=(7,),
+    corridorpositions=(0.5,),
+    impossible_affinity=0.,
+    # Qualities decrease by row
+    qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
 ```
 
 ```julia
@@ -168,7 +145,7 @@ target_kld
 ```
 
 ```julia
-r=optimize(_θ -> mean_D_KL_difference(_θ, g2, target_kld), 0.0, 3.0;iterations=20)
+r = optimize(_θ -> mean_D_KL_difference(_θ, g2, target_kld), 0.0, 3.0;iterations=20)
 ```
 
 ```julia

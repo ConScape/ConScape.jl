@@ -15,11 +15,17 @@ hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
 ```
 
 ```julia
+non_matches = findall(xor.(isnan.(mov_prob), isnan.(hab_qual)))
+mov_prob[non_matches] .= 1e-20
+hab_qual[non_matches] .= 1e-20;
+```
+
+```julia
 theta = 0.001
 g = ConScape.Grid(size(mov_prob)...,
-                  affinities=ConScape.graph_matrix_from_raster(mov_prob),
-                  qualities=hab_qual,
-                  costs=ConScape.MinusLog())
+    affinities=ConScape.graph_matrix_from_raster(mov_prob),
+    qualities=hab_qual,
+    costs=ConScape.MinusLog())
 h = ConScape.GridRSP(g, θ=theta);
 ```
 
@@ -32,18 +38,7 @@ ConScape.plot_values(g, tmp, title="Target (or is it Source?) Pixel")
 # Step 2: Euclidean distances
 
 ```julia
-euclid = zeros(length(g.id_to_grid_coordinate_list),length(g.id_to_grid_coordinate_list));
-```
-
-```julia
-x = [i[1] for i in g.id_to_grid_coordinate_list];
-y = [i[2] for i in g.id_to_grid_coordinate_list]
-
-for i in 1:size(euclid)[1]
-    for j in 1:size(euclid)[2]
-        euclid[i,j] = sqrt((x[i]-x[j])^2+(y[i]-y[j])^2)
-    end
-end
+euclid = [hypot(xy1[1] - xy2[1], xy1[2] - xy2[2]) for xy1 in g.id_to_grid_coordinate_list, xy2 in g.id_to_grid_coordinate_list];
 ```
 
 ```julia
@@ -74,7 +69,7 @@ ConScape.plot_values(g, map!(x -> x<350 ? 1 : 350/x,dists[:,4300],dists[:,4300])
 ```
 
 ```julia
-plot(map!(x -> exp(-x/1000),dists[:,4300],dists[:,4300]), map!(x -> x<350 ? 1 : 350/x,dists[:,4300],dists[:,4300]), seriestype = :scatter, legend=false, xlabel="log", ylabel="inv")
+plot(map(x -> exp(-x/1000), dists[:,4300]), map(x -> x<350 ? 1 : 350/x, dists[:,4300]), seriestype = :scatter, legend=false, xlabel="log", ylabel="inv")
 ```
 
 # Step 4: Survival Proximity
@@ -101,5 +96,5 @@ plot(dists[:,4300], tmp, seriestype = :scatter, legend=false, xlabel="Expected C
 ```
 
 ```julia
-plot(map!(x -> exp(-x/1000),dists[:,4300],dists[:,4300]), tmp, seriestype = :scatter, legend=false, xlabel="Expected Cost Proximity", ylabel="Surival Probability")
+plot(map(x -> exp(-x/1000), dists[:,4300]), tmp, seriestype = :scatter, legend=false, xlabel="Expected Cost Proximity", ylabel="Surival Probability")
 ```

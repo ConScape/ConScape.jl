@@ -162,21 +162,13 @@ function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, im
     target_qualities = copy(g.target_qualities)
 
     # Set (nonzero) values to impossible_affinity:
-    if impossible_affinity > 0
-        affinities[node_list_idx,:] = impossible_affinity*(affinities[node_list_idx,:] .> 0)
-        affinities[:,node_list_idx] = impossible_affinity*(affinities[:,node_list_idx] .> 0)
-        source_qualities[node_list] .= 0
-        target_qualities[node_list] .= 0
-    elseif impossible_affinity == 0
-        # Delete the nodes completely:
-        num_of_removed = length(node_list_idx)
+    # Affinities
+    # FIXME! Row slicing of a sparse matrix is really inefficient
+    affinities[node_list_idx,:] = impossible_affinity*(affinities[node_list_idx,:] .> 0)
+    affinities[:,node_list_idx] = impossible_affinity*(affinities[:,node_list_idx] .> 0)
+    dropzeros!(affinities)
 
-        nodes_to_keep = [n for n in 1:size(affinities, 1) if !(n in node_list_idx)]
-
-        affinities = affinities[nodes_to_keep,:]
-        affinities = affinities[:,nodes_to_keep]
-    end
-
+    # Qualities
     source_qualities[node_list] .= 0
     target_qualities[node_list] .= 0
 

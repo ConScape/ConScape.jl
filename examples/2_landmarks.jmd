@@ -1,3 +1,8 @@
+# Landmark function for testing purposes
+
+```julia
+using ConScape, SparseArrays, LinearAlgebra
+```
 
 ```julia
 gridplus=10
@@ -5,44 +10,6 @@ gridplus=10
 
 ```julia
 grid = 10
-```
-
-```julia
-using ConScape
-```
-
-new landmark function for testing purposes
-
-```julia
-using SparseArrays, LinearAlgebra
-
-function sum_neighborhood(g, rc, npix)
-
-    getrows = (rc[1] - floor(Int, npix/2)):(rc[1] + (ceil(Int, npix/2)-1))
-    getcols = (rc[2] - floor(Int, npix/2)):(rc[2] + (ceil(Int, npix/2)-1))
-    neigh_rc = Base.product(getrows, getcols)
-
-    return tr(g.target_qualities[vec(first.(neigh_rc)), vec(last.(neigh_rc))])
-end
-
-
-function coarse_graining(g, npix)
-
-    getrows = (floor(Int, npix/2)+1):npix:(g.nrows-ceil(Int, npix/2)+1)
-    getcols = (floor(Int, npix/2)+1):npix:(g.ncols-ceil(Int, npix/2)+1)
-    coarse_target_rc = Base.product(getrows, getcols)
-    coarse_target_ids = vec([findfirst(isequal(CartesianIndex(ij)),
-                                       g.id_to_grid_coordinate_list) for ij in coarse_target_rc])
-    coarse_target_rc = [ij for ij in coarse_target_rc if !ismissing(ij)]
-    filter!(!ismissing, coarse_target_ids)
-    V = [sum_neighborhood(g, ij, npix) for ij in coarse_target_rc]
-    I = first.(coarse_target_rc)
-    J = last.(coarse_target_rc)
-    target_mat = sparse(I, J, V, g.nrows, g.ncols)
-    target_mat = dropzeros(target_mat)
-
-    return target_mat
-end
 ```
 
 # Data import and Grid creation
@@ -53,7 +20,13 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 
 ```julia
 mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
-hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
+hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"));
+```
+
+```julia
+non_matches = findall(xor.(isnan.(mov_prob), isnan.(hab_qual)))
+mov_prob[non_matches] .= 1e-20
+hab_qual[non_matches] .= 1e-20;
 ```
 
 ```julia
@@ -63,17 +36,13 @@ g = ConScape.Grid(size(mov_prob)...,
                       costs=ConScape.MinusLog())
 ```
 
-```julia
-g.target_qualities
-```
-
 # Coarse graining
 
 ```julia
 g_coarse = ConScape.Grid(size(mov_prob)...,
                          affinities=ConScape.graph_matrix_from_raster(mov_prob),
                          source_qualities=hab_qual,
-                         target_qualities=coarse_graining(g, 20),
+                         target_qualities=ConScape.coarse_graining(g, 20),
                          costs=ConScape.MinusLog());
 ```
 
@@ -82,7 +51,7 @@ theta = 1.0
 ```
 
 ```julia
-theta=0.01
+theta = 0.01
 ```
 
 ```julia
@@ -94,17 +63,17 @@ theta=0.01
 ```
 
 ```julia
-func = ConScape.connected_habitat(h, distance_transformation=x -> exp(-x/75));
-func_coarse = ConScape.connected_habitat(h_coarse, distance_transformation=x -> exp(-x/75));
+func = @time ConScape.connected_habitat(h, distance_transformation=x -> exp(-x/75))
+func_coarse = @time ConScape.connected_habitat(h_coarse, distance_transformation=x -> exp(-x/75));
 ```
 
 ```julia
-sum(func_coarse)/sum(func)
+sum(t -> isnan(t) ? 0.0 : t, func_coarse)/sum(t -> isnan(t) ? 0.0 : t, func)
 ```
 
 ```julia
 using Statistics
-cor(findnz(func)[3], findnz(func_coarse)[3])
+cor(filter(!isnan, func), filter(!isnan, func_coarse))
 ```
 
 ```julia
@@ -118,38 +87,41 @@ ConScape.heatmap(qbetw_coarse, yflip=true)
 ```
 
 ```julia
-cor(vec(qbetw)[.!(isnan.(vec(qbetw)))], vec(qbetw_coarse)[.!(isnan.(vec(qbetw_coarse)))])
+cor(filter(!isnan, qbetw), filter(!isnan, qbetw_coarse))
 ```
 
 ```julia
-kbetw = ConScape.betweenness_kweighted(h, distance_transformation=x -> exp(-x/75));
-kbetw_coarse = ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/75));
+kbetw = @time ConScape.betweenness_kweighted(h, distance_transformation=x -> exp(-x/75));
+kbetw_coarse = @time ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/75));
 ```
 
 ```julia
-cor(vec(kbetw)[.!(isnan.(vec(kbetw)))], vec(kbetw_coarse)[.!(isnan.(vec(kbetw_coarse)))])
+cor(filter(!isnan, kbetw), filter(!isnan, kbetw_coarse))
 ```
 
 # Test landmark performance for amount of connected habitat
 
 ```julia
 coarseness = (1,2,3,5,7,10,15,20)
-est_func = zeros(length(coarseness))
-cor_func = zeros(length(coarseness))
 
-for i in 1:length(coarseness)
+tmp = map(1:length(coarseness)) do i
     g_coarse = ConScape.Grid(size(mov_prob)...,
-                      affinities=ConScape.graph_matrix_from_raster(mov_prob),
-                      source_qualities=hab_qual,
-                      target_qualities=coarse_graining(g, coarseness[i]),
-                      costs=ConScape.MinusLog(), );
+        affinities=ConScape.graph_matrix_from_raster(mov_prob),
+        source_qualities=hab_qual,
+        target_qualities=ConScape.coarse_graining(g, coarseness[i]),
+        costs=ConScape.MinusLog(), );
 
-    @time h_coarse = ConScape.GridRSP(g_coarse, θ=theta);
+    h_coarse = @time ConScape.GridRSP(g_coarse, θ=theta);
     func_coarse = ConScape.connected_habitat(h_coarse, distance_transformation=x -> exp(-x/75));
 
-    est_func[i] = sum(func_coarse)
-    cor_func[i] = cor(findnz(func)[3], findnz(func_coarse)[3])
+    (
+        sum(t -> isnan(t) ? 0.0 : t, func_coarse),
+        cor(filter(!isnan, func), filter(!isnan, func_coarse))
+    )
 end
+
+est_func = first.(tmp)
+cor_func = last.(tmp);
 ```
 
 ```julia
@@ -157,11 +129,12 @@ using Plots
 ```
 
 ```julia
-plot(est_func/sum(func))
+sum_func = sum(t -> isnan(t) ? 0.0 : t, func)
+plot(est_func/sum_func)
 ```
 
 ```julia
-est_func/sum(func)
+est_func/sum_func
 ```
 
 ```julia
@@ -177,19 +150,17 @@ cor_func
 ## Quality weighted
 
 ```julia
-cor_qbetw = zeros(length(coarseness))
-
-for i in 1:length(coarseness)
+cor_qbetw = map(1:length(coarseness)) do i
     g_coarse = ConScape.Grid(size(mov_prob)...,
-                      affinities=ConScape.graph_matrix_from_raster(mov_prob),
-                      source_qualities=hab_qual,
-                      target_qualities=coarse_graining(g, coarseness[i]),
-                      costs=ConScape.MinusLog(), );
+        affinities=ConScape.graph_matrix_from_raster(mov_prob),
+        source_qualities=hab_qual,
+        target_qualities=ConScape.coarse_graining(g, coarseness[i]),
+        costs=ConScape.MinusLog(), );
 
-    @time h_coarse = ConScape.GridRSP(g_coarse, θ=theta);
+    h_coarse = @time ConScape.GridRSP(g_coarse, θ=theta);
     qbetw_coarse = ConScape.betweenness_qweighted(h_coarse);
 
-    cor_qbetw[i] = cor(vec(qbetw)[.!(isnan.(vec(qbetw)))], vec(qbetw_coarse)[.!(isnan.(vec(qbetw_coarse)))])
+    return cor(filter(!isnan, qbetw), filter(!isnan, qbetw_coarse))
 end
 ```
 
@@ -204,19 +175,17 @@ cor_qbetw
 ## Proximity weighted
 
 ```julia
-cor_kbetw = zeros(length(coarseness))
-
-for i in 1:length(coarseness)
+cor_kbetw = map(1:length(coarseness))do i
     g_coarse = ConScape.Grid(size(mov_prob)...,
-                      affinities=ConScape.graph_matrix_from_raster(mov_prob),
-                      source_qualities=hab_qual,
-                      target_qualities=coarse_graining(g, coarseness[i]),
-                      costs=ConScape.MinusLog());
+        affinities=ConScape.graph_matrix_from_raster(mov_prob),
+        source_qualities=hab_qual,
+        target_qualities=ConScape.coarse_graining(g, coarseness[i]),
+        costs=ConScape.MinusLog());
 
     @time h_coarse = ConScape.GridRSP(g_coarse, θ=theta);
     kbetw_coarse = ConScape.betweenness_kweighted(h_coarse, distance_transformation=x -> exp(-x/75));
 
-    cor_kbetw[i] = cor(vec(kbetw)[.!(isnan.(vec(kbetw)))], vec(kbetw_coarse)[.!(isnan.(vec(kbetw_coarse)))])
+    return cor(filter(!isnan, kbetw), filter(!isnan, kbetw_coarse))
 end
 ```
 
@@ -241,7 +210,8 @@ plot(Array[cor_func, cor_qbetw, cor_kbetw],  title = "Correlation",
 ```
 
 ```julia
-plot(est_func/sum(func),  title = "Estimated Amount Connected Habitat",
+s
+plot(est_func/sum_func,  title = "Estimated Amount Connected Habitat",
     xlabel = "Coarseness",
     xticks = (1:8, coarseness),
     legend=false,
@@ -250,7 +220,7 @@ plot(est_func/sum(func),  title = "Estimated Amount Connected Habitat",
 ```
 
 ```julia
-plot((est_func.-sum(func))/sum(func)*100,  title = "% Underestimation of the landscape's Connected Habitat",
+plot((est_func .- sum_func)/sum_func*100,  title = "% Underestimation of the landscape's Connected Habitat",
     xlabel = "Coarseness",
     xticks = (1:8, coarseness),
     legend=false,
@@ -259,12 +229,12 @@ plot((est_func.-sum(func))/sum(func)*100,  title = "% Underestimation of the lan
 ```
 
 ```julia
-(est_func.-sum(func))/sum(func)*100
+(est_func .- sum_func)/sum_func*100
 ```
 
 ```julia
 g_coarse = ConScape.Grid(size(mov_prob)...,
-                      affinities=ConScape.graph_matrix_from_raster(mov_prob),
-                      qualities=hab_qual);
-coarse_graining(g_coarse, 5)
+    affinities=ConScape.graph_matrix_from_raster(mov_prob),
+    qualities=hab_qual);
+ConScape.coarse_graining(g_coarse, 5)
 ```
