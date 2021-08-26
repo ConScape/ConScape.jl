@@ -11,14 +11,20 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 
 ```julia
 mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
-hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
+hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"));
+```
+
+```julia
+non_matches = findall(xor.(isnan.(mov_prob), isnan.(hab_qual)))
+mov_prob[non_matches] .= 1e-20
+hab_qual[non_matches] .= 1e-20;
 ```
 
 ```julia
 g = ConScape.Grid(size(mov_prob)...,
-                      affinities=ConScape.graph_matrix_from_raster(mov_prob),
-                      qualities=hab_qual,
-                      costs=ConScape.MinusLog());
+    affinities=ConScape.graph_matrix_from_raster(mov_prob),
+    qualities=hab_qual,
+    costs=ConScape.MinusLog());
 ```
 
 ```julia
@@ -38,7 +44,7 @@ ConScape.heatmap(Array(func), yflip=true)
 ```
 
 ```julia
-sum(func)
+sum(t -> isnan(t) ? 0.0 : t, func)
 ```
 
 ```julia
@@ -62,7 +68,7 @@ func1 = qˢ .* similarities * qᵗ
 ```
 
 ```julia
-sum(func)
+sum(t -> isnan(t) ? 0.0 : t, func)
 ```
 
 ```julia
@@ -90,7 +96,7 @@ ConScape.plot_values(g, real.(vʳ))
 ```
 
 ```julia
-ConScape.plot_values(g, real.(vˡ))
+ConScape.plot_values(g, abs.(real.(vˡ)))
 ```
 
 ```julia
