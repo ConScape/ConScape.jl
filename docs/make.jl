@@ -14,5 +14,6 @@ makedocs(
 # See "Hosting Documentation" and deploydocs() in the Documenter manual
 # for more information.
 deploydocs(
-    repo = "github.com/ConScape/ConScape.jl.git"
+    repo = "github.com/ConScape/ConScape.jl.git",
+    devbranch = "main",
 )
