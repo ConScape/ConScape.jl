@@ -62,6 +62,7 @@ jobs:
           julia --project=docs -e '
             using Documenter: doctest
             using ConScape
+            DocMeta.setdocmeta!(ConScape, :DocTestSetup, :(using ConScape); recursive=true)
             doctest(ConScape)'
       - run: julia --project=docs docs/make.jl
         env:
