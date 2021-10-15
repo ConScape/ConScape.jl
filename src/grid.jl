@@ -351,7 +351,7 @@ function expected_cost(
     approx::Bool=false
 )
 
-    distvec = _expected_cost(g; target, θ, approx)
+    distvec = _expected_cost(g; target=target, θ=θ, approx=approx)
 
     return _vec_to_grid(g, distvec)
 end
@@ -398,7 +398,7 @@ function free_energy_distance(
     approx::Bool=false
 )
 
-    distvec = _free_energy_distance(g; target, θ, approx)
+    distvec = _free_energy_distance(g; target=target, θ=θ, approx=approx)
 
     return _vec_to_grid(g, distvec)
 end
