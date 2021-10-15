@@ -266,16 +266,25 @@ julia> ConScape.least_cost_distance(grid, (4,4))
 ```
 """
 function least_cost_distance(g::Grid, target::Tuple{Int,Int})
-    graph = SimpleWeightedDiGraph(g.costmatrix)
-    targetnode = findfirst(isequal(CartesianIndex(target)), g.id_to_grid_coordinate_list)
-    distvec = dijkstra_shortest_paths(graph, targetnode).dists
-    distgrid = fill(Inf, g.nrows, g.ncols)
-    for (i, c) in enumerate(g.id_to_grid_coordinate_list)
-        distgrid[c] = distvec[i]
-    end
+    distvec = _least_cost_distance(g, target)
+    distgrid = _vec_to_grid(g, distvec)
     return distgrid
 end
 
+function _least_cost_distance(g::Grid, target::Tuple{Int,Int})
+    graph = SimpleWeightedDiGraph(g.costmatrix)
+    targetnode = findfirst(isequal(CartesianIndex(target)), g.id_to_grid_coordinate_list)
+    distvec = dijkstra_shortest_paths(graph, targetnode).dists
+    return distvec
+end
+
+function _vec_to_grid(g::Grid, vec::Vector)
+    grid = fill(Inf, g.nrows, g.ncols)
+    for (i, c) in enumerate(g.id_to_grid_coordinate_list)
+        grid[c] = vec[i]
+    end
+    return grid
+end
 
 """
     sum_neighborhood(g::Grid, rc::Tuple{Int,Int}, npix::Integer)::Float64
@@ -318,4 +327,98 @@ function coarse_graining(g, npix)
     target_mat = dropzeros(target_mat)
 
     return target_mat
+end
+
+
+"""
+    free_energy_distance(
+        g::Grid;
+        target::Union{Tuple{Int,Int},Nothing}=nothing,
+        θ::Union{Real,Nothing}=nothing,
+        approx::Bool=false
+    )
+
+Compute the randomized shorted path based expected costs from all nodes in the graph defined by `g`
+to the `target` node using the inverse temperature parameter `θ`. The computation
+can either continue until convergence when setting `approx=false` (the default) or
+return an approximate result based on just a single iteration of the Bellman-Ford
+algorithm when `approx=true`.
+"""
+function expected_cost(
+    g::Grid;
+    target::Union{Tuple{Int,Int},Nothing}=nothing,
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+)
+
+    distvec = _expected_cost(g; target, θ, approx)
+
+    return _vec_to_grid(g, distvec)
+end
+
+function _expected_cost(
+    g::Grid;
+    target::Union{Tuple{Int,Int},Nothing}=nothing,
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+)
+    if θ === nothing
+        throw(ArgumentError("θ must be a positive number"))
+    end
+    if target === nothing
+        throw(ArgumentError("target must be a tuple of two integers"))
+    end
+
+    Pref = _Pref(g.affinities)
+
+    targetid = searchsortedfirst(g.id_to_grid_coordinate_list, CartesianIndex(target...))
+
+    return first(bellman_ford(Pref, g.costmatrix, θ, targetid, approx))
+end
+
+
+"""
+    free_energy_distance(
+        g::Grid;
+        target::Union{Tuple{Int,Int},Nothing}=nothing,
+        θ::Union{Real,Nothing}=nothing,
+        approx::Bool=false
+    )
+
+Compute the directed free energy distance from all nodes in the graph defined by `g`
+to the `target` node using the inverse temperature parameter `θ`. The computation
+can either continue until convergence when setting `approx=false` (the default) or
+return an approximate result based on just a single iteration of the Bellman-Ford
+algorithm when `approx=true`.
+"""
+function free_energy_distance(
+    g::Grid;
+    target::Union{Tuple{Int,Int},Nothing}=nothing,
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+)
+
+    distvec = _free_energy_distance(g; target, θ, approx)
+
+    return _vec_to_grid(g, distvec)
+end
+
+function _free_energy_distance(
+    g::Grid;
+    target::Union{Tuple{Int,Int},Nothing}=nothing,
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+)
+    if θ === nothing
+        throw(ArgumentError("θ must be a positive number"))
+    end
+    if target === nothing
+        throw(ArgumentError("target must be a tuple of two integers"))
+    end
+
+    Pref = _Pref(g.affinities)
+
+    targetid = searchsortedfirst(g.id_to_grid_coordinate_list, CartesianIndex(target...))
+
+    return last(bellman_ford(Pref, g.costmatrix, θ, targetid, approx))
 end

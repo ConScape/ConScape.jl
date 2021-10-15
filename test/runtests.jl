@@ -507,7 +507,7 @@ end
     end
 end
 
-@testset "Other distances and proximities" begin
+@testset "Distances and proximities" begin
     l = [1 1
          1 1]
 
@@ -537,11 +537,21 @@ end
 
     grsp = ConScape.GridRSP(g, θ=2.)
 
-    @test maximum(abs.(ConScape.free_energy_distance(grsp) - [
+    free_energy_grsp = ConScape.free_energy_distance(grsp)
+    @test maximum(abs.(free_energy_grsp - [
       0.0       1.34197   1.34197   2.34197
       1.34197   0.0       2.34197   1.34197
       1.34197   2.34197   0.0       1.34197
       2.34197   1.34197   1.34197   0.0     ])) < 1e-5
+    @test vec(ConScape.free_energy_distance(g; target=(2, 1), θ=grsp.θ)) ≈ free_energy_grsp[:, 2]
+
+    excepted_cost_grsp = ConScape.expected_cost(grsp)
+    @test maximum(abs.(excepted_cost_grsp - [
+      0.0      1.01848  1.01848  2.01848
+      1.01848  0.0      2.01848  1.01848
+      1.01848  2.01848  0.0      1.01848
+      2.01848  1.01848  1.01848  0.0 ])) < 1e-5
+    @test vec(ConScape.expected_cost(g; target=(2, 1), θ=grsp.θ)) ≈ excepted_cost_grsp[:, 2]
 
     @test maximum(abs.(ConScape.survival_probability(grsp) - [
       1.0         0.0682931   0.0682931   0.00924246
