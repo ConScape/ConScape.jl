@@ -494,13 +494,13 @@ end
     c = copy(a)
     c.nzval .= 1/2
 
-    @testset "c=$c, prune=$prune" for
-        (c, op) in ((ConScape.MinusLog(), <), (c, ==)),
+    @testset "_cost: $_cost, op: $op, prune: $prune" for
+        (_cost, op) in ((ConScape.MinusLog(), <), (c, ==)),
             prune in (true, false)
 
-        g = ConScape.Grid(size(r)..., affinities=a, costs=c, prune=prune)
+        g = ConScape.Grid(size(r)..., affinities=a, costs=_cost, prune=prune)
         lc = ConScape.least_cost_distance(g, (4,4))
-        @test all(lc[:, 1:2] .== Inf)
+        @test all(isinf, lc[:, 1:2])
         # since (4, 3) -> (4, 4) has higher affinity than (3, 4) -> (4, 4), i.e. lower cost
         # when costs=MinusLog() and identical affinities and costs when using the cost matrix c
         @test op(lc[4, 3], lc[3, 4])
