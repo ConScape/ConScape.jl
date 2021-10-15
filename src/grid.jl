@@ -122,16 +122,29 @@ function Base.show(io::IO, ::MIME"text/html", g::Grid)
     t = string(summary(g), " of size ", g.nrows, "x", g.ncols)
     write(io, "<h4>$t</h4>")
     write(io, "<table><tr><td>Affinities</br>")
-    show(io, MIME"text/html"(), plot_outdegrees(g))
+    show(io, MIME"image/svg+xml"(), plot_outdegrees(g))
     write(io, "</td></tr></table>")
+
+    f, ax, sc = heatmap(g.source_qualities)
+    hidedecorations!(ax)
+    hidespines!(ax)
+    ax.yreversed = true
+    ax.aspect = 1
+
     if g.source_qualities === g.target_qualities
         write(io, "<table><tr><td>Qualities</td></tr></table>")
-        show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
+        show(io, MIME"image/svg+xml"(), f)
     else
+        f_target, ax_target, sc_target = heatmap(Matrix(g.target_qualities))
+        hidedecorations!(ax_target)
+        hidespines!(ax_target)
+        ax_target.yreversed = true
+        ax_target.aspect = 1
+
         write(io, "<table><tr><td>Source qualities")
-        show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
+        show(io, MIME"image/svg+xml"(), f)
         write(io, "</td><td>Target qualities")
-        show(io, MIME"text/html"(), heatmap(Matrix(g.target_qualities), yflip=true))
+        show(io, MIME"image/svg+xml"(), f_target)
         write(io, "</td></tr></table>")
     end
 end
@@ -150,30 +163,60 @@ function _targetidx_and_nodes(g::Grid)
     return targetidx, targetnodes
 end
 
-function plot_values(g::Grid, values::Vector; kwargs...)
+function plot_values(g::Grid, values::Vector; title::AbstractString="")
     canvas = fill(NaN, g.nrows, g.ncols)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
-    heatmap(canvas, yflip=true, axis=nothing, border=:none, aspect_ratio=:equal; kwargs...)
+    f, ax, sc = heatmap(
+        canvas,
+        axis=(
+            title=title,
+            yreversed = true,
+            aspect = 1,
+        )
+    )
+    hidedecorations!(ax)
+    hidespines!(ax)
+    return f
 end
 
-function plot_outdegrees(g::Grid; kwargs...)
+function plot_outdegrees(g::Grid; title::AbstractString="")
     values = sum(g.affinities, dims=2)
     canvas = fill(NaN, g.nrows, g.ncols)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
-    heatmap(canvas, yflip=true, axis=nothing, border=:none; kwargs...)
+    f, ax, sc = heatmap(
+        canvas,
+        axis=(
+            title=title,
+            yreversed = true,
+            aspect = 1,
+        )
+    )
+    hidedecorations!(ax)
+    hidespines!(ax)
+    return f
 end
 
-function plot_indegrees(g::Grid; kwargs...)
+function plot_indegrees(g::Grid; title::AbstractString="")
     values = sum(g.affinities, dims=1)
     canvas = fill(NaN, g.nrows, g.ncols)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
-    heatmap(canvas, yflip=true, axis=nothing, border=:none; kwargs...)
+    f, ax, sc = heatmap(
+        canvas,
+        axis=(
+            title=title,
+            yreversed = true,
+            aspect = 1,
+        )
+    )
+    hidedecorations!(ax)
+    hidespines!(ax)
+    return f
 end
 
 """

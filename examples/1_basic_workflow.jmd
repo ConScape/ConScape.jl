@@ -1,7 +1,7 @@
 
 ```julia
 using ConScape
-using Plots
+using CairoMakie
 ```
 
 # Step 1: data import and Grid creation
@@ -44,7 +44,15 @@ ConScape.plot_outdegrees(g, title="Permeabilty")
 ```
 
 ```julia
-ConScape.heatmap(g.source_qualities, yflip=true, title="Qualities")
+f, ax, sc = ConScape.heatmap(
+    g.source_qualities,
+    axis=(
+        title="Qualities",
+        yreversed = true,
+        aspect=1,
+    )
+)
+f
 # savefig("figure_grid_qualities.png")
 ```
 
@@ -102,11 +110,25 @@ func = ConScape.connected_habitat(h, distance_transformation=x -> exp(-x/75));
 ```
 
 ```julia
-ConScape.heatmap(Array(func), yflip=true, title="Connected Habitat")
+heatmap(
+    Array(func),
+    axis=(
+        title="Connected Habitat",
+        yreversed=true,
+        aspect=1,
+    )
+)
 ```
 
 ```julia
-ConScape.heatmap(Array(func), yflip=true, title="Connected Habitat")
+heatmap(
+    Array(func),
+    axis=(
+        title="Connected Habitat",
+        yreversed=true,
+        aspect=1,
+    )
+)
 # savefig("figure_ConnectedHabitat.png")
 ```
 

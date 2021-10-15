@@ -48,7 +48,7 @@ end
 function Base.show(io::IO, ::MIME"text/html", grsp::GridRSP)
     t = string(summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)
     write(io, "<h4>$t</h4>")
-    show(io, MIME"text/html"(), plot_outdegrees(grsp.g))
+    show(io, MIME"image/svg+xml"(), plot_outdegrees(grsp.g))
 end
 
 """

@@ -76,9 +76,9 @@ _tempdir = mkdir(tempname())
     end
 
     @testset "Grid plotting" begin
-        @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
+        @test ConScape.plot_indegrees(g) isa ConScape.Makie.Figure
+        @test ConScape.plot_outdegrees(g) isa ConScape.Makie.Figure
+        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Makie.Figure
     end
 
     grsp = ConScape.GridRSP(g, θ=θ)
@@ -219,9 +219,9 @@ end
     end
 
     @testset "Grid plotting" begin
-        @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
+        @test ConScape.plot_indegrees(g) isa ConScape.Makie.Figure
+        @test ConScape.plot_outdegrees(g) isa ConScape.Makie.Figure
+        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Makie.Figure
     end
 
     grsp = ConScape.GridRSP(g, θ=θ)
@@ -378,9 +378,9 @@ end
         qualities=sq)
 
     @testset "Grid plotting" begin
-        @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
+        @test ConScape.plot_indegrees(g) isa ConScape.Makie.Figure
+        @test ConScape.plot_outdegrees(g) isa ConScape.Makie.Figure
+        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Makie.Figure
     end
 
     grsp = ConScape.GridRSP(g, θ=0.2)
@@ -428,9 +428,9 @@ end
         target_qualities=landmarks)
 
     @testset "Grid plotting" begin
-        @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
+        @test ConScape.plot_indegrees(g) isa ConScape.Makie.Figure
+        @test ConScape.plot_outdegrees(g) isa ConScape.Makie.Figure
+        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Makie.Figure
     end
 
     grsp = ConScape.GridRSP(g, θ=0.2)
