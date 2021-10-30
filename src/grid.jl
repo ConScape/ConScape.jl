@@ -333,45 +333,42 @@ end
 """
     free_energy_distance(
         g::Grid;
-        target::Union{Tuple{Int,Int},Nothing}=nothing,
         θ::Union{Real,Nothing}=nothing,
         approx::Bool=false
     )
 
-Compute the randomized shorted path based expected costs from all nodes in the graph defined by `g`
-to the `target` node using the inverse temperature parameter `θ`. The computation
-can either continue until convergence when setting `approx=false` (the default) or
-return an approximate result based on just a single iteration of the Bellman-Ford
+Compute the randomized shorted path based expected costs from all source nodes to
+all target nodes in the graph defined by `g` using the inverse temperature parameter
+`θ`. The computation can either continue until convergence when setting `approx=false`
+(the default) or return an approximate result based on just a single iteration of the Bellman-Ford
 algorithm when `approx=true`.
 """
 function expected_cost(
     g::Grid;
-    target::Union{Tuple{Int,Int},Nothing}=nothing,
     θ::Union{Real,Nothing}=nothing,
     approx::Bool=false
 )
+    # FIXME! This should be multithreaded. However, ProgressLogging currently
+    # does not support multithreading
+    targets = ConScape._targetidx_and_nodes(g)[1]
+    @progress vec_of_vecs = [_expected_cost(g, target, θ, approx) for target in targets]
 
-    distvec = _expected_cost(g; target=target, θ=θ, approx=approx)
-
-    return _vec_to_grid(g, distvec)
+    return reduce(hcat, vec_of_vecs)
 end
 
 function _expected_cost(
-    g::Grid;
-    target::Union{Tuple{Int,Int},Nothing}=nothing,
-    θ::Union{Real,Nothing}=nothing,
-    approx::Bool=false
+    g::Grid,
+    target::CartesianIndex{2},
+    θ::Union{Nothing,Real},
+    approx::Bool
 )
-    if θ === nothing
+    if θ === nothing || θ <= 0
         throw(ArgumentError("θ must be a positive number"))
-    end
-    if target === nothing
-        throw(ArgumentError("target must be a tuple of two integers"))
     end
 
     Pref = _Pref(g.affinities)
 
-    targetid = searchsortedfirst(g.id_to_grid_coordinate_list, CartesianIndex(target...))
+    targetid = searchsortedfirst(g.id_to_grid_coordinate_list, target)
 
     return first(bellman_ford(Pref, g.costmatrix, θ, targetid, approx))
 end
@@ -385,40 +382,50 @@ end
         approx::Bool=false
     )
 
-Compute the directed free energy distance from all nodes in the graph defined by `g`
-to the `target` node using the inverse temperature parameter `θ`. The computation
-can either continue until convergence when setting `approx=false` (the default) or
-return an approximate result based on just a single iteration of the Bellman-Ford
+Compute the directed free energy distance from all source nodes to
+all target nodes in the graph defined by `g` using the inverse temperature parameter
+`θ`. The computation can either continue until convergence when setting `approx=false`
+(the default) or return an approximate result based on just a single iteration of the Bellman-Ford
 algorithm when `approx=true`.
 """
 function free_energy_distance(
     g::Grid;
-    target::Union{Tuple{Int,Int},Nothing}=nothing,
     θ::Union{Real,Nothing}=nothing,
     approx::Bool=false
 )
+    # FIXME! This should be multithreaded. However, ProgressLogging currently
+    # does not support multithreading
+    targets = ConScape._targetidx_and_nodes(g)[1]
+    @progress vec_of_vecs = [_free_energy_distance(g, target, θ, approx) for target in targets]
 
-    distvec = _free_energy_distance(g; target=target, θ=θ, approx=approx)
-
-    return _vec_to_grid(g, distvec)
+    return reduce(hcat, vec_of_vecs)
 end
 
 function _free_energy_distance(
-    g::Grid;
-    target::Union{Tuple{Int,Int},Nothing}=nothing,
-    θ::Union{Real,Nothing}=nothing,
-    approx::Bool=false
+    g::Grid,
+    target::CartesianIndex{2},
+    θ::Union{Real,Nothing},
+    approx::Bool
 )
-    if θ === nothing
+    if θ === nothing || θ <= 0
         throw(ArgumentError("θ must be a positive number"))
-    end
-    if target === nothing
-        throw(ArgumentError("target must be a tuple of two integers"))
     end
 
     Pref = _Pref(g.affinities)
 
-    targetid = searchsortedfirst(g.id_to_grid_coordinate_list, CartesianIndex(target...))
+    targetid = searchsortedfirst(g.id_to_grid_coordinate_list, target)
 
     return last(bellman_ford(Pref, g.costmatrix, θ, targetid, approx))
 end
+
+survival_probability(
+    g::Grid;
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+) = exp.((-).(free_energy_distance(g; θ=θ, approx=approx) .* θ))
+
+power_mean_proximity(
+    g::Grid;
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+) = survival_probability(g; θ=θ, approx=approx) .^ (1/θ)

@@ -538,32 +538,36 @@ end
     grsp = ConScape.GridRSP(g, θ=2.)
 
     free_energy_grsp = ConScape.free_energy_distance(grsp)
-    @test maximum(abs.(free_energy_grsp - [
+    @test free_energy_grsp ≈ [
       0.0       1.34197   1.34197   2.34197
       1.34197   0.0       2.34197   1.34197
       1.34197   2.34197   0.0       1.34197
-      2.34197   1.34197   1.34197   0.0     ])) < 1e-5
-    @test vec(ConScape.free_energy_distance(g; target=(2, 1), θ=grsp.θ)) ≈ free_energy_grsp[:, 2]
+      2.34197   1.34197   1.34197   0.0     ] atol=1e-4
+    @test ConScape.free_energy_distance(g; θ=grsp.θ) ≈ free_energy_grsp
 
     excepted_cost_grsp = ConScape.expected_cost(grsp)
-    @test maximum(abs.(excepted_cost_grsp - [
+    @test excepted_cost_grsp ≈ [
       0.0      1.01848  1.01848  2.01848
       1.01848  0.0      2.01848  1.01848
       1.01848  2.01848  0.0      1.01848
-      2.01848  1.01848  1.01848  0.0 ])) < 1e-5
-    @test vec(ConScape.expected_cost(g; target=(2, 1), θ=grsp.θ)) ≈ excepted_cost_grsp[:, 2]
+      2.01848  1.01848  1.01848  0.0 ] atol=1e-4
+    @test ConScape.expected_cost(g; θ=grsp.θ) ≈ excepted_cost_grsp
 
-    @test maximum(abs.(ConScape.survival_probability(grsp) - [
+    survival_probability_grsp = ConScape.survival_probability(grsp)
+    @test survival_probability_grsp ≈ [
       1.0         0.0682931   0.0682931   0.00924246
       0.0682931   1.0         0.00924246  0.0682931
       0.0682931   0.00924246  1.0         0.0682931
-      0.00924246  0.0682931   0.0682931   1.0    ])) < 1e-5
+      0.00924246  0.0682931   0.0682931   1.0    ] atol=1e-4
+    @test ConScape.survival_probability(g; θ=grsp.θ) ≈ survival_probability_grsp
 
-    @test maximum(abs.(ConScape.power_mean_proximity(grsp) - [
+    power_mean_proximity_grsp = ConScape.power_mean_proximity(grsp)
+    @test power_mean_proximity_grsp ≈ [
       1.0        0.261329   0.261329   0.0961377
       0.261329   1.0        0.0961377  0.261329
       0.261329   0.0961377  1.0        0.261329
-      0.0961377  0.261329   0.261329   1.0      ])) < 1e-5
+      0.0961377  0.261329   0.261329   1.0      ] atol=1e-4
+    @test ConScape.power_mean_proximity(g; θ=grsp.θ) ≈ power_mean_proximity_grsp
 end
 
 
