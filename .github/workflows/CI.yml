@@ -63,6 +63,7 @@ jobs:
             using Documenter: doctest, DocMeta
             using ConScape
             DocMeta.setdocmeta!(ConScape, :DocTestSetup, :(using ConScape); recursive=true)
+            @show ENV["COLUMNS"]
             doctest(ConScape)'
         env:
           COLUMNS: 120
