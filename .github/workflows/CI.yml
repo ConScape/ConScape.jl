@@ -64,6 +64,8 @@ jobs:
             using ConScape
             DocMeta.setdocmeta!(ConScape, :DocTestSetup, :(using ConScape); recursive=true)
             doctest(ConScape)'
+        env:
+          COLUMNS: 120
       - run: julia --project=docs docs/make.jl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
