@@ -7,6 +7,7 @@ module ConScape
     abstract type DistanceFunction <: ConnectivityFunction end
     abstract type ProximityFunction <: ConnectivityFunction end
     
+    struct least_cost_distance   <: DistanceFunction end
     struct expected_cost         <: DistanceFunction end
     struct free_energy_distance  <: DistanceFunction end
     

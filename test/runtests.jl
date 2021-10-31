@@ -499,11 +499,17 @@ end
             prune in (true, false)
 
         g = ConScape.Grid(size(r)..., affinities=a, costs=_cost, prune=prune)
-        lc = ConScape.least_cost_distance(g, (4,4))
-        @test all(isinf, lc[:, 1:2])
+        lc = ConScape.least_cost_distance(g)
+        @test prune || all(isinf, lc[1:8, 9:16])
         # since (4, 3) -> (4, 4) has higher affinity than (3, 4) -> (4, 4), i.e. lower cost
         # when costs=MinusLog() and identical affinities and costs when using the cost matrix c
-        @test op(lc[4, 3], lc[3, 4])
+        if prune
+            # pruned landscape has size (4, 2)
+            @test op(lc[(1 - 1)*4 + 4, 8], lc[(2 - 1)*4 + 3, 8])
+        else
+            # full landscape has size (4, 4)
+            @test op(lc[(3 - 1)*4 + 4, 16], lc[(4 - 1)*4 + 3, 16])
+        end
     end
 end
 
