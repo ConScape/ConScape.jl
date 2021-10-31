@@ -1,6 +1,9 @@
 using Documenter
 using ConScape
 
+ENV["COLUMNS"] = 120
+ENV["LINES"] = 30
+
 DocMeta.setdocmeta!(ConScape, :DocTestSetup, :(using ConScape); recursive=true)
 
 makedocs(
