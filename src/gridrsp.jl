@@ -1,13 +1,3 @@
-abstract type ConnectivityFunction <: Function end
-abstract type DistanceFunction <: ConnectivityFunction end
-abstract type ProximityFunction <: ConnectivityFunction end
-
-struct expected_cost         <: DistanceFunction end
-struct free_energy_distance  <: DistanceFunction end
-
-struct survival_probability  <: ProximityFunction end
-struct power_mean_proximity  <: ProximityFunction end
-
 struct GridRSP
     g::Grid
     θ::Float64
@@ -562,7 +552,7 @@ function criticality(grsp::GridRSP;
     reference_connected_habitat = sum(connected_habitat(grsp, distance_transformation=distance_transformation, diagvalue=diagvalue))
     critvec = fill(reference_connected_habitat, nl)
 
-    @showprogress 1 "Computing criticality..." for i in 1:nl
+    @progress name="Computing criticality..." for i in 1:nl
         critvec[i] -= sum(connected_habitat(
             grsp,
             targetidx[i];

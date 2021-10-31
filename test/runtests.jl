@@ -494,20 +494,26 @@ end
     c = copy(a)
     c.nzval .= 1/2
 
-    @testset "c=$c, prune=$prune" for
-        (c, op) in ((ConScape.MinusLog(), <), (c, ==)),
+    @testset "_cost: $_cost, op: $op, prune: $prune" for
+        (_cost, op) in ((ConScape.MinusLog(), <), (c, ==)),
             prune in (true, false)
 
-        g = ConScape.Grid(size(r)..., affinities=a, costs=c, prune=prune)
-        lc = ConScape.least_cost_distance(g, (4,4))
-        @test all(lc[:, 1:2] .== Inf)
+        g = ConScape.Grid(size(r)..., affinities=a, costs=_cost, prune=prune)
+        lc = ConScape.least_cost_distance(g)
+        @test prune || all(isinf, lc[1:8, 9:16])
         # since (4, 3) -> (4, 4) has higher affinity than (3, 4) -> (4, 4), i.e. lower cost
         # when costs=MinusLog() and identical affinities and costs when using the cost matrix c
-        @test op(lc[4, 3], lc[3, 4])
+        if prune
+            # pruned landscape has size (4, 2)
+            @test op(lc[(1 - 1)*4 + 4, 8], lc[(2 - 1)*4 + 3, 8])
+        else
+            # full landscape has size (4, 4)
+            @test op(lc[(3 - 1)*4 + 4, 16], lc[(4 - 1)*4 + 3, 16])
+        end
     end
 end
 
-@testset "Other distances and proximities" begin
+@testset "Distances and proximities" begin
     l = [1 1
          1 1]
 
@@ -537,23 +543,37 @@ end
 
     grsp = ConScape.GridRSP(g, θ=2.)
 
-    @test maximum(abs.(ConScape.free_energy_distance(grsp) - [
+    free_energy_grsp = ConScape.free_energy_distance(grsp)
+    @test free_energy_grsp ≈ [
       0.0       1.34197   1.34197   2.34197
       1.34197   0.0       2.34197   1.34197
       1.34197   2.34197   0.0       1.34197
-      2.34197   1.34197   1.34197   0.0     ])) < 1e-5
+      2.34197   1.34197   1.34197   0.0     ] atol=1e-4
+    @test ConScape.free_energy_distance(g; θ=grsp.θ) ≈ free_energy_grsp
 
-    @test maximum(abs.(ConScape.survival_probability(grsp) - [
+    excepted_cost_grsp = ConScape.expected_cost(grsp)
+    @test excepted_cost_grsp ≈ [
+      0.0      1.01848  1.01848  2.01848
+      1.01848  0.0      2.01848  1.01848
+      1.01848  2.01848  0.0      1.01848
+      2.01848  1.01848  1.01848  0.0 ] atol=1e-4
+    @test ConScape.expected_cost(g; θ=grsp.θ) ≈ excepted_cost_grsp
+
+    survival_probability_grsp = ConScape.survival_probability(grsp)
+    @test survival_probability_grsp ≈ [
       1.0         0.0682931   0.0682931   0.00924246
       0.0682931   1.0         0.00924246  0.0682931
       0.0682931   0.00924246  1.0         0.0682931
-      0.00924246  0.0682931   0.0682931   1.0    ])) < 1e-5
+      0.00924246  0.0682931   0.0682931   1.0    ] atol=1e-4
+    @test ConScape.survival_probability(g; θ=grsp.θ) ≈ survival_probability_grsp
 
-    @test maximum(abs.(ConScape.power_mean_proximity(grsp) - [
+    power_mean_proximity_grsp = ConScape.power_mean_proximity(grsp)
+    @test power_mean_proximity_grsp ≈ [
       1.0        0.261329   0.261329   0.0961377
       0.261329   1.0        0.0961377  0.261329
       0.261329   0.0961377  1.0        0.261329
-      0.0961377  0.261329   0.261329   1.0      ])) < 1e-5
+      0.0961377  0.261329   0.261329   1.0      ] atol=1e-4
+    @test ConScape.power_mean_proximity(g; θ=grsp.θ) ≈ power_mean_proximity_grsp
 end
 
 

@@ -33,6 +33,7 @@ end
 ### Grid
 ```@docs
 ConScape.Grid
+ConScape.free_energy_distance
 ConScape.is_strongly_connected
 ConScape.largest_subgraph
 ConScape.least_cost_distance

@@ -241,9 +241,9 @@ function largest_subgraph(g::Grid)
 end
 
 """
-    least_cost_distance(g::Grid, target::Tuple{Int,Int})::Matrix{Float64}
+    least_cost_distance(g::Grid)::Matrix{Float64}
 
-Compute the least cost distance from all the cells in the grid to the the `target` cell.
+Compute the least cost distance from all the cells in the grid to all target cells.
 
 # Examples
 ```jldoctests
@@ -257,25 +257,41 @@ julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matri
 [ Info: removing 8 nodes from affinity and cost graphs
 ConScape.Grid of size 4x4
 
-julia> ConScape.least_cost_distance(grid, (4,4))
-4×4 Matrix{Float64}:
- Inf  Inf  2.42602   3.46574
- Inf  Inf  1.73287   2.77259
- Inf  Inf  1.03972   1.38629
- Inf  Inf  0.693147  0.0
+julia> ConScape.least_cost_distance(grid)
+8×8 Matrix{Float64}:
+ 0.0       0.693147  1.38629   2.07944   0.693147  1.03972   1.73287   2.42602
+ 0.693147  0.0       0.693147  1.38629   1.03972   0.693147  1.03972   1.73287
+ 1.38629   0.693147  0.0       0.693147  1.73287   1.03972   0.693147  1.03972
+ 2.07944   1.38629   0.693147  0.0       2.42602   1.73287   1.03972   0.693147
+ 1.38629   1.73287   2.42602   3.11916   0.0       1.38629   2.77259   3.46574
+ 1.73287   1.38629   1.73287   2.42602   1.38629   0.0       1.38629   2.77259
+ 2.42602   1.73287   1.38629   1.73287   2.77259   1.38629   0.0       1.38629
+ 3.11916   2.42602   1.73287   1.38629   3.46574   2.77259   1.38629   0.0
 ```
 """
-function least_cost_distance(g::Grid, target::Tuple{Int,Int})
-    graph = SimpleWeightedDiGraph(g.costmatrix)
-    targetnode = findfirst(isequal(CartesianIndex(target)), g.id_to_grid_coordinate_list)
-    distvec = dijkstra_shortest_paths(graph, targetnode).dists
-    distgrid = fill(Inf, g.nrows, g.ncols)
-    for (i, c) in enumerate(g.id_to_grid_coordinate_list)
-        distgrid[c] = distvec[i]
-    end
-    return distgrid
+function least_cost_distance(g::Grid)
+    # FIXME! This should be multithreaded. However, ProgressLogging currently
+    # does not support multithreading
+    targets = ConScape._targetidx_and_nodes(g)[1]
+    @progress vec_of_vecs = [_least_cost_distance(g, target) for target in targets]
+
+    return reduce(hcat, vec_of_vecs)
 end
 
+function _least_cost_distance(g::Grid, target::CartesianIndex{2})
+    graph = SimpleWeightedDiGraph(g.costmatrix)
+    targetnode = findfirst(isequal(target), g.id_to_grid_coordinate_list)
+    distvec = dijkstra_shortest_paths(graph, targetnode).dists
+    return distvec
+end
+
+function _vec_to_grid(g::Grid, vec::Vector)
+    grid = fill(Inf, g.nrows, g.ncols)
+    for (i, c) in enumerate(g.id_to_grid_coordinate_list)
+        grid[c] = vec[i]
+    end
+    return grid
+end
 
 """
     sum_neighborhood(g::Grid, rc::Tuple{Int,Int}, npix::Integer)::Float64
@@ -319,3 +335,104 @@ function coarse_graining(g, npix)
 
     return target_mat
 end
+
+
+"""
+    free_energy_distance(
+        g::Grid;
+        θ::Union{Real,Nothing}=nothing,
+        approx::Bool=false
+    )
+
+Compute the randomized shorted path based expected costs from all source nodes to
+all target nodes in the graph defined by `g` using the inverse temperature parameter
+`θ`. The computation can either continue until convergence when setting `approx=false`
+(the default) or return an approximate result based on just a single iteration of the Bellman-Ford
+algorithm when `approx=true`.
+"""
+function expected_cost(
+    g::Grid;
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+)
+    # FIXME! This should be multithreaded. However, ProgressLogging currently
+    # does not support multithreading
+    targets = ConScape._targetidx_and_nodes(g)[1]
+    @progress vec_of_vecs = [_expected_cost(g, target, θ, approx) for target in targets]
+
+    return reduce(hcat, vec_of_vecs)
+end
+
+function _expected_cost(
+    g::Grid,
+    target::CartesianIndex{2},
+    θ::Union{Nothing,Real},
+    approx::Bool
+)
+    if θ === nothing || θ <= 0
+        throw(ArgumentError("θ must be a positive number"))
+    end
+
+    Pref = _Pref(g.affinities)
+
+    targetid = searchsortedfirst(g.id_to_grid_coordinate_list, target)
+
+    return first(bellman_ford(Pref, g.costmatrix, θ, targetid, approx))
+end
+
+
+"""
+    free_energy_distance(
+        g::Grid;
+        target::Union{Tuple{Int,Int},Nothing}=nothing,
+        θ::Union{Real,Nothing}=nothing,
+        approx::Bool=false
+    )
+
+Compute the directed free energy distance from all source nodes to
+all target nodes in the graph defined by `g` using the inverse temperature parameter
+`θ`. The computation can either continue until convergence when setting `approx=false`
+(the default) or return an approximate result based on just a single iteration of the Bellman-Ford
+algorithm when `approx=true`.
+"""
+function free_energy_distance(
+    g::Grid;
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+)
+    # FIXME! This should be multithreaded. However, ProgressLogging currently
+    # does not support multithreading
+    targets = ConScape._targetidx_and_nodes(g)[1]
+    @progress vec_of_vecs = [_free_energy_distance(g, target, θ, approx) for target in targets]
+
+    return reduce(hcat, vec_of_vecs)
+end
+
+function _free_energy_distance(
+    g::Grid,
+    target::CartesianIndex{2},
+    θ::Union{Real,Nothing},
+    approx::Bool
+)
+    if θ === nothing || θ <= 0
+        throw(ArgumentError("θ must be a positive number"))
+    end
+
+    Pref = _Pref(g.affinities)
+
+    targetid = searchsortedfirst(g.id_to_grid_coordinate_list, target)
+
+    return last(bellman_ford(Pref, g.costmatrix, θ, targetid, approx))
+end
+
+survival_probability(
+    g::Grid;
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+) = exp.((-).(free_energy_distance(g; θ=θ, approx=approx) .* θ))
+
+power_mean_proximity(
+    g::Grid;
+    θ::Union{Real,Nothing}=nothing,
+    approx::Bool=false
+) = survival_probability(g; θ=θ, approx=approx) .^ (1/θ)

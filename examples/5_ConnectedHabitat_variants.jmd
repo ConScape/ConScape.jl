@@ -131,7 +131,7 @@ plot(func1, func3, seriestype = :scatter, legend=false, xlabel="sum", ylabel="ei
 ## Probability of Connectivity
 
 ```julia
-lcps = reduce(hcat, [ConScape.least_cost_distance(g, Tuple(i))[g.id_to_grid_coordinate_list] for i in targetidx])
+lcps = ConScape.least_cost_distance(g)
 ConScape.plot_values(g, lcps[4300,:])
 ```
 
