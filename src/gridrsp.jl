@@ -106,7 +106,7 @@ function betweenness_kweighted(grsp::GridRSP;
     # Check that distance_transformation function has been passed if no cost function is saved
     if distance_transformation === nothing && connectivity_function <: DistanceFunction
         if grsp.g.costfunction === nothing
-            throw(ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function."))
+            throw(ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function."))
         else
             distance_transformation = inv(grsp.g.costfunction)
         end
@@ -204,6 +204,8 @@ function power_mean_proximity(grsp::GridRSP)
     return RSP_power_mean_proximity(grsp.Z, grsp.θ, targetnodes)
 end
 
+least_cost_distance(grsp::GridRSP) = least_cost_distance(grsp.g)
+
 """
     mean_kl_divergence(grsp::GridRSP)::Float64
 
@@ -293,13 +295,15 @@ function least_cost_kl_divergence(grsp::GridRSP, target::Tuple{Int,Int})
 end
 
 """
-    connected_habitat(grsp::GridRSP;
+    connected_habitat(grsp::Union{Grid,GridRSP};
         connectivity_function=expected_cost,
-        distance_transformation=inv(grsp.g.costfunction),
-        diagvalue=nothing)::Matrix{Float64}
+        distance_transformation=nothing,
+        diagvalue=nothing,
+        θ::Union{Nothing,Real}=nothing)::Matrix{Float64}
 
-Compute RSP connected_habitat of all nodes. Optionally, an inverse
-cost function can be passed. The function will be applied elementwise to the matrix of
+Compute RSP connected_habitat of all nodes. An inverse
+cost function must be passed for a `Grid` argument but is optional for `GridRSP`.
+The function will be applied elementwise to the matrix of
 distances to convert it to a matrix of proximities. If no inverse cost function is
 passed the the inverse of the cost function is used for the conversion of the proximities.
 
@@ -311,22 +315,39 @@ When nothing is specified, the diagonal elements won't be adjusted.
 If `connectivity_function` is a `DistanceFunction`, then it is used for computing distances, which
 is converted to proximities using `distance_transformation`. If `connectivity_function` is a `ProximityFunction`,
 then proximities are computed directly using it. The default is `expected_cost`.
+
+For `Grid` object, the inverse temperature parameter `θ` must be passed when the `connectivity_function`
+requires it such as `expected_cost`.
 """
-function connected_habitat(grsp::GridRSP;
-                           connectivity_function=expected_cost,
-                           distance_transformation=nothing,
-                           diagvalue=nothing)
+function connected_habitat(
+    grsp::Union{Grid,GridRSP};
+    connectivity_function=expected_cost,
+    distance_transformation=nothing,
+    diagvalue=nothing,
+    θ::Union{Nothing,Real}=nothing)
 
     # Check that distance_transformation function has been passed if no cost function is saved
     if distance_transformation === nothing && connectivity_function <: DistanceFunction
-        if grsp.g.costfunction === nothing
-            throw(ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function."))
+        if grsp isa Grid
+            throw(ArgumentError("distance_transformation function is required when passing a Grid together with a Distance function"))
+        elseif grsp.g.costfunction === nothing
+            throw(ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function."))
         else
             distance_transformation = inv(grsp.g.costfunction)
         end
     end
 
-    S = connectivity_function(grsp)
+    S = if grsp isa Grid
+        if θ === nothing && connectivity_function !== least_cost_distance
+            throw(ArgumentError("θ must be a positive real number when passing a Grid"))
+        end
+        connectivity_function(grsp; θ=θ)
+    else
+        if θ !== nothing
+            throw(ArgumentError("θ must be unspecified when passing a GridRSP"))
+        end
+        connectivity_function(grsp)
+    end
 
     if connectivity_function <: DistanceFunction
         map!(distance_transformation, S, S)
@@ -335,9 +356,12 @@ function connected_habitat(grsp::GridRSP;
     return connected_habitat(grsp, S, diagvalue=diagvalue)
 end
 
-function connected_habitat(grsp::GridRSP, S::Matrix; diagvalue::Union{Nothing,Real}=nothing)
+_get_grid(grsp::GridRSP) = grsp.g
+_get_grid(g::Grid)       = g
+function connected_habitat(grsp::Union{Grid,GridRSP}, S::Matrix; diagvalue::Union{Nothing,Real}=nothing)
 
-    targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
+    g = _get_grid(grsp)
+    targetidx, targetnodes = _targetidx_and_nodes(g)
 
     if diagvalue !== nothing
         for (j, i) in enumerate(targetnodes)
@@ -345,13 +369,13 @@ function connected_habitat(grsp::GridRSP, S::Matrix; diagvalue::Union{Nothing,Re
         end
     end
 
-    qˢ = [grsp.g.source_qualities[i] for i in grsp.g.id_to_grid_coordinate_list]
-    qᵗ = [grsp.g.target_qualities[i] for i in targetidx]
+    qˢ = [g.source_qualities[i] for i in g.id_to_grid_coordinate_list]
+    qᵗ = [g.target_qualities[i] for i in targetidx]
 
     funvec = connected_habitat(qˢ, qᵗ, S)
 
-    func = fill(NaN, grsp.g.nrows, grsp.g.ncols)
-    for (ij, x) in zip(grsp.g.id_to_grid_coordinate_list, funvec)
+    func = fill(NaN, g.nrows, g.ncols)
+    for (ij, x) in zip(g.id_to_grid_coordinate_list, funvec)
         func[ij] = x
     end
 
@@ -422,7 +446,7 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
     # Check that distance_transformation function has been passed if no cost function is saved
     if distance_transformation === nothing && connectivity_function <: DistanceFunction
         if grsp.g.costfunction === nothing
-            throw(ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function."))
+            throw(ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function."))
         else
             distance_transformation = inv(grsp.g.costfunction)
         end

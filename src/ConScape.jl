@@ -6,13 +6,13 @@ module ConScape
     abstract type ConnectivityFunction <: Function end
     abstract type DistanceFunction <: ConnectivityFunction end
     abstract type ProximityFunction <: ConnectivityFunction end
-    
+
     struct least_cost_distance   <: DistanceFunction end
     struct expected_cost         <: DistanceFunction end
     struct free_energy_distance  <: DistanceFunction end
-    
+
     struct survival_probability  <: ProximityFunction end
-    struct power_mean_proximity  <: ProximityFunction end    
+    struct power_mean_proximity  <: ProximityFunction end
 
     # Randomized shortest path algorithms
     include("randomizedshortestpath.jl")

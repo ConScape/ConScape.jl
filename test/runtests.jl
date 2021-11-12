@@ -336,6 +336,27 @@ end
                 connectivity_function=connectivity_function)
             @test λ ≈ val
         end
+
+        @testset "connected_habitat" begin
+            @testset "expected_cost" begin
+                ch_rsp = ConScape.connected_habitat(grsp)
+                ch_g   = ConScape.connected_habitat(
+                    g; distance_transformation=ConScape.ExpMinus(),
+                    θ=θ)
+                @test ch_g ≈ ch_rsp
+            end
+
+            @testset "least_cost_distance" begin
+                ch_rsp_lc = ConScape.connected_habitat(
+                    g_coarse_rsp;
+                    connectivity_function=ConScape.least_cost_distance)
+                ch_g_lc   = ConScape.connected_habitat(
+                    g_coarse;
+                    connectivity_function=ConScape.least_cost_distance,
+                    distance_transformation=ConScape.ExpMinus())
+                @test ch_g_lc ≈ ch_rsp_lc
+            end
+        end
     end
 
     @testset "Show methods" begin
@@ -651,7 +672,7 @@ end
     # For betweenness_kweighted and connected_habitat we should have exact match between the two
     # methods of passing the costs
     for f in (:betweenness_kweighted, :connected_habitat)
-        @test_throws ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
+        @test_throws ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
 
         @test getfield(ConScape, f)(grsp_with_costs, connectivity_function=ConScape.survival_probability) isa AbstractMatrix
 
@@ -664,7 +685,7 @@ end
     # number. Therefore, the costs will get updated when a cost function is suppled but not when cost
     # matrix is supplied. The difference appear to be small, though, so we can test with ≈
     for f in (:criticality,)
-        @test_throws ArgumentError("no distance_transformation function supplied and cost matrix in Grid isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
+        @test_throws ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function.") getfield(ConScape, f)(grsp_with_costs)
         @test getfield(ConScape, f)(grsp, distance_transformation=ConScape.ExpMinus()) ≈ getfield(ConScape, f)(grsp_with_costs, distance_transformation=ConScape.ExpMinus())
         @test getfield(ConScape, f)(grsp, distance_transformation=ConScape.Inv(), diagvalue=1.0) ≈ getfield(ConScape, f)(grsp_with_costs, distance_transformation=ConScape.Inv(), diagvalue=1.0)
     end
