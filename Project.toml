@@ -1,6 +1,6 @@
 name = "ConScape"
 uuid = "2ba2d6f2-f651-5162-bda8-601e45ce5244"
-version = "0.2.0"
+version = "0.2.1"
 
 [deps]
 ArnoldiMethod = "ec485272-7323-5ecc-a04f-4719b315124d"
