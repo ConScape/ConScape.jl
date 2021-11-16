@@ -269,7 +269,7 @@ julia> ConScape.least_cost_distance(grid)
  3.11916   2.42602   1.73287   1.38629   3.46574   2.77259   1.38629   0.0
 ```
 """
-function least_cost_distance(g::Grid)
+function least_cost_distance(g::Grid; θ::Nothing=nothing)
     # FIXME! This should be multithreaded. However, ProgressLogging currently
     # does not support multithreading
     targets = ConScape._targetidx_and_nodes(g)[1]
