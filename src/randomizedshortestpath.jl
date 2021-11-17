@@ -324,7 +324,7 @@ function _bellman_ford_update_transposed!(c̄::Vector, φ::Vector, trPref::Spars
     end
     return c̄, φ
 end
-    
+
 # Helper function required for good performance until https://github.com/JuliaLang/julia/pull/42647 has been released
 function mygetindex(A::SparseMatrixCSC{Tv,Ti}, I::AbstractVector, J::Integer) where {Tv,Ti}
     if !issorted(I)
