@@ -339,21 +339,30 @@ end
 
         @testset "connected_habitat" begin
             @testset "expected_cost" begin
-                ch_rsp = ConScape.connected_habitat(grsp)
-                ch_g   = ConScape.connected_habitat(
-                    g; distance_transformation=ConScape.ExpMinus(),
+                ch_rsp = ConScape.connected_habitat(g_coarse_rsp)
+                ch_g = ConScape.connected_habitat(
+                    g_coarse;
+                    distance_transformation=ConScape.ExpMinus(),
                     θ=θ)
+                ch_g_approx = ConScape.connected_habitat(
+                    g_coarse;
+                    distance_transformation=ConScape.ExpMinus(),
+                    θ=θ,
+                    approx=true)
+
                 @test ch_g ≈ ch_rsp
+                @test ch_g ≈ ch_g_approx rtol=0.8 # Very rough approximation
             end
 
             @testset "least_cost_distance" begin
                 ch_rsp_lc = ConScape.connected_habitat(
                     g_coarse_rsp;
                     connectivity_function=ConScape.least_cost_distance)
-                ch_g_lc   = ConScape.connected_habitat(
+                ch_g_lc = ConScape.connected_habitat(
                     g_coarse;
                     connectivity_function=ConScape.least_cost_distance,
                     distance_transformation=ConScape.ExpMinus())
+
                 @test ch_g_lc ≈ ch_rsp_lc
             end
         end

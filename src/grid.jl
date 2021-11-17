@@ -269,9 +269,12 @@ julia> ConScape.least_cost_distance(grid)
  3.11916   2.42602   1.73287   1.38629   3.46574   2.77259   1.38629   0.0
 ```
 """
-function least_cost_distance(g::Grid; θ::Nothing=nothing)
+function least_cost_distance(g::Grid; θ::Nothing=nothing, approx::Bool=false)
     # FIXME! This should be multithreaded. However, ProgressLogging currently
     # does not support multithreading
+    if approx
+        throw(ArgumentError("no approximate algorithm is available for this distance function"))
+    end
     targets = ConScape._targetidx_and_nodes(g)[1]
     @progress vec_of_vecs = [_least_cost_distance(g, target) for target in targets]
 

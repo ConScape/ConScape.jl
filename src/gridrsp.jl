@@ -299,7 +299,8 @@ end
         connectivity_function=expected_cost,
         distance_transformation=nothing,
         diagvalue=nothing,
-        θ::Union{Nothing,Real}=nothing)::Matrix{Float64}
+        θ::Union{Nothing,Real}=nothing,
+        approx::Bool=false)::Matrix{Float64}
 
 Compute RSP connected_habitat of all nodes. An inverse
 cost function must be passed for a `Grid` argument but is optional for `GridRSP`.
@@ -316,15 +317,18 @@ If `connectivity_function` is a `DistanceFunction`, then it is used for computin
 is converted to proximities using `distance_transformation`. If `connectivity_function` is a `ProximityFunction`,
 then proximities are computed directly using it. The default is `expected_cost`.
 
-For `Grid` object, the inverse temperature parameter `θ` must be passed when the `connectivity_function`
-requires it such as `expected_cost`.
+For `Grid` objects, the inverse temperature parameter `θ` must be passed when the `connectivity_function`
+requires it such as `expected_cost`. Also for `Grid` objects, the `approx` Boolean
+argument can be set to `true` to switch to a cheaper approximate solution of the
+`connectivity_function`. The default value is `false`.
 """
 function connected_habitat(
     grsp::Union{Grid,GridRSP};
     connectivity_function=expected_cost,
     distance_transformation=nothing,
     diagvalue=nothing,
-    θ::Union{Nothing,Real}=nothing)
+    θ::Union{Nothing,Real}=nothing,
+    approx::Bool=false)
 
     # Check that distance_transformation function has been passed if no cost function is saved
     if distance_transformation === nothing && connectivity_function <: DistanceFunction
@@ -341,7 +345,7 @@ function connected_habitat(
         if θ === nothing && connectivity_function !== least_cost_distance
             throw(ArgumentError("θ must be a positive real number when passing a Grid"))
         end
-        connectivity_function(grsp; θ=θ)
+        connectivity_function(grsp; θ=θ, approx=approx)
     else
         if θ !== nothing
             throw(ArgumentError("θ must be unspecified when passing a GridRSP"))
