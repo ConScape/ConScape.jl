@@ -399,3 +399,111 @@ function _bellman_ford_update_node_transposed(c̄::Vector, φ::Vector, trPref::S
     end
     return ec, v
 end
+
+
+function LF_sensitivity(A::SparseMatrixCSC,
+                        C::SparseMatrixCSC,
+                        θ::Real,
+                        W::SparseMatrixCSC,
+                        Z::AbstractMatrix,
+                        K::AbstractMatrix,  # diff_K_D (but can be any weighting matrix)
+                        qˢ::AbstractVector,
+                        qᵗ::AbstractVector,
+                        lmarks::AbstractVector)
+
+    Zⁱ = inv.(Z)
+    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
+
+    K̂ = qˢ .* K .* qᵗ'
+    k̂ = vec(sum(K̂, dims=1))
+    K̂ .*= Zⁱ # k̂ᵢⱼ = kᵢⱼ/zᵢⱼ
+
+    CW = C.*W
+
+    Q = (I-W)\(CW*Z)
+
+    C̄ᵣ = Q.*Zⁱ # Expected costs of REGULAR paths
+
+    K̂ᵀZ = K̂'/(I - W)
+
+    k̂diagZⁱ = k̂.*[Zⁱ[lmarks[t], t] for t in 1:length(lmarks)]
+
+    if size(Z,2) < size(Z,1)
+        I_L = Matrix(sparse(lmarks, 1:length(lmarks), 1.0, size(W, 1), length(lmarks)))
+        Zrows = I_L'/(I - W)
+    else
+        Zrows = Z
+    end
+
+    X3 = k̂diagZⁱ .* Zrows
+
+    k̂diagC̄Zⁱ = k̂diagZⁱ.*[C̄ᵣ[lmarks[t], t] for t in 1:length(lmarks)]
+    X1 = ((K̂.*C̄ᵣ)' - (K̂ᵀZ*CW) + (X3*CW))/(I-W) - k̂diagC̄Zⁱ .* Zrows # "X1- X2 - X4"
+
+    X3 .= K̂ᵀZ .- X3
+
+    kΣ = copy(W) # k-weighted negative covariance matrix
+    kB = copy(W) # k-weighted edge betweenness matrix
+
+    @showprogress 3 for i in axes(W, 1)
+        for j in findall(W[i,:].>0)
+            kB[i,j] *= (Z[j,:]'*X3[:,i])[1]
+            kΣ[i,j] *= (Z[j,:]'*X1[:,i])[1] - (Q[j,:]'*X3[:,i])[1] - C[i,j]*kB[i,j]/W[i,j]
+        end
+    end
+
+    # kB .*= W
+    # kΣ .*= W
+
+    kΣ_node = sum(kΣ, dims=2)
+    Ae = sum(A, dims=2)
+
+    S_cost = kB + kΣ/θ
+
+    Idx = W.>0
+    Aⁱ = mapnz(x -> inv(x), A)
+    S_aff = (kΣ_node./Ae).*Idx - kΣ.*Aⁱ
+
+    return S_aff, S_cost
+end
+
+
+function LF_power_mean_sensitivity(qˢ::AbstractVector, # Source qualities
+                                   qᵗ::AbstractVector, # Target qualities
+                                   A::SparseMatrixCSC,
+                                   θ::Real,
+                                   diff_C_A::SparseMatrixCSC,
+                                   W::SparseMatrixCSC,
+                                   Z::AbstractMatrix,
+                                   landmarks::AbstractVector)
+
+    K = copy(Z)
+    K ./= [Z[landmarks[i],i] for i in 1:length(landmarks)]'
+    K .^= θ # \mathcal{Z}^θ
+
+    rowsums = sum(A,dims=2)
+
+    bet_edge_k = RSP_edge_betweenness_kweighted(W, Z, qˢ, qᵗ, K, landmarks)
+    S_e_cost = -bet_edge_k
+
+    bet_node_k = RSP_betweenness_kweighted(W, Z, qˢ, qᵗ, K, landmarks)
+
+    Idx = A.>0
+    Aⁱ = ConScape.mapnz(inv, A)
+    S_e_aff = (bet_edge_k.*Aⁱ .- (bet_node_k./rowsums).*Idx).*θ
+
+    return S_e_aff .+ S_e_cost.*diff_C_A, S_e_aff, S_e_cost
+
+end
+
+
+
+# Compute a (column subset of a) dense identity matrix where the subset corresponds
+# to the landsmarks
+function _Imn(n::Integer, landmarks::AbstractVector)
+    Imn = zeros(n, length(landmarks))
+    for (j, i) in enumerate(landmarks)
+        Imn[i, j] = 1
+    end
+    return Imn
+end

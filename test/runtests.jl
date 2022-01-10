@@ -655,6 +655,41 @@ end
     @test sum(t -> isnan(t) ? 0.0 : t, ConScape.criticality(grsp) .< -1e-5) == 0
 end
 
+@testset "Sensitivity. cost=$cost, test_landmarks=$test_landmarks" for
+    cost in (ConScape.MinusLog(), ConScape.Inv()),
+        test_landmarks in (true, false)
+
+    m, n = 12, 16
+    affinities = ConScape._generate_affinities(m, n, 8)*0.35
+
+    if test_landmarks
+        target_qualities = zeros(m,n)
+        target_qualities[:, Int(floor(n/2)-1):Int(ceil(n/2)+1)] .= 1.
+        target_qualities = sparse(target_qualities)
+        g = ConScape.Grid(m, n;
+            affinities=affinities,
+            costs=cost,
+            target_qualities=target_qualities) #, qualities=copy(reshape(collect(m*n:-1:1), n, m)'))
+    else
+        g = ConScape.Grid(m, n; affinities=affinities, costs=cost)
+    end
+
+    grsp = ConScape.GridRSP(g, θ=5.0)
+
+    S_comp = ConScape.sensitivity(grsp, diagvalue=1.)[1]
+    S_simu = ConScape.sensitivity_simulation(grsp, diagvalue=1.)[1]
+
+    @test sum(abs.(S_comp - S_simu)./maximum(abs.(S_comp))) ≈ 0 atol=5e-3
+
+
+    S_comp = ConScape.power_mean_sensitivity(grsp)[1]
+    S_simu = ConScape.power_mean_sensitivity_simulation(grsp)[1]
+
+    @test sum(abs.(S_comp - S_simu)./maximum(abs.(S_comp))) ≈ 0 atol=5e-3
+
+end
+
+
 @testset "pass cost matrix instead of function" begin
     m, n = 10, 15
 
@@ -698,6 +733,8 @@ end
         @test getfield(ConScape, f)(grsp, distance_transformation=ConScape.ExpMinus()) ≈ getfield(ConScape, f)(grsp_with_costs, distance_transformation=ConScape.ExpMinus())
         @test getfield(ConScape, f)(grsp, distance_transformation=ConScape.Inv(), diagvalue=1.0) ≈ getfield(ConScape, f)(grsp_with_costs, distance_transformation=ConScape.Inv(), diagvalue=1.0)
     end
+	
+	@test_throws ArgumentError("sensitivities are only defined when costs are functions of affinities") ConScape.sensitivity(grsp_with_costs)
 end
 
 @testset "Cost functions" begin
