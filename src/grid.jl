@@ -36,7 +36,8 @@ end
               source_qualities::Matrix=qualities,
               target_qualities::AbstractMatrix=qualities,
               costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
-              prune=true)::Grid
+              prune=true,
+			  verbose=true)::Grid
 
 Construct a `Grid` from an `affinities` matrix of type `SparseMatrixCSC`. It is possible
 to also supply matrices of `source_qualities` and `target_qualities` as well as
@@ -51,7 +52,8 @@ function Grid(nrows::Integer,
               source_qualities::Matrix=qualities,
               target_qualities::AbstractMatrix=qualities,
               costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
-              prune=true)
+              prune=true,
+			  verbose=true)
 
     if affinities === nothing
         throw(ArgumentError("matrix of affinities must be supplied"))
@@ -106,7 +108,7 @@ function Grid(nrows::Integer,
     )
 
     if prune
-        return largest_subgraph(g)
+        return largest_subgraph(g, verbose=verbose)
     else
         return g
     end
@@ -199,20 +201,22 @@ false
 LightGraphs.is_strongly_connected(g::Grid) = is_strongly_connected(SimpleWeightedDiGraph(g.affinities))
 
 """
-    largest_subgraph(g::Grid)::Grid
+    largest_subgraph(g::Grid; verbose::Bool=true)::Grid
 
 Extract the largest fully connected subgraph of the `Grid`. The returned `Grid`
 will have the same size as the input `Grid` but only nodes associated with the
 largest subgraph of the affinities will be active.
 """
-function largest_subgraph(g::Grid)
+function largest_subgraph(g::Grid; verbose::Bool=true)
     # Convert cost matrix to graph
     graph = SimpleWeightedDiGraph(g.costmatrix, permute=false)
 
     # Find the subgraphs
     scc = strongly_connected_components(graph)
 
-    @info "cost graph contains $(length(scc)) strongly connected subgraphs"
+    if verbose
+		@info "cost graph contains $(length(scc)) strongly connected subgraphs"
+	end
 
     # Find the largest subgraph
     i = argmax(length.(scc))
@@ -221,10 +225,13 @@ function largest_subgraph(g::Grid)
     scci = sort(scc[i])
 
     ndiffnodes = size(g.costmatrix, 1) - length(scci)
-    if ndiffnodes > 0
-        @info "removing $ndiffnodes nodes from affinity and cost graphs"
-    end
-
+	
+	if verbose
+		if ndiffnodes > 0
+			@info "removing $ndiffnodes nodes from affinity and cost graphs"
+		end
+	end
+	
     # Extract the adjacency matrix of the largest subgraph
     affinities = g.affinities[scci, scci]
     # affinities = convert(SparseMatrixCSC{Float64,Int}, graph[scci])
