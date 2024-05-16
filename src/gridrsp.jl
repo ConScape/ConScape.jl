@@ -1020,8 +1020,12 @@ function sensitivity_simulation(grsp::ConScape.GridRSP;
 
     epsi = 1e-6
 
-    lf = ConScape.connected_habitat(grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
-    replace!(x -> isnan(x) ? 0 : x, lf)
+    if (landscape_measure === "eigenanalysis")
+        v, lf, w = ConScape.eigmax(grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+    else
+        lf = ConScape.connected_habitat(grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+        replace!(x -> isnan(x) ? 0 : x, lf)    
+    end
 
     n = length(grsp.g.id_to_grid_coordinate_list)
 
@@ -1075,8 +1079,13 @@ function sensitivity_simulation(grsp::ConScape.GridRSP;
                         grsp.g.target_qualities)           
 
                     new_grsp = ConScape.GridRSP(new_g, θ=grsp.θ)
-                    new_lf = ConScape.connected_habitat(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
-                    replace!(x -> isnan(x) ? 0 : x, new_lf)
+
+                    if (landscape_measure === "eigenanalysis")
+                        v, new_lf, w = ConScape.eigmax(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+                    else
+                        new_lf = ConScape.connected_habitat(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+                        replace!(x -> isnan(x) ? 0 : x, new_lf)
+                    end
 
                     edge_sensitivities[i,j] = sum(new_lf - lf)/epsi # (gnew.affinities[i,j]-g.affinities[i,j])
                     if unitless
@@ -1108,8 +1117,13 @@ function sensitivity_simulation(grsp::ConScape.GridRSP;
                     grsp.g.source_qualities)
 
         old_grsp = ConScape.GridRSP(old_g, θ=grsp.θ)
-        lf = ConScape.connected_habitat(old_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
-        replace!(x -> isnan(x) ? 0 : x, lf)
+
+        if (landscape_measure === "eigenanalysis")
+            v, lf, w = ConScape.eigmax(old_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+        else
+            lf = ConScape.connected_habitat(old_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+            replace!(x -> isnan(x) ? 0 : x, lf)
+        end
 
         for i in 1:n
             if (i % one_out_of == 0)
@@ -1126,9 +1140,14 @@ function sensitivity_simulation(grsp::ConScape.GridRSP;
                     new_qualities)
 
                 new_grsp = ConScape.GridRSP(new_g, θ=grsp.θ)
-                new_lf = ConScape.connected_habitat(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
-                replace!(x -> isnan(x) ? 0 : x, new_lf)
 
+                if (landscape_measure === "eigenanalysis")
+                    v, new_lf, w = ConScape.eigmax(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+                else
+                    new_lf = ConScape.connected_habitat(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+                    replace!(x -> isnan(x) ? 0 : x, new_lf)
+                end
+        
                 node_sensitivities[i] = sum(new_lf - lf)/epsi
                 if unitless
                     node_sensitivities[i] *= grsp.g.source_qualities[grsp.g.id_to_grid_coordinate_list[i]]
