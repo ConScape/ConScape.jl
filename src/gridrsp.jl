@@ -596,3 +596,555 @@ function criticality(grsp::GridRSP;
 
     return landscape
 end
+
+
+"""
+    sensitivity(grsp::ConScape.GridRSP;
+        connectivity_function=ConScape.expected_cost,
+        distance_transformation=ConScape.ExpMinus(),
+        α::Union{Nothing,Real}=1.,
+        wrt::String=["A", "C", "Q","C&A=f(C)", "A&C=f(A)"][1],
+        landscape_measure::String=["sum","eigenanalysis"][1],
+        unitless::Bool=true,
+        diagvalue=nothing,
+        target_equal_source::Bool=true)::Matrix{Float64}
+
+Compute sensitivity of all nodes. Five types of node sensitivity are implemented, 
+two different `landscape_measures` are implemented to summarize the landscape matrix 
+either through summation or through eigenanalysis. The results can be provided either as 
+sensitivity w.r.t. unit change (`unitless`=false) or w.r.t. proportional change (`unitless`=true), 
+the latter are also known as elasticities.
+
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
+of proximities, i.e. after applying the inverse cost function to the matrix of distances.
+When nothing is specified, the diagonal elements won't be adjusted.
+
+`connectivity_function` determines which function is used for computing the matrix of proximities.
+If `connectivity_function` is a `DistanceFunction`, then it is used for computing distances, which
+is converted to proximities using `distance_transformation`. If `connectivity_function` is a `ProximityFunction`,
+then proximities are computed directly using it. The default is `expected_cost`. 
+α is a distance scaling, and it is multiplied with the distance
+"""
+function sensitivity(grsp::ConScape.GridRSP;
+    connectivity_function=ConScape.expected_cost,
+    distance_transformation=ConScape.ExpMinus(),
+    α::Union{Nothing,Real}=1.,
+    wrt::String=["A", "C", "Q","C&A=f(C)", "A&C=f(A)"][1],
+    landscape_measure::String=["sum","eigenanalysis"][1],
+    unitless::Bool=true,
+    diagvalue=nothing,
+    target_equal_source::Bool=true)
+
+    if (!(wrt in ["A", "C", "Q", "C&A=f(C)", "A&C=f(A)"]))
+        throw(ArgumentError("sensitivity is only defined with respect to (wrt) affinities, costs, or pixel qualities"))
+    end
+
+    #throw(ArgumentError("Got here"))
+
+    if (!(landscape_measure in ["sum","eigenanalysis"]))
+        throw(ArgumentError("The landscape needs to be summarized either as the sum of the landscape matrix or its leading eigenvalue"))
+    end
+
+    if (!(target_equal_source))
+        throw(ArgumentError("The sensitivity is currently only defined when target quality equals source quality."))
+    end
+
+    if distance_transformation !== ConScape.ExpMinus() && α !== 1.
+        throw(ArgumentError("α can different from 1 only when using exponential proximity transformation"))
+    end
+
+    if connectivity_function === ConScape.survival_probability && grsp.θ !==1.0
+        throw(ArgumentError("The survival probability is currently only implemented for theta = 1."))
+    end
+
+    if (distance_transformation === ConScape.ExpMinus())
+        distance_transformation_alpha=x -> exp(-x*α)
+    elseif (distance_transformation === ConScape.Inv())
+        distance_transformation_alpha=x -> inv(x)
+    elseif distance_transformation === nothing    # Check that distance_transformation function has been passed. If not then default to inverse of cost function
+        distance_transformation_alpha = inv(grsp.g.costfunction)
+    #else
+    #    throw(ArgumentError("The sensitivity is currently only defined for negative exponential and inverse distance transformations."))
+    end
+
+    if grsp.g.costfunction === nothing && (wrt in ["C&A=f(C)", "A&C=f(A)"])
+        throw(ArgumentError("C&A=f(C) or A&C=f(A) sensitivities are only defined when costs are defined as functions of affinities"))
+    end
+
+    targetidx, targetnodes = ConScape._targetidx_and_nodes(grsp.g)
+    qˢ = [grsp.g.source_qualities[i] for i in grsp.g.id_to_grid_coordinate_list]
+    qᵗ = [grsp.g.target_qualities[i] for i in targetidx]
+
+    if (landscape_measure === "eigenanalysis")
+        v, λ, w = ConScape.eigmax(grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha)
+        vTw = (v') * w
+        
+        if (wrt !== "Q")
+            qˢ = qˢ .* v    
+            qᵗ = qᵗ .* w
+        end
+    end
+
+    if (wrt in ["A&C=f(A)", "C&A=f(C)"]) 
+        # diff_C_A[Idx] = -1./A[Idx]; # derivative when c_ij = -log(a_ij)
+        # diff_C_A(Idx) = -1./(A(Idx))^2; # derivative when c_ij = 1/a_ij
+        if grsp.g.costfunction == ConScape.MinusLog()
+            diff_C_A_fun = x -> -inv(x)
+            diff_A_C_fun = x -> -(x)
+        elseif grsp.g.costfunction == ConScape.Inv()
+            diff_C_A_fun = x -> -inv(x^2)
+            diff_A_C_fun = x -> -inv(x^2)
+        elseif grsp.g.costfunction === nothing
+            diff_C_A_fun = x -> -inv(x)
+            diff_A_C_fun = x -> -(x)
+            @info "Cost function is nothing, so for the linked sensitivity the minuslog link will be used"
+        end
+    end
+
+    if (wrt in ["A", "C", "A&C=f(A)", "C&A=f(C)"]) 
+        if connectivity_function === ConScape.expected_cost
+                # Derivative of costs w.r.t. affinities:
+            # TODO: Implement these as properties of Transformations:
+            K = map(distance_transformation_alpha, ConScape.expected_cost(grsp))
+
+            if diagvalue !== nothing
+                for (j, i) in enumerate(targetnodes)
+                    K[i, j] = diagvalue
+                end
+            end
+
+            K[isinf.(K)] .= 0.
+
+            if (distance_transformation === ConScape.ExpMinus())
+                diff_K_D = -K .* α
+            elseif (distance_transformation === ConScape.Inv())
+                diff_K_D = -K.^2
+            elseif distance_transformation === nothing    # Check that distance_transformation function has been passed. If not then default to negative exponential
+                diff_K_D = -K .* α
+            #else
+            #    throw(ArgumentError("The sensitivity is currently only defined for negative exponential and inverse distance transformations."))
+            end
+
+            S_e_aff, S_e_cost = EC_sensitivity(
+                grsp.g.affinities,
+                grsp.g.costmatrix,
+                grsp.θ,
+                grsp.W,
+                grsp.Z,
+                diff_K_D,
+                qˢ,
+                qᵗ,
+                targetnodes)
+
+            if unitless && (wrt in ["A", "A&C=f(A)"])
+                S_e_aff = S_e_aff.*grsp.g.affinities
+                S_e_cost = S_e_cost.*grsp.g.affinities
+            elseif unitless && (wrt in ["C", "C&A=f(C)"])
+                S_e_aff = S_e_aff.*grsp.g.costmatrix
+                S_e_cost = S_e_cost.*grsp.g.costmatrix
+            end
+
+            if (wrt in ["A"])
+                node_sensitivity_vec = vec(sum(S_e_aff, dims=1))
+            elseif (wrt in ["C"])
+                node_sensitivity_vec = vec(sum(S_e_cost, dims=1))
+            elseif (wrt in ["A&C=f(A)"])
+                diff_C_A = ConScape.mapnz(diff_C_A_fun, grsp.g.affinities)
+                S_e_total = S_e_aff .+ S_e_cost.*diff_C_A
+                node_sensitivity_vec = vec(sum(S_e_total, dims=1))
+            elseif (wrt in ["C&A=f(C)"])
+                diff_A_C = ConScape.mapnz(diff_A_C_fun, grsp.g.affinities)
+                S_e_total = S_e_aff.*diff_A_C .+ S_e_cost
+                node_sensitivity_vec = vec(sum(S_e_total, dims=1))
+            end
+
+        elseif connectivity_function !== ConScape.expected_cost
+            #for theta = 1, ConScape.power_mean_proximity = ConScape.survival_probability
+            # Now assumes grsp.g.costfunction = MinusLog
+
+            S_e_aff, S_e_cost = PM_sensitivity(grsp.g.affinities, nothing, grsp.θ, grsp.W, grsp.Z, grsp.Z, qˢ, qᵗ, targetnodes)
+
+            if unitless && (wrt in ["A", "A&C=f(A)"])
+                S_e_aff = S_e_aff.*grsp.g.affinities
+                S_e_cost = S_e_cost.*grsp.g.affinities
+            elseif unitless && (wrt in ["C", "C&A=f(C)"])
+                S_e_aff = S_e_aff.*grsp.g.costmatrix
+                S_e_cost = S_e_cost.*grsp.g.costmatrix
+            end
+
+            if (wrt in ["A"])
+                node_sensitivity_vec = vec(sum(S_e_aff, dims=1))
+            elseif (wrt in ["C"])
+                node_sensitivity_vec = vec(sum(S_e_cost, dims=1))
+            elseif (wrt in ["A&C=f(A)"])
+                diff_C_A = ConScape.mapnz(diff_C_A_fun, grsp.g.affinities)
+                S_e_total = S_e_aff .+ S_e_cost.*diff_C_A
+                node_sensitivity_vec = vec(sum(S_e_total, dims=1))
+            elseif (wrt in ["C&A=f(C)"])
+                diff_A_C = ConScape.mapnz(diff_A_C_fun, grsp.g.affinities)
+                S_e_total = S_e_aff.*diff_A_C .+ S_e_cost
+                node_sensitivity_vec = vec(sum(S_e_total, dims=1))
+            end
+        end
+    elseif wrt ==="Q"
+        K = connectivity_function(grsp)
+        if connectivity_function <: ConScape.DistanceFunction
+            map!(distance_transformation_alpha, K, K)
+        end
+        
+        if (landscape_measure === "eigenanalysis")
+            K = (v') * K
+            K = w * K
+        end
+
+        K = K + transpose(K)
+
+        node_sensitivity_vec = K *  grsp.g.target_qualities[grsp.g.id_to_grid_coordinate_list]
+        if unitless
+            node_sensitivity_vec = node_sensitivity_vec .*  grsp.g.source_qualities[grsp.g.id_to_grid_coordinate_list]
+        end
+    else
+        throw(ArgumentError("Invalid or not implemented combination of arguments"))    
+    end
+
+    if (landscape_measure === "eigenanalysis")
+        vTw = (v') * w
+        node_sensitivity_vec = node_sensitivity_vec ./ (vTw)
+    end
+
+    node_sensitivity_matrix = Matrix(sparse([ij[1] for ij in grsp.g.id_to_grid_coordinate_list], [ij[2] for ij in grsp.g.id_to_grid_coordinate_list],
+    node_sensitivity_vec, grsp.g.nrows, grsp.g.ncols)) .* map(x-> isnan(x) ? NaN : 1, grsp.g.source_qualities)
+
+    return node_sensitivity_matrix
+
+end
+
+
+"""
+    criticality_simulation(grsp::ConScape.GridRSP;
+        connectivity_function=ConScape.expected_cost,
+        distance_transformation=ConScape.ExpMinus(),
+        α::Union{Nothing,Real}=1.,
+        wrt::String=["all", "Q"][1],
+        landscape_measure::String=["sum","eigenanalysis"][1],
+        diagvalue=nothing, 
+        target_equal_source::Bool=true, 
+        one_out_of::Int64=1)::Matrix{Float64}
+
+Compute criticality of all nodes. Two types of node criticality are implemented: 
+(1) wrt="all" completely destroys a node from the graph, whereas 
+(2) wrt="Q" only removes the quality of a node, but leaves the node as a connector in the Grid.
+
+Two different `landscape_measures` are implemented to summarize the landscape matrix 
+either through summation or through eigenanalysis. 
+
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
+of proximities, i.e. after applying the inverse cost function to the matrix of distances.
+When nothing is specified, the diagonal elements won't be adjusted.
+
+`connectivity_function` determines which function is used for computing the matrix of proximities.
+If `connectivity_function` is a `DistanceFunction`, then it is used for computing distances, which
+is converted to proximities using `distance_transformation`. If `connectivity_function` is a `ProximityFunction`,
+then proximities are computed directly using it. The default is `expected_cost`. 
+α is a distance scaling, and it is multiplied with the distance
+
+The function iteratively removes each node, which takes a long time. To speed up computation, 
+    we added a subsampling option, where only `one_out_of` every so many pixels is evaluated.
+"""
+function criticality_simulation(grsp::ConScape.GridRSP;
+    connectivity_function=ConScape.expected_cost,
+    distance_transformation=ConScape.ExpMinus(),
+    α::Union{Nothing,Real}=1.,
+    wrt::String=["all", "Q"][1],
+    landscape_measure::String=["sum","eigenanalysis"][1],
+    diagvalue=nothing, 
+    target_equal_source::Bool=true, 
+    one_out_of::Int64=1)
+
+    if (!(wrt in ["all", "Q"]))
+        throw(ArgumentError("Criticality is only defined with respect to (wrt) connectivity and qualities (i.e. affinities, cost and qualities; all), or pixel qualities (Q)"))
+    end
+
+    if (!(landscape_intergration in ["sum","eigenanalysis"]))
+        throw(ArgumentError("The landscape needs to be summarized either as the sum of the landscape matrix or its leading eigenvalue"))
+    end
+
+    if (!(target_equal_source))
+        throw(ArgumentError("The criticality is currently only defined when target quality equals source quality."))
+    end
+
+    if (distance_transformation==ConScape.ExpMinus())
+        distance_transformation_alpha=x -> exp(-x*α)
+    elseif (distance_transformation==ConScape.Inv())
+        distance_transformation_alpha=x -> inv(x*α)
+    #else
+    #    throw(ArgumentError("The sensitivity is currently only defined for negative exponential and inverse distance transformations."))
+    end
+
+    old_g = ConScape.Grid(size(grsp.g)...,
+    grsp.g.affinities,
+    nothing,
+    grsp.g.costmatrix,
+    grsp.g.id_to_grid_coordinate_list,
+    grsp.g.source_qualities,
+    grsp.g.source_qualities)
+
+    old_grsp = ConScape.GridRSP(old_g, θ=grsp.θ)
+    lf = ConScape.connected_habitat(old_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+    replace!(x -> isnan(x) ? 0 : x, lf)
+
+    n = length(grsp.g.id_to_grid_coordinate_list)
+    node_sensitivities = repeat([0.0], n)
+
+    if (wrt === "all")
+        for i in 1:n
+            if (i % one_out_of == 0)
+                new_affinities = copy(grsp.g.affinities)
+                new_affinities = new_affinities[(1:end) .!= i, (1:end) .!= i]
+                new_costs = copy(grsp.g.costmatrix)
+                new_costs = new_costs[(1:end) .!= i, (1:end) .!= i]
+                new_id_to_grid_coordinate_list = copy(grsp.g.id_to_grid_coordinate_list)
+
+                new_g = ConScape.Grid(size(grsp.g)...,
+                    new_affinities,
+                    nothing,
+                    new_costs,
+                    deleteat!(new_id_to_grid_coordinate_list, i),
+                    grsp.g.source_qualities,
+                    grsp.g.target_qualities)           
+
+                new_grsp = ConScape.GridRSP(new_g, θ=grsp.θ)
+                new_lf = ConScape.connected_habitat(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+                replace!(x -> isnan(x) ? 0 : x, new_lf)
+
+                node_sensitivities[i] = sum(new_lf - lf)
+            else
+                node_sensitivities[i] = NaN
+            end
+        end
+    elseif (wrt === "Q")
+        for i in 1:n
+            if (i % one_out_of == 0)
+
+                new_qualities = copy(grsp.g.source_qualities)
+                new_qualities[grsp.g.id_to_grid_coordinate_list[i]] = 0
+
+                new_g = ConScape.Grid(size(grsp.g)...,
+                    grsp.g.affinities,
+                    nothing,
+                    grsp.g.costmatrix,
+                    grsp.g.id_to_grid_coordinate_list,
+                    new_qualities,
+                    new_qualities)
+
+                new_grsp = ConScape.GridRSP(new_g, θ=grsp.θ)
+                new_lf = ConScape.connected_habitat(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+                replace!(x -> isnan(x) ? 0 : x, new_lf)
+
+                node_sensitivities[i] = sum(new_lf - lf)
+            else
+                node_sensitivities[i] = NaN
+            end
+        end
+    end
+
+    return Matrix(sparse(
+        [ij[1] for ij in grsp.g.id_to_grid_coordinate_list],
+        [ij[2] for ij in grsp.g.id_to_grid_coordinate_list],
+        node_sensitivities,
+        grsp.g.nrows,
+        grsp.g.ncols)) .* map(x-> isnan(x) ? NaN : 1, grsp.g.source_qualities)
+end
+
+
+"""
+    sensitivity_similation(grsp::ConScape.GridRSP;
+        connectivity_function=ConScape.expected_cost,
+        distance_transformation=ConScape.ExpMinus(),
+        α::Union{Nothing,Real}=1.,
+        wrt::String=["A", "C", "Q","C&A=f(C)", "A&C=f(A)"][1],
+        landscape_measure::String=["sum","eigenanalysis"][1],
+        unitless::Bool=true,
+        diagvalue=nothing,
+        target_equal_source::Bool=true)::Matrix{Float64}
+
+Compute sensitivity of all nodes. Five types of node sensitivity are implemented, 
+two different `landscape_measures` are implemented to summarize the landscape matrix 
+either through summation or through eigenanalysis. The results can be provided either as 
+sensitivity w.r.t. unit change (`unitless`=false) or w.r.t. proportional change (`unitless`=true), 
+the latter are also known as elasticities.
+
+The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
+of proximities, i.e. after applying the inverse cost function to the matrix of distances.
+When nothing is specified, the diagonal elements won't be adjusted.
+
+`connectivity_function` determines which function is used for computing the matrix of proximities.
+If `connectivity_function` is a `DistanceFunction`, then it is used for computing distances, which
+is converted to proximities using `distance_transformation`. If `connectivity_function` is a `ProximityFunction`,
+then proximities are computed directly using it. The default is `expected_cost`. 
+α is a distance scaling, and it is multiplied with the distance
+
+The function iteratively perturbates each node, which takes a long time. To speed up computation, 
+    we added a subsampling option, where only `one_out_of` every so many pixels is evaluated.
+"""
+function sensitivity_simulation(grsp::ConScape.GridRSP;
+    connectivity_function=ConScape.expected_cost,
+    distance_transformation=ConScape.ExpMinus(),
+    α::Union{Nothing,Real}=1.,
+    wrt::String=["A", "C", "Q","C&A=f(C)", "A&C=f(A)"][1],
+    landscape_measure::String=["sum","eigenanalysis"][1],
+    unitless::Bool=true,
+    diagvalue=nothing, 
+    target_equal_source::Bool=true, 
+    one_out_of::Int64=1)
+
+    if (!(wrt in ["A", "C", "Q","A&C=f(A)", "C&A=f(C)"]))
+        throw(ArgumentError("sensitivity is only defined with respect to (wrt) affinities, costs, or pixel qualities"))
+    end
+
+    if (!(landscape_measure in ["sum","eigenanalysis"]))
+        throw(ArgumentError("The landscape needs to be summarized either as the sum of the landscape matrix or its leading eigenvalue"))
+    end
+
+    if (!(target_equal_source))
+        throw(ArgumentError("The sensitivity is currently only defined when target quality equals source quality."))
+    end
+
+    if (distance_transformation==ConScape.ExpMinus())
+        distance_transformation_alpha=x -> exp(-x*α)
+    elseif (distance_transformation==ConScape.Inv())
+        distance_transformation_alpha=x -> inv(x*α)
+    #else
+    #    throw(ArgumentError("The sensitivity is currently only defined for negative exponential and inverse distance transformations."))
+    end
+
+    epsi = 1e-6
+
+    lf = ConScape.connected_habitat(grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+    replace!(x -> isnan(x) ? 0 : x, lf)
+
+    n = length(grsp.g.id_to_grid_coordinate_list)
+
+    if (wrt in ["A", "C", "A&C=f(A)", "C&A=f(C)"])
+
+        edge_sensitivities = copy(grsp.g.affinities)
+
+        for i in 1:n
+            Succ_i = findall(grsp.g.affinities[i,:].>0)
+            for j in Succ_i
+                if (j % one_out_of == 0)
+                    if (wrt in ["A"])
+                        new_affinities = copy(grsp.g.affinities)
+                        new_costs = copy(grsp.g.costmatrix)
+                        new_affinities[i, j] += epsi
+                    elseif (wrt in ["C"])
+                        new_affinities = copy(grsp.g.affinities)
+                        new_costs = copy(grsp.g.costmatrix)
+                        new_costs[i, j] += epsi
+                    elseif (wrt in ["A&C=f(A)"])
+                        new_affinities = copy(grsp.g.affinities)
+                        new_affinities[i, j] += epsi
+                        if grsp.g.costfunction === nothing
+                            new_costs = ConScape.mapnz(ConScape.MinusLog(), new_affinities)
+                            if i === 1
+                                @info "Cost function is nothing, so for the linked sensitivity the minuslog link will be used" 
+                            end 
+                        else
+                            new_costs = ConScape.mapnz(grsp.g.costfunction, new_affinities)
+                        end
+                    elseif (wrt in ["C&A=f(C)"])
+                        new_costs = copy(grsp.g.costmatrix)
+                        new_costs[i, j] += epsi
+                        new_affinities = copy(new_costs)
+                        if grsp.g.costfunction === nothing
+                            map!(inv(ConScape.MinusLog()), new_affinities.nzval, new_costs.nzval)
+                            if i === 1
+                                @info "Cost function is nothing, so for the linked sensitivity the minuslog link will be used" 
+                            end 
+                        else
+                            map!(inv(grsp.g.costfunction), new_affinities.nzval, new_costs.nzval)
+                        end
+                    end
+
+                    new_g = ConScape.Grid(size(grsp.g)...,
+                        new_affinities,
+                        nothing,
+                        new_costs,
+                        grsp.g.id_to_grid_coordinate_list,
+                        grsp.g.source_qualities,
+                        grsp.g.target_qualities)           
+
+                    new_grsp = ConScape.GridRSP(new_g, θ=grsp.θ)
+                    new_lf = ConScape.connected_habitat(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+                    replace!(x -> isnan(x) ? 0 : x, new_lf)
+
+                    edge_sensitivities[i,j] = sum(new_lf - lf)/epsi # (gnew.affinities[i,j]-g.affinities[i,j])
+                    if unitless
+                        if (wrt in ["A", "A&C=f(A)"])
+                            edge_sensitivities[i,j] *=grsp.g.affinities[i,j]
+                        else
+                            edge_sensitivities[i,j] *=grsp.g.costmatrix[i,j]
+                        end
+                    end
+                else
+                    edge_sensitivities[i,j] = NaN
+                end
+
+            end
+        end
+
+        node_sensitivities = vec(sum(edge_sensitivities, dims=1))
+
+    elseif (wrt == "Q")
+        node_sensitivities = repeat([0.0], n)
+
+        #Some more debugging is needed, but it works with this "patch" 
+        old_g = ConScape.Grid(size(grsp.g)...,
+                    grsp.g.affinities,
+                    nothing,
+                    grsp.g.costmatrix,
+                    grsp.g.id_to_grid_coordinate_list,
+                    grsp.g.source_qualities,
+                    grsp.g.source_qualities)
+
+        old_grsp = ConScape.GridRSP(old_g, θ=grsp.θ)
+        lf = ConScape.connected_habitat(old_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+        replace!(x -> isnan(x) ? 0 : x, lf)
+
+        for i in 1:n
+            if (i % one_out_of == 0)
+
+                new_qualities = copy(grsp.g.source_qualities)
+                new_qualities[grsp.g.id_to_grid_coordinate_list[i]] += epsi
+
+                new_g = ConScape.Grid(size(grsp.g)...,
+                    grsp.g.affinities,
+                    nothing,
+                    grsp.g.costmatrix,
+                    grsp.g.id_to_grid_coordinate_list,
+                    new_qualities,
+                    new_qualities)
+
+                new_grsp = ConScape.GridRSP(new_g, θ=grsp.θ)
+                new_lf = ConScape.connected_habitat(new_grsp, connectivity_function=connectivity_function, distance_transformation=distance_transformation_alpha, diagvalue=diagvalue)
+                replace!(x -> isnan(x) ? 0 : x, new_lf)
+
+                node_sensitivities[i] = sum(new_lf - lf)/epsi
+                if unitless
+                    node_sensitivities[i] *= grsp.g.source_qualities[grsp.g.id_to_grid_coordinate_list[i]]
+                end
+            else
+                node_sensitivities[i] = NaN
+            end
+        end
+    end
+
+    return Matrix(sparse(
+        [ij[1] for ij in grsp.g.id_to_grid_coordinate_list],
+        [ij[2] for ij in grsp.g.id_to_grid_coordinate_list],
+        node_sensitivities,
+        grsp.g.nrows,
+        grsp.g.ncols)) .* map(x-> isnan(x) ? NaN : 1, grsp.g.source_qualities)
+end
+
+
