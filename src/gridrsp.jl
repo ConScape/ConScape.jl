@@ -865,7 +865,7 @@ function criticality_simulation(grsp::ConScape.GridRSP;
         throw(ArgumentError("Criticality is only defined with respect to (wrt) connectivity and qualities (i.e. affinities, cost and qualities; all), or pixel qualities (Q)"))
     end
 
-    if (!(landscape_intergration in ["sum","eigenanalysis"]))
+    if (!(landscape_measure in ["sum","eigenanalysis"]))
         throw(ArgumentError("The landscape needs to be summarized either as the sum of the landscape matrix or its leading eigenvalue"))
     end
 
