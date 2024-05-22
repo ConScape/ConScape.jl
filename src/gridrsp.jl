@@ -793,8 +793,8 @@ function sensitivity(grsp::ConScape.GridRSP;
         end
         
         if (landscape_measure === "eigenanalysis")
-            K = (v') .* K
-            K = (w) .* K
+            K = (v) .* K
+            K = (w') .* K
         end
 
         K = (K) + transpose(K)
