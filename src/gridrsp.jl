@@ -793,11 +793,11 @@ function sensitivity(grsp::ConScape.GridRSP;
         end
         
         if (landscape_measure === "eigenanalysis")
-            K = (v') * K
-            K = w * K
+            K = (v') .* K
+            K = (w) .* K
         end
 
-        K = K + transpose(K)
+        K = (K) + transpose(K)
 
         node_sensitivity_vec = K *  grsp.g.target_qualities[grsp.g.id_to_grid_coordinate_list]
         if unitless
@@ -808,7 +808,6 @@ function sensitivity(grsp::ConScape.GridRSP;
     end
 
     if (landscape_measure === "eigenanalysis")
-        vTw = (v') * w
         node_sensitivity_vec = node_sensitivity_vec ./ (vTw)
     end
 
