@@ -10,7 +10,6 @@ makedocs(
     sitename = "ConScape",
     format = Documenter.HTML(),
     modules = [ConScape],
-    strict = true
 )
 
 # Documenter can also automatically deploy documentation to gh-pages.
