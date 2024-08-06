@@ -196,7 +196,7 @@ julia> ConScape.is_strongly_connected(grid)
 false
 ```
 """
-LightGraphs.is_strongly_connected(g::Grid) = is_strongly_connected(SimpleWeightedDiGraph(g.affinities))
+Graphs.is_strongly_connected(g::Grid) = is_strongly_connected(SimpleWeightedDiGraph(g.affinities))
 
 """
     largest_subgraph(g::Grid)::Grid
