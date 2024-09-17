@@ -13,6 +13,7 @@ ProgressLogging = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
 SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+ThreadsX = "ac1d9e8a-700a-412c-b207-f0111f4b6c0d"
 
 [compat]
 ArnoldiMethod = "0.0.4, 0.4"
