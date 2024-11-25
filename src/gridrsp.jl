@@ -11,7 +11,59 @@ end
 
 Construct a GridRSP from a `g::Grid` based on the inverse temperature parameter `θ::Real`.
 """
-function GridRSP(g::Grid; θ=nothing)
+function GridRSPoptimised(g::Grid; 
+    θ=nothing,
+    idx_and_nodes=ConScape._targetidx_and_nodes(g),
+    targetidx=idx_and_nodes[1],
+    targetnodes=idx_and_nodes[2],
+    Z=Matrix(sparse(targetnodes,
+        1:length(targetnodes),
+        1.0,
+        size(g.costmatrix, 1),
+        length(targetnodes))),
+    F=nothing,
+)
+    Pref = ConScape._Pref(g.affinities)
+    W = ConScape._W(Pref, θ, g.costmatrix)
+    A = SparseArrays.I - W
+
+    @debug("Computing fundamental matrix of non-absorbing paths (Z). Please be patient...")
+
+    if isnothing(F)
+        F = lu(A)
+    else
+        lu!(F, A)
+    end
+    transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
+
+    # SparseArrays.UMFPACK._AqldivB_kernel!(Z, F, B, transposeoptype)
+
+    # This is basically SparseArrays.UMFPACK._AqldivB_kernel!
+    # But we unroll it to avoid copies or allocation of B
+    B = zeros(size(Z, 2))
+    i = 1
+    n = targetnodes[i]
+    for col in 1:size(Z, 2)
+        # Manually set the diagonal
+        if targetnodes[i] == col
+            B[col] = 1.0
+        end
+        SparseArrays.UMFPACK.solve!(view(Z, :, col), F, B, transposeoptype)
+        if targetnodes[i] == col
+            B[col] = 0.0
+            i += 1
+        end
+    end
+
+    # Check that values in Z are not too small:
+    if minimum(Z) * minimum(nonzeros(g.costmatrix .* W)) == 0
+        @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
+    end
+
+    return GridRSP(g, θ, Pref, W, Z)
+end
+
+function GridRSPoriginal(g::Grid; θ=nothing)
 
     Pref = _Pref(g.affinities)
     W    = _W(Pref, θ, g.costmatrix)
