@@ -9,7 +9,8 @@ function perm_wall_sim(
     corridorpositions=(0.35,0.7),
     impossible_affinity::Real=1e-20,
     nhood_size::Integer=8,
-    kwargs...)
+    kwargs...
+)
 
     # 1. initialize landscape
     affinities = _generate_affinities(nrows, ncols, nhood_size)
@@ -94,7 +95,7 @@ of the cell affinities (costs) weighted by the grid distance (AverageWeight). Th
 respect to eight neighbors (`N8`) or four neighbors (`N4`).
 """
 function graph_matrix_from_raster(
-    R::Matrix;
+    R::AbstractMatrix;
     matrix_type=AffinityMatrix,
     neighbors::Tuple=N8,
     weight=TargetWeight
@@ -173,11 +174,8 @@ function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, im
     target_qualities[node_list] .= 0
 
     # Generate a new Grid based on the modified affinities
-    return Grid(size(g)...,
-        affinities=affinities,
-        source_qualities=source_qualities,
-        target_qualities=target_qualities,
-        costs=g.costfunction === nothing ? g.costmatrix : g.costfunction)
+    costs = g.costfunction === nothing ? g.costmatrix : g.costfunction
+    return Grid(size(g)...; affinities, source_qualities, target_qualities, costs)
 end
 
 """
