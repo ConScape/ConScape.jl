@@ -54,6 +54,23 @@ struct ComputationAssesment{O,Z,L,M,F}
 end
 
 """
+    allocate(co::ComputationAssesment)
+
+Allocate memory required to run `compute` for the assessed ops.
+
+The returned object can be passed as the `allocs` keyword to `compute`.
+"""
+function allocate(co::ComputationAssesment)
+    zmax = co.zmax
+    # But actually do this with GenericMemory using Julia v1.11
+    Z = Matrix{Float64}(undef, co.zmax) 
+    S = sparse(1:zmax[1], 1:zmax[2], 1.0, zmax...)
+    L = lu(S)
+    # Just return a NamedTuple for now
+    return (; Z, S, L)
+end
+
+"""
     compute(o::Operation, grsp::GridRSP)
 
 Compute operation `o` on precomputed grid `grsp`.
