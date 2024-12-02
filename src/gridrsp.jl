@@ -44,7 +44,7 @@ end
 abstract type Operation end 
 abstract type RSPOperation <: Operation end
 
-struct ComputationAssesment{O,Z,L,M,F}
+@kwdef struct ComputeAssesment{O,Z,L,M,F}
     op::O
     zmax::Z
     lumax::L
@@ -54,13 +54,13 @@ struct ComputationAssesment{O,Z,L,M,F}
 end
 
 """
-    allocate(co::ComputationAssesment)
+    allocate(co::ComputeAssesment)
 
 Allocate memory required to run `compute` for the assessed ops.
 
 The returned object can be passed as the `allocs` keyword to `compute`.
 """
-function allocate(co::ComputationAssesment)
+function allocate(co::ComputeAssesment)
     zmax = co.zmax
     # But actually do this with GenericMemory using Julia v1.11
     Z = Matrix{Float64}(undef, co.zmax) 
@@ -86,25 +86,71 @@ and time reequiremtents on a cluster
 """
 function assess end
 
+"""
+    Operations(ops...; θ)
+
+Combine multiple compute operations into a single object, 
+to be run in the same job.
+"""
 @kwdef struct Operations{O,T,A} <: Operation
-    ops::O
+    op::O
     θ::T=nothing
-    allocs::A
 end
-Operations(ops::O) where O<:Tuple = Operations{O}(ops)
+Operations(op::O) where O<:Tuple = Operations{O}(op)
 Operations(args...) = Operations(args)
+Operations(::Operations; θ=nothing)= Operations(o.op; θ)
 
 function compute(o::Operation, grsp::Grid)
     compute(o, GridRSP(g; allocs=o.allocs); θ=o.θ)
 end
 function compute(o::Operations, grsp::GridRSP) 
-    map(compute, o.ops)
+    map(compute, o.op)
     # Something else?
 end
 
-function assess(ops::Operations, g::Grid; grid_assessment=asses(g)) 
-    as = map(o -> asses(o, g), ops.ops)
+function assess(op::Operations, g::Grid; grid_assessment=asses(g)) 
+    as = map(o -> asses(o, g), op.op)
     # some code to combine
+end
+
+"""
+    WindowedOperations(op; size, centers, θ)
+
+Combine multiple compute operations into a single object, 
+to be run over the same windowed grids.
+
+
+"""
+@kwdef struct WindowedOperations{O,SS,WS,WC} <: Operation
+    op::O
+    sourcesize::SS
+    size::WS
+    centers::WC
+end
+function WindowedOperations(op::O, sourcesize::Tuple, windowsize::Tuple, windowcenters::AbstractMatrix; 
+    θ::T=nothing
+) where O<:Tuple 
+    WindowedOperations{O}(Operation(op; θ), sourcesize, windowsize, windowcenters)
+end
+
+function compute(o::WindowedOperation, source::AbstractMatrix, target::AbstractMatrix)
+    compute(o, GridRSP(g; allocs=o.allocs); θ=o.θ)
+end
+
+function assess(op::WindowedOperations, g::Grid) 
+    window_assessments = map(_windows(op, g)) do w
+        ca = assess(op.op, w)
+    end
+    maximums = reduce(window_assessments) do acc, a
+        (; totalmem=max(acc.totalmem, a.totalmem),
+           zmax=max(acc.zmax, a.zmax),
+           lumax=max(acc.lumax, a.lumax),
+        )
+    end
+    sums = reduce(window_assessments) do acc, a
+        (; flops=acc.flops + a.flops)
+    end
+    ComputeAssesment(; op=op.op, maximums..., sums...)
 end
 
 @kwdef struct BetweennessQ <: RSPResult end
