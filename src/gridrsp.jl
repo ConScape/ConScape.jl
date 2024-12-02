@@ -41,6 +41,123 @@ function Base.show(io::IO, ::MIME"text/html", grsp::GridRSP)
     show(io, MIME"text/html"(), plot_outdegrees(grsp.g))
 end
 
+abstract type Operation end 
+abstract type RSPOperation <: Operation end
+
+@kwdef struct ComputeAssesment{O,Z,L,M,F}
+    op::O
+    zmax::Z
+    lumax::L
+    totalmem::T
+    flops::F
+    # Something else?
+end
+
+"""
+    allocate(co::ComputeAssesment)
+
+Allocate memory required to run `compute` for the assessed ops.
+
+The returned object can be passed as the `allocs` keyword to `compute`.
+"""
+function allocate(co::ComputeAssesment)
+    zmax = co.zmax
+    # But actually do this with GenericMemory using Julia v1.11
+    Z = Matrix{Float64}(undef, co.zmax) 
+    S = sparse(1:zmax[1], 1:zmax[2], 1.0, zmax...)
+    L = lu(S)
+    # Just return a NamedTuple for now
+    return (; Z, S, L)
+end
+
+"""
+    compute(o::Operation, grsp::GridRSP)
+
+Compute operation `o` on precomputed grid `grsp`.
+"""
+function compute end
+
+"""
+    assess(o::Operation, g::Grid; grid_assessment)
+
+Assess the memory and compute requirements of operation
+`o` on grid `g`. This can be used to indicate memory
+and time reequiremtents on a cluster
+"""
+function assess end
+
+"""
+    Operations(ops...; θ)
+
+Combine multiple compute operations into a single object, 
+to be run in the same job.
+"""
+@kwdef struct Operations{O,T,A} <: Operation
+    op::O
+    θ::T=nothing
+end
+Operations(op::O) where O<:Tuple = Operations{O}(op)
+Operations(args...) = Operations(args)
+Operations(::Operations; θ=nothing)= Operations(o.op; θ)
+
+function compute(o::Operation, grsp::Grid)
+    compute(o, GridRSP(g; allocs=o.allocs); θ=o.θ)
+end
+function compute(o::Operations, grsp::GridRSP) 
+    map(compute, o.op)
+    # Something else?
+end
+
+function assess(op::Operations, g::Grid; grid_assessment=asses(g)) 
+    as = map(o -> asses(o, g), op.op)
+    # some code to combine
+end
+
+"""
+    WindowedOperations(op; size, centers, θ)
+
+Combine multiple compute operations into a single object, 
+to be run over the same windowed grids.
+
+
+"""
+@kwdef struct WindowedOperations{O,SS,WS,WC} <: Operation
+    op::O
+    sourcesize::SS
+    size::WS
+    centers::WC
+end
+function WindowedOperations(op::O, sourcesize::Tuple, windowsize::Tuple, windowcenters::AbstractMatrix; 
+    θ::T=nothing
+) where O<:Tuple 
+    WindowedOperations{O}(Operation(op; θ), sourcesize, windowsize, windowcenters)
+end
+
+function compute(o::WindowedOperation, source::AbstractMatrix, target::AbstractMatrix)
+    compute(o, GridRSP(g; allocs=o.allocs); θ=o.θ)
+end
+
+function assess(op::WindowedOperations, g::Grid) 
+    window_assessments = map(_windows(op, g)) do w
+        ca = assess(op.op, w)
+    end
+    maximums = reduce(window_assessments) do acc, a
+        (; totalmem=max(acc.totalmem, a.totalmem),
+           zmax=max(acc.zmax, a.zmax),
+           lumax=max(acc.lumax, a.lumax),
+        )
+    end
+    sums = reduce(window_assessments) do acc, a
+        (; flops=acc.flops + a.flops)
+    end
+    ComputeAssesment(; op=op.op, maximums..., sums...)
+end
+
+@kwdef struct BetweennessQ <: RSPResult end
+
+compute(r::BetweennessQ, grsp::GridRSP) = betweenness_qweighted(grsp)
+assess(r::BetweennessQ, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
+
 """
     betweenness_qweighted(grsp::GridRSP)::Matrix{Float64}
 
@@ -65,7 +182,10 @@ function betweenness_qweighted(grsp::GridRSP)
     return bet
 end
 
+@kwdef struct EdgeBetweenness <: RSPResult end
 
+compute(r::EdgeBetweenness, grsp::GridRSP) = betweenness_qweighted(grsp)
+assess(r::EdgeBetweenness, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
 
 """
     edge_betweenness_qweighted(grsp::GridRSP)::Matrix{Float64}
@@ -87,6 +207,14 @@ function edge_betweenness_qweighted(grsp::GridRSP)
     return betmatrix
 end
 
+@kwdef struct BetweennessK{CV,DT,DV} <: RSPResult 
+    connectivity_function::CV=expected_cost
+    distance_transformation::DT=nothing
+    diagvalue::DV=nothing
+end
+
+compute(r::BetweennessK, grsp::GridRSP) = betweenness_kweighted(grsp; keywords(r)...)
+assess(r::BetweennessK, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
 
 """
     betweenness_kweighted(grsp::GridRSP;
@@ -142,7 +270,13 @@ function betweenness_kweighted(grsp::GridRSP;
     return bet
 end
 
+@kwdef struct EdgeBetweennessK{CV,DT,DV} <: RSPResult 
+    distance_transformation::DT=inv(grsp.g.costfunction)
+    diagvalue::DV=nothing
+end
 
+compute(r::EdgeBetweennessK, grsp::GridRSP) = edge_betweenness_kweighted(grsp; keywords(r)...)
+assess(r::EdgeBetweennessK, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
 
 """
     edge_betweenness_kweighted(grsp::GridRSP; [distance_transformation=inv(grsp.g.costfunction), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
@@ -177,7 +311,10 @@ function edge_betweenness_kweighted(grsp::GridRSP; distance_transformation=inv(g
     return betmatrix
 end
 
+@kwdef struct ExpectedCost <: RSPResult end
 
+compute(r::ExpectedCost, grsp::GridRSP) = expected_cost(grsp)
+assess(r::ExpectedCost, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
 
 """
     expected_cost(grsp::GridRSP)::Matrix{Float64}
@@ -189,22 +326,47 @@ function expected_cost(grsp::GridRSP)
     return RSP_expected_cost(grsp.W, grsp.g.costmatrix, grsp.Z, targetnodes)
 end
 
+@kwdef struct FreeDnergyDistance <: RSPResult end
+
+compute(r::FreeDnergyDistance, grsp::GridRSP) = free_energy_distance(grsp)
+assess(r::FreeDnergyDistance, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
+
 function free_energy_distance(grsp::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
     return RSP_free_energy_distance(grsp.Z, grsp.θ, targetnodes)
 end
+
+@kwdef struct SurvivalProbability <: RSPResult end
+
+compute(r::SurvivalProbability, grsp::GridRSP) = survival_probability(grsp)
+assess(r::SurvivalProbability, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
 
 function survival_probability(grsp::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
     return RSP_survival_probability(grsp.Z, grsp.θ, targetnodes)
 end
 
+@kwdef struct PowerMeanProximity <: RSPResult end
+
+compute(r::PowerMeanProximity, grsp::GridRSP) = power_mean_proximity(grsp)
+assess(r::PowerMeanProximity, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
+
 function power_mean_proximity(grsp::GridRSP)
     targetidx, targetnodes = _targetidx_and_nodes(grsp.g)
     return RSP_power_mean_proximity(grsp.Z, grsp.θ, targetnodes)
 end
 
+@kwdef struct LeastCostDistance <: RSPResult end
+
+compute(r::LeastCostDistance, grsp::GridRSP) = least_cost_distance(grsp)
+assess(r::LeastCostDistance, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
+
 least_cost_distance(grsp::GridRSP) = least_cost_distance(grsp.g)
+
+@kwdef struct MeanKullbackLeiblerDivergence <: RSPResult end
+
+compute(r::MeanKullbackLeiblerDivergence, grsp::GridRSP) = mean_kl_divergence(grsp)
+assess(r::MeanKullbackLeiblerDivergence, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
 
 """
     mean_kl_divergence(grsp::GridRSP)::Float64
@@ -217,6 +379,11 @@ function mean_kl_divergence(grsp::GridRSP)
     qt = [grsp.g.target_qualities[i] for i in grsp.g.id_to_grid_coordinate_list ∩ targetidx]
     return qs'*(RSP_free_energy_distance(grsp.Z, grsp.θ, targetnodes) - expected_cost(grsp))*qt*grsp.θ
 end
+
+@kwdef struct MeanLeastCostKullbackLeiblerDivergence <: RSPResult end
+
+compute(r::MeanLeastCostKullbackLeiblerDivergence, grsp::GridRSP) = mean_kl_divergence(grsp)
+assess(r::MeanLeastCostKullbackLeiblerDivergence, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
 
 
 """
@@ -276,6 +443,11 @@ function least_cost_kl_divergence(C::SparseMatrixCSC, Pref::SparseMatrixCSC, tar
     return kl_div
 end
 
+@kwdef struct LeastCostKullbackLeiblerDivergence <: RSPResult end
+
+compute(r::LeastCostKullbackLeiblerDivergence, grsp::GridRSP) = least_cost_kl_divergence(grsp)
+assess(r::LeastCostKullbackLeiblerDivergence, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
+
 """
     least_cost_kl_divergence(grsp::GridRSP, target::Tuple{Int,Int})
 
@@ -293,6 +465,18 @@ function least_cost_kl_divergence(grsp::GridRSP, target::Tuple{Int,Int})
 
     return reshape(div, grsp.g.nrows, grsp.g.ncols)
 end
+
+@kwdef struct ConnectedHabitat{CV,DT,DV} <: RSPResult
+    # TODO not sure which kw to use here
+    connectivity_function::CV=expected_cost
+    distance_transformation::DT=nothing
+    diagvalue::DV=nothing
+    θ::Union{Nothing,Real}=nothing
+    approx::Bool=false
+end
+
+compute(r::ConnectedHabitat, grsp::GridRSP) = eigmax(grsp; keywords(r)...)
+assess(r::ConnectedHabitat, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
 
 """
     connected_habitat(grsp::Union{Grid,GridRSP};
@@ -430,6 +614,16 @@ function connected_habitat(grsp::GridRSP,
     return connected_habitat(newh; diagvalue=diagvalue, distance_transformation=distance_transformation)
 end
 
+@kwdef struct EigMax{F,DT,DV,T} <: RSPResult 
+    connectivity_function::F=expected_cost
+    Tdistance_transformation::DT=nothing
+    diagvalue::DV=nothing
+    tol::T=1e-14
+end
+
+compute(r::EigMax, grsp::GridRSP) = eigmax(grsp; keywords(r)...)
+assess(r::EigMax, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
+
 """
     eigmax(grsp::GridRSP;
         connectivity_function=expected_cost,
@@ -555,6 +749,17 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
     return vˡ, λ₀[1], vʳ
 end
 
+@kwdef struct Criticality{DT,DV,AV,QT,QS} <: RSPResult 
+    distance_transformation::DT=inv(grsp.g.costfunction)
+    diagvalue::DV=nothing
+    avalue::AV=floatmin()
+    qˢvalue::QS=0.0
+    qᵗvalue::QT=0.0
+end
+
+compute(r::Criticality, grsp::GridRSP) = criticality(grsp; keywords(r)...)
+assess(r::Criticality, grsp::Grid; grid_assessment=asses(g)) = nothing # TODO 
+
 """
     criticality(grsp::GridRSP[;
                 distance_transformation=inv(grsp.g.costfunction),
@@ -596,3 +801,4 @@ function criticality(grsp::GridRSP;
 
     return landscape
 end
+

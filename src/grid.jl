@@ -176,6 +176,12 @@ function plot_indegrees(g::Grid; kwargs...)
     heatmap(canvas, yflip=true, axis=nothing, border=:none; kwargs...)
 end
 
+function assess(g::Grid) 
+    targetidx, targetnodes = _targetidx_and_nodes(g)
+    # Calculate memory use and expected flops for 
+    # targetnodes, or something...
+end
+
 """
     is_strongly_connected(g::Grid)::Bool
 
