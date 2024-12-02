@@ -26,6 +26,7 @@ struct Grid
     id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
     source_qualities::Matrix{Float64}
     target_qualities::AbstractMatrix{Float64}
+    dims::Tuple
 end
 
 """
@@ -47,8 +48,8 @@ affinity and cost matrices will be pruned to exclude unreachable nodes.
 function Grid(nrows::Integer,
               ncols::Integer;
               affinities=nothing,
-              qualities::Matrix=ones(nrows, ncols),
-              source_qualities::Matrix=qualities,
+              qualities::AbstractMatrix=ones(nrows, ncols),
+              source_qualities::AbstractMatrix=qualities,
               target_qualities::AbstractMatrix=qualities,
               costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
               prune=true)
@@ -103,6 +104,7 @@ function Grid(nrows::Integer,
         id_to_grid_coordinate_list,
         _source_qualities,
         _target_qualities,
+        dims(source_qualities),
     )
 
     if prune
@@ -113,6 +115,7 @@ function Grid(nrows::Integer,
 end
 
 Base.size(g::Grid) = (g.nrows, g.ncols)
+DimensionalData.dims(g::Grid) = g.dims
 
 function Base.show(io::IO, ::MIME"text/plain", g::Grid)
     print(io, summary(g), " of size ", g.nrows, "x", g.ncols)
@@ -155,7 +158,7 @@ function plot_values(g::Grid, values::Vector; kwargs...)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
-    heatmap(canvas, yflip=true, axis=nothing, border=:none, aspect_ratio=:equal; kwargs...)
+    _heatmap(canvas, g; kwargs...)
 end
 
 function plot_outdegrees(g::Grid; kwargs...)
@@ -164,7 +167,7 @@ function plot_outdegrees(g::Grid; kwargs...)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
-    heatmap(canvas, yflip=true, axis=nothing, border=:none; kwargs...)
+    _heatmap(canvas, g; kwargs...)
 end
 
 function plot_indegrees(g::Grid; kwargs...)
@@ -173,7 +176,17 @@ function plot_indegrees(g::Grid; kwargs...)
     for (i,v) in enumerate(values)
         canvas[g.id_to_grid_coordinate_list[i]] = v
     end
-    heatmap(canvas, yflip=true, axis=nothing, border=:none; kwargs...)
+    _heatmap(canvas, g; kwargs...)
+end
+
+# If the grid has raster dimensions, 
+# plot as a raster on a spatial grid
+function _heatmap(canvas, g; kwargs...)
+    if isnothing(dims(g))
+        heatmap(canvas; yflip=true, axis=nothing, border=:none, aspect_ratio=:equal, kwargs...)
+    else
+        heatmap(Raster(canvas, dims(g)); kwargs...)
+    end
 end
 
 """
