@@ -77,7 +77,7 @@ end
 Operations(ops::O) where O<:Tuple = Operations{O}(ops)
 Operations(args...) = Operations(args)
 
-function compute(o::Operations, grsp::Grid)
+function compute(o::Operation, grsp::Grid)
     compute(o, GridRSP(g; allocs=o.allocs); θ=o.θ)
 end
 function compute(o::Operations, grsp::GridRSP) 
