@@ -32,10 +32,13 @@ meta_p==meta_q
 ```
 
 ```julia
-g = ConScape.Grid(size(mov_prob)...,
-                  affinities=ConScape.graph_matrix_from_raster(mov_prob),
-                  qualities=hab_qual,
-                  costs=ConScape.MinusLog(), )
+g = ConScape.Grid(
+  size(mov_prob)...,
+  affinities=ConScape.graph_matrix_from_raster(mov_prob),
+  qualities=hab_qual,
+  costs=ConScape.MinusLog()
+)
+
 ```
 
 ```julia
@@ -58,16 +61,71 @@ g.target_qualities
 
 ```julia
 g.affinities
+g.affinities[1:100, 1:100]
+
 ```
 
 ```julia
 (g.nrows, g.ncols, g.nrows*g.ncols)
+g.costmatrix
 ```
 
 # Step 2: Habitat creation
 
 ```julia
-h = ConScape.GridRSP(g, θ=1.0);
+using ProfileView
+using BenchmarkTools
+
+_, targetnodes = idx_and_nodes = ConScape._targetidx_and_nodes(g)
+
+Z = Matrix{Float64}(undef, size(g.costmatrix, 1), length(idx_and_nodes[1]))
+
+B = Matrix(sparse(targetnodes,
+  1:length(targetnodes),
+  1.0,
+  size(g.costmatrix, 1),
+  length(targetnodes))
+)
+Z = LinearAlgebra.copy_similar(B, Float64)
+
+opt = ConScape.GridRSPoptimised(g; θ=1.0, idx_and_nodes, Z, B)
+orig = ConScape.GridRSPoriginal(g; θ=1.0)
+orig.Z .- opt.Z
+
+Pref = ConScape._Pref(g.affinities)
+W = ConScape._W(Pref, θ, g.costmatrix)
+A = SparseArrays.I - W
+F = lu(A)
+
+@allocated h = ConScape.GridRSPoptimised(g; θ=1.0, idx_and_nodes, Z, F)
+@allocated h = ConScape.GridRSPoptimised(g; θ=1.0)
+@allocated h = ConScape.GridRSPoriginal(g; θ=1.0)
+@b ConScape.GridRSPoptimised(g; θ=1.0, idx_and_nodes, Z, F)
+@b ConScape.GridRSPoptimised(g; θ=1.0)
+@b ConScape.GridRSPoriginal(g; θ=1.0)
+
+@profview ConScape.GridRSPoptimised(g; θ=1.0, idx_and_nodes, Z, F)
+@profview h = ConScape.GridRSPoriginal(g; θ=1.0)
+h = ConScape.GridRSPoptimised(g; θ=1.0)
+grsp = h
+h
+L = log.(h.Z)
+using GLMakie
+fig = Figure()
+a1 = Axis(fig[1, 1])
+a2 = Axis(fig[1, 2])
+A1 = broadcast(collect(A)) do x
+    isapprox(x, 0) ? NaN : x
+end
+Z1 = broadcast(h.Z) do x
+    isapprox(x, 0.0; atol=1e-5) ? NaN : x
+end
+p1 = Makie.heatmap!(a1, A1; colormap=:viridis)
+p2 = Makie.heatmap!(a2, Z1; colormap=:viridis)
+Makie.Colorbar(fig[1, 1, Right()], p1)
+Makie.Colorbar(fig[1, 2, Right()], p2)
+linkaxes!(a1, a2)
+
 ```
 
 show distance:
@@ -83,11 +141,11 @@ dists = ConScape.expected_cost(h);
 ```
 
 ```julia
-ConScape.plot_values(g, dists[:,4300], title="RSP Expected Cost Distance")
+ConScape.plot_values(g, dists[:, 4300], title="RSP Expected Cost Distance")
 ```
 
 ```julia
-ConScape.plot_values(g, dists[:,4300], title="RSP Expected Cost Distance")
+ConScape.plot_values(g, dists[:, 4300], title="RSP Expected Cost Distance")
 # savefig("figure_ECDistance.png")
 ```
 
