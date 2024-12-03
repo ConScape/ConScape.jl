@@ -11,8 +11,8 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```julia
-mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
-hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
+mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
+hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN)
 ```
 
 ```julia
@@ -40,7 +40,7 @@ maxkld
 ```
 
 ```julia
-target_mean_D_KL = 0.5*maxkld
+target_mean_D_KL = 0.5 * maxkld
 target_mean_D_KL
 ```
 
@@ -56,7 +56,7 @@ r = optimize(_θ -> mean_D_KL_difference(_θ, g, target_mean_D_KL), 0.0, 3.0; it
 ```
 
 ```julia
-sqrt(r.minimum)/target_mean_D_KL
+sqrt(r.minimum) / target_mean_D_KL
 ```
 
 ```julia
@@ -86,7 +86,7 @@ g = ConScape.perm_wall_sim(nrows, ncols;
     corridorpositions=(0.5,),
     impossible_affinity=0.,
     # Qualities decrease by row
-    qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
+    qualities=copy(reshape(collect(nrows * ncols:-1:1), ncols, nrows)'))
 
 
 θ = 10.0
@@ -102,7 +102,7 @@ maxkld
 ```
 
 ```julia
-100*ConScape.mean_kl_divergence(h)/maxkld
+100 * ConScape.mean_kl_divergence(h) / maxkld
 ```
 
 ```julia
@@ -110,9 +110,9 @@ dist = ConScape.expected_cost(h);
 ```
 
 ```julia
-target_node = Int(ceil((ncols-1)/2 - 3)*nrows + ceil((nrows+1)/2))
+target_node = Int(ceil((ncols - 1)/2 - 3) * nrows + ceil((nrows + 1) / 2))
 
-ConScape.plot_values(g, dist[:,target_node])
+plot(Raster(dist[:, target_node], g))
 ```
 
 ```julia
@@ -125,7 +125,7 @@ g2 = ConScape.perm_wall_sim(nrows, ncols;
     corridorpositions=(0.5,),
     impossible_affinity=0.,
     # Qualities decrease by row
-    qualities=copy(reshape(collect(nrows*ncols:-1:1), ncols, nrows)'))
+    qualities=copy(reshape(collect(nrows * ncols:-1:1), ncols, nrows)'))
 ```
 
 ```julia
@@ -149,7 +149,7 @@ r = optimize(_θ -> mean_D_KL_difference(_θ, g2, target_kld), 0.0, 3.0;iteratio
 ```
 
 ```julia
-sqrt(r.minimum)/target_kld
+sqrt(r.minimum) / target_kld
 ```
 
 ```julia
@@ -167,16 +167,16 @@ dist3 = ConScape.expected_cost(h3);
 
 ```julia
 using Plots
-values_orig = ConScape.plot_values(g, map(t -> exp(-t/0.5), dist[:,target_node]))
-Plots.contour(values_orig,fill=true,levels=10, c=:plasma)
+values_orig = ConScape.plot_values(g, map(t -> exp(-t / 0.5), dist[:,target_node]))
+Plots.contour(values_orig; fill=true, levels=10, c=:plasma)
 ```
 
 ```julia
-values_wide = ConScape.plot_values(g2, map(t -> exp(-t/0.5), dist2[:,target_node]))
-Plots.contour(values_wide,fill=true,levels=10, c=:plasma)
+values_wide = ConScape.plot_values(g2, map(t -> exp(-t / 0.5), dist2[:,target_node]))
+Plots.contour(values_wide; fill=true, levels=10, c=:plasma)
 ```
 
 ```julia
-values_consKL = ConScape.plot_values(g2, map(t -> exp(-t/0.5), dist3[:,target_node]))
-Plots.contour(values_consKL,fill=true,levels=10, c=:plasma)
+values_consKL = ConScape.plot_values(g2, map(t -> exp(-t / 0.5), dist3[:,target_node]))
+Plots.contour(values_consKL; fill=true, levels=10, c=:plasma)
 ```

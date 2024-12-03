@@ -1,6 +1,6 @@
 
 ```julia
-using ConScape
+using ConScape, Rasters, ArchGDAL, Plots
 ```
 
 # Data import and GridRSP creation
@@ -10,8 +10,8 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```julia
-mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
-hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"));
+mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
+hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN);
 ```
 
 ```julia
@@ -36,11 +36,11 @@ h = ConScape.GridRSP(g, θ=0.001);
 ## Summed Expected Cost
 
 ```julia
-func = ConScape.connected_habitat(h, distance_transformation=x -> exp(-x/2000));
+func = ConScape.connected_habitat(h, distance_transformation=x -> exp(-x / 2000));
 ```
 
 ```julia
-ConScape.heatmap(Array(func), yflip=true)
+plot(func)
 ```
 
 ```julia
@@ -54,11 +54,11 @@ qᵗ = [h.g.target_qualities[i] for i in targetidx]
 ```
 
 ```julia
-similarities = map(t -> iszero(t) ? t : exp(-t/2000), ConScape.expected_cost(h));
+similarities = map(t -> iszero(t) ? t : exp(-t / 2000), ConScape.expected_cost(h));
 ```
 
 ```julia
-ConScape.plot_values(g, similarities[4300,:])
+Raster(similarities[4300, :], g) |> plot
 ```
 
 ```julia
@@ -72,7 +72,7 @@ sum(t -> isnan(t) ? 0.0 : t, func)
 ```
 
 ```julia
-ConScape.plot_values(g, func1)
+Raster(func1, g) |> plot
 ```
 
 ```julia
@@ -87,21 +87,19 @@ landscape = qˢ .* similarities .* qᵗ'
 
 ```julia
 @time vˡ, λ, vʳ = ConScape.eigmax(h, connectivity_function=ConScape.expected_cost, distance_transformation=t -> iszero(t) ? t : exp(-t/2000))
-
 λ
 ```
 
 ```julia
-ConScape.plot_values(g, real.(vʳ))
+Raster(real.(vʳ), g) |> plot
 ```
 
 ```julia
-ConScape.plot_values(g, abs.(real.(vˡ)))
+Raster(abs.(real.(vˡ)), g) |> plot
 ```
 
 ```julia
-using Plots
-plot(func1, real.(vʳ), seriestype = :scatter, legend=false, xlabel="sum", ylabel="eigenvector")
+plot(func1, real.(vʳ); seriestype=:scatter, legend=false, xlabel="sum", ylabel="eigenvector")
 ```
 
 ## Survival
@@ -111,7 +109,7 @@ similarities = h.Z;
 ```
 
 ```julia
-ConScape.plot_values(g, similarities[4300,:])
+Raster(similarities[4300, :], g) |> plot
 ```
 
 ```julia
@@ -121,18 +119,18 @@ func3 = qˢ .* similarities * qᵗ
 ```
 
 ```julia
-ConScape.plot_values(g, func3)
+Raster(func3, g) |> plot
 ```
 
 ```julia
-plot(func1, func3, seriestype = :scatter, legend=false, xlabel="sum", ylabel="eigenvector")
+plot(func1, func3; seriestype=:scatter, legend=false, xlabel="sum", ylabel="eigenvector")
 ```
 
 ## Probability of Connectivity
 
 ```julia
 lcps = ConScape.least_cost_distance(g)
-ConScape.plot_values(g, lcps[4300,:])
+Raster(lcps[4300, :], g) |> plot
 ```
 
 ```julia
@@ -140,7 +138,7 @@ similarities = map(t -> iszero(t) ? t : exp(-t/2.5), lcps);
 ```
 
 ```julia
-ConScape.plot_values(g, similarities[4300,:])
+Raster(similarities[4300, :], g) |> plot
 ```
 
 ```julia
@@ -150,5 +148,5 @@ pc = qˢ .* similarities * qᵗ
 ```
 
 ```julia
-ConScape.plot_values(g, pc)
+Raster(pc, g) |> plot
 ```

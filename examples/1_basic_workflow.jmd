@@ -11,8 +11,9 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```julia
-mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
-hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
+# TODO remove `replace_missing` and use missingval=NaN in the next Rasters.jl breaking release
+mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
+hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN)
 ```
 
 ```julia
@@ -39,12 +40,12 @@ g = ConScape.Grid(size(mov_prob)...,
 ```
 
 ```julia
-ConScape.plot_outdegrees(g, title="Permeabilty")
+plot(ConScape.outdegrees(g); title="Permeabilty")
 # savefig("figure_grid_outdeg.png")
 ```
 
 ```julia
-ConScape.heatmap(g.source_qualities, yflip=true, title="Qualities")
+heatmap(g.source_qualities; title="Qualities")
 # savefig("figure_grid_qualities.png")
 ```
 
@@ -61,7 +62,7 @@ g.affinities
 ```
 
 ```julia
-(g.nrows, g.ncols, g.nrows*g.ncols)
+(g.nrows, g.ncols, g.nrows * g.ncols)
 ```
 
 # Step 2: Habitat creation
@@ -75,7 +76,7 @@ show distance:
 ```julia
 tmp = zeros(5345)
 tmp[4300] = 1
-ConScape.plot_values(g, tmp, title="Target (or is it Source?) Pixel")
+plot(Raster(tmp, g), title="Target (or is it Source?) Pixel")
 ```
 
 ```julia
@@ -83,16 +84,16 @@ dists = ConScape.expected_cost(h);
 ```
 
 ```julia
-ConScape.plot_values(g, dists[:,4300], title="RSP Expected Cost Distance")
+plot(Raster(dists[:,4300], g), title="RSP Expected Cost Distance")
 ```
 
 ```julia
-ConScape.plot_values(g, dists[:,4300], title="RSP Expected Cost Distance")
+plot(Raster(dists[:,4300], g), title="RSP Expected Cost Distance")
 # savefig("figure_ECDistance.png")
 ```
 
 ```julia
-ConScape.plot_values(g, map!(x -> exp(-x/75),dists[:,4300],dists[:,4300]), title="Proximity")
+plot(Raster(map(x -> exp(-x/75), dists[:, 4300]), g), title="Proximity")
 ```
 
 # Step 3: Amount of Connected Habitat
@@ -102,11 +103,11 @@ func = ConScape.connected_habitat(h, distance_transformation=x -> exp(-x/75));
 ```
 
 ```julia
-ConScape.heatmap(Array(func), yflip=true, title="Connected Habitat")
+heatmap(func; title="Connected Habitat")
 ```
 
 ```julia
-ConScape.heatmap(Array(func), yflip=true, title="Connected Habitat")
+heatmap(func; title="Connected Habitat")
 # savefig("figure_ConnectedHabitat.png")
 ```
 
@@ -119,18 +120,18 @@ sum(t -> isfinite(t) ? t : 0.0, func)
 ## quality weighted
 
 ```julia
-ConScape.heatmap(ConScape.betweenness_qweighted(h), yflip=true, title="Quality-weighted Movement Flow")
+plot(ConScape.betweenness_qweighted(h); title="Quality-weighted Movement Flow")
 ```
 
 ```julia
-ConScape.heatmap(ConScape.betweenness_qweighted(h), yflip=true, title="Quality-weighted Movement Flow")
+plot(ConScape.betweenness_qweighted(h); title="Quality-weighted Movement Flow")
 # savefig("figure_Qweighted_flow.png")
 ```
 
 Effect of theta:
 
 ```julia
-tmp = zeros(g.nrows, g.ncols)
+tmp = zeros(dims(g))
 #tmp[42,58] = 1
 #tmp[66, 90] = 1
 tmp[60,70] = 1
@@ -139,64 +140,37 @@ g_tmp = ConScape.Grid(size(mov_prob)...,
                       affinities=ConScape.graph_matrix_from_raster(mov_prob),
                       qualities=tmp,
                       costs=ConScape.MinusLog());
-ConScape.heatmap(g_tmp.source_qualities, yflip=true)
+plot(g_tmp.source_qualities)
 ```
 
 ```julia
 thetas = (2.5, 1.0, 0.5, 0.1, 0.01, 0.001)
-betw = [copy(mov_prob), copy(mov_prob), copy(mov_prob), copy(mov_prob), copy(mov_prob), copy(mov_prob)]
-
-for i in 1:length(thetas)
-    h_tmp = ConScape.GridRSP(g_tmp, θ=thetas[i]);
-    betw[i] = ConScape.betweenness_qweighted(h_tmp)
+betw_rasters = map(thetas) do θ
+    h_tmp = ConScape.GridRSP(g_tmp; θ);
+    ConScape.betweenness_qweighted(h_tmp)
 end
+betw = RasterStack(betw_rasters; name=map(θ -> "theta=$θ", thetas))
 ```
 
 ```julia
-using Plots
-```
-
-```julia
-b1 =ConScape.heatmap(betw[1], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=2.5",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b2 =ConScape.heatmap(betw[2], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=1.0",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b3 =ConScape.heatmap(betw[3], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.5",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b4 =ConScape.heatmap(betw[4], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.1",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b5 =ConScape.heatmap(betw[5], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.01",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b6 =ConScape.heatmap(betw[6], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.001",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-plot(b1,b2,b3,b4,b5,b6, layout = (2,3), size = (2*200, 3*100), dpi=150)
-```
-
-```julia
-b1 =ConScape.heatmap(betw[1], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=2.5",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b2 =ConScape.heatmap(betw[2], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=1.0",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b3 =ConScape.heatmap(betw[3], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.5",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b4 =ConScape.heatmap(betw[4], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.1",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b5 =ConScape.heatmap(betw[5], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.01",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-b6 =ConScape.heatmap(betw[6], yflip=true, legend = :none, xlim=(60,120), ylim=(20,80), title="theta=0.001",
-    titlefont = font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false)
-plot(b1,b2,b3,b4,b5,b6, layout = (2,3), size = (2*200, 3*100), dpi=150)
+plot(betw; xlim=(60, 120), ylim=(20, 80), legend=:none,
+    titlefont=font(10), xaxis=false, yaxis=false, aspect_ratio=:equal, grid=false
+)
 # savefig("output_figures/figure_thetas.png")
 ```
 
 ## Proximity weighted
 
 ```julia
-ConScape.heatmap(ConScape.betweenness_kweighted(h, distance_transformation=x -> exp(-x/75)), yflip=true, title="Proximity-weighted Movement Flow")
+plot(ConScape.betweenness_kweighted(h, distance_transformation=x -> exp(-x/75)); 
+    title="Proximity-weighted Movement Flow"
+)
 ```
 
 ```julia
-ConScape.heatmap(ConScape.betweenness_kweighted(h, distance_transformation=x -> exp(-x/75)), yflip=true, title="Proximity-weighted Movement Flow")
+plot(ConScape.betweenness_kweighted(h, distance_transformation=x -> exp(-x/75)); 
+    title="Proximity-weighted Movement Flow"
+)
 # savefig("output_figures/figure_Pweighted_flow.png")
 ```
 
@@ -207,11 +181,11 @@ ConScape.heatmap(ConScape.betweenness_kweighted(h, distance_transformation=x -> 
 We need a smaller (i.e. lower resolution) landscape for computational convenience:
 
 ```julia
-mov_prob_2000, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_2000.asc"))
-hab_qual_2000, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_2000.asc"))
+mov_prob_2000 = replace_missing(Raster(joinpath(datadir, "mov_prob_2000.asc")), NaN)
+hab_qual_2000 = replace_missing(Raster(joinpath(datadir, "hab_qual_2000.asc")), NaN)
 
 # hack for the sensitivity:
-hab_qual_2000[(mov_prob_2000.>0) .== isnan.(hab_qual_2000)] .= 1e-20;
+hab_qual_2000[(mov_prob_2000 .> 0) .== isnan.(hab_qual_2000)] .= 1e-20;
 
 g_2000 = ConScape.Grid(size(mov_prob_2000)...,
                       affinities=ConScape.graph_matrix_from_raster(mov_prob_2000),

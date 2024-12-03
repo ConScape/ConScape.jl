@@ -10,9 +10,9 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```julia
-mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "prob_panther_cropped.asc"))
-mov_cost, meta_c = ConScape.readasc(joinpath(datadir, "mort_panther_cropped.asc"))
-hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "prob_panther_cropped.asc"))
+mov_prob = replace_missing(Raster(joinpath(datadir, "prob_panther_cropped.asc")), NaN)
+mov_cost = replace_missing(Raster(joinpath(datadir, "mort_panther_cropped.asc")), NaN)
+hab_qual = replace_missing(Raster(joinpath(datadir, "prob_panther_cropped.asc")), NaN)
 ```
 
 ```julia
@@ -40,7 +40,7 @@ meta_c
 # Step 2: GridRSP creation
 
 ```julia
-g2 = ConScape.Grid(size(mov_prob)...,
+g2 = ConScape.Grid(size(mov_prob)...;
     affinities=ConScape.graph_matrix_from_raster(mov_cost),
     qualities=hab_qual);
 ConScape.plot_indegrees(g2)
@@ -55,7 +55,7 @@ show survival:
 ```julia
 tmp = zeros(17212)
 tmp[15000] = 1
-ConScape.plot_values(g, tmp, title="Target (or is it Source?) Pixel")
+plot(Raster(tmp, g); title="Target (or is it Source?) Pixel")
 ```
 
 ```julia
@@ -63,13 +63,16 @@ pb = ConScape.survival_probability(h);
 ```
 
 ```julia
-ConScape.plot_values(g, map(t -> t==1 ? NaN : t, pb[:,15000]), title="Survival Probability")
+plot(Raster(map(t -> t==1 ? NaN : t, pb[:,15000]), g); title="Survival Probability")
 ```
 
 ```julia
-func = ConScape.connected_habitat(h, connectivity_function=ConScape.survival_probability, distance_transformation=ConScape.ExpMinus())
+func = ConScape.connected_habitat(h; 
+    connectivity_function=ConScape.survival_probability, 
+    distance_transformation=ConScape.ExpMinus()
+)
 ```
 
 ```julia
-ConScape.heatmap(Array(func), yflip=true, title="Cumulative Connected Habitat (Survival)")
+plot(func; title="Cumulative Connected Habitat (Survival)")
 ```

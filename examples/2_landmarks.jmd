@@ -1,7 +1,7 @@
 # Landmark function for testing purposes
 
 ```julia
-using ConScape, SparseArrays, LinearAlgebra
+using ConScape, Rasters, ArchGDAL, SparseArrays, LinearAlgebra, Plots
 ```
 
 ```julia
@@ -19,8 +19,8 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```julia
-mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
-hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"));
+mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
+hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN);
 ```
 
 ```julia
@@ -78,12 +78,12 @@ cor(filter(!isnan, func), filter(!isnan, func_coarse))
 
 ```julia
 qbetw = ConScape.betweenness_qweighted(h);
-ConScape.heatmap(qbetw, yflip=true)
+heatmap(qbetw)
 ```
 
 ```julia
 qbetw_coarse = ConScape.betweenness_qweighted(h_coarse);
-ConScape.heatmap(qbetw_coarse, yflip=true)
+ConScape.heatmap(qbetw_coarse)
 ```
 
 ```julia
@@ -122,10 +122,6 @@ end
 
 est_func = first.(tmp)
 cor_func = last.(tmp);
-```
-
-```julia
-using Plots
 ```
 
 ```julia
