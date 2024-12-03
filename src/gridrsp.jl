@@ -35,10 +35,10 @@ _get_grid(grsp::GridRSP) = grsp.g
 _get_grid(g::Grid)       = g
 
 _maybe_raster(mat::Raster, g) = mat
-_maybe_raster(mat::AbstractMatix, g::Union{Grid,GridRSP}) = 
+_maybe_raster(mat::AbstractMatrix, g::Union{Grid,GridRSP}) = 
     _maybe_raster(mat, dims(g))
-_maybe_raster(mat::AbstractMatix, ::Nothing) = mat
-_maybe_raster(mat::AbstractMatix, dims::Tuple) = Raster(mat, dims)
+_maybe_raster(mat::AbstractMatrix, ::Nothing) = mat
+_maybe_raster(mat::AbstractMatrix, dims::Tuple) = Raster(mat, dims)
 
 function Base.show(io::IO, ::MIME"text/plain", grsp::GridRSP)
     print(io, summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)

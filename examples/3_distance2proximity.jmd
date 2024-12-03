@@ -1,6 +1,6 @@
 
 ```julia
-using ConScape
+using ConScape, Rasters, ArchGDAL, Plots
 ```
 
 # Step 1: data import and Grid creation
@@ -10,8 +10,8 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```julia
-mov_prob, meta_p = ConScape.readasc(joinpath(datadir, "mov_prob_1000.asc"))
-hab_qual, meta_q = ConScape.readasc(joinpath(datadir, "hab_qual_1000.asc"))
+mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
+hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN)
 ```
 
 ```julia
@@ -32,7 +32,7 @@ h = ConScape.GridRSP(g, θ=theta);
 ```julia
 tmp = zeros(5345)
 tmp[4300] = 1
-ConScape.plot_values(g, tmp, title="Target (or is it Source?) Pixel")
+plot(Raster(tmp, g); title="Target (or is it Source?) Pixel")
 ```
 
 # Step 2: Euclidean distances
@@ -42,7 +42,7 @@ euclid = [hypot(xy1[1] - xy2[1], xy1[2] - xy2[2]) for xy1 in g.id_to_grid_coordi
 ```
 
 ```julia
-ConScape.plot_values(g, euclid[:,4300], title="Euclidean Distance")
+plot(Raster(euclid[:, 4300], g); title="Euclidean Distance")
 ```
 
 # Step 3: RSP Expected Cost Distances
@@ -52,49 +52,74 @@ dists = ConScape.expected_cost(h);
 ```
 
 ```julia
-ConScape.plot_values(g, dists[:,4300], title="RSP Expected Cost Distance")
+plot(Raster(dists[:, 4300], g); title="RSP Expected Cost Distance")
 ```
 
 ```julia
-using Plots
-plot(euclid[:,4300], dists[:,4300], seriestype = :scatter, legend=false, xlabel="Euclidean Distance", ylabel="Expected Cost")
+plot(euclid[:, 4300], dists[:, 4300]; 
+    seriestype=:scatter, 
+    legend=false, 
+    xlabel="Euclidean Distance", 
+    ylabel="Expected Cost"
+)
 ```
 
 ```julia
-ConScape.plot_values(g, map!(x -> exp(-x/1000),dists[:,4300],dists[:,4300]), title="RSP Expected Cost Proximity (log)")
+plot(Raster(map(x -> exp(-x / 1000), dists[:,4300]), g); 
+    title="RSP Expected Cost Proximity (log)"
+)
 ```
 
 ```julia
-ConScape.plot_values(g, map!(x -> x<350 ? 1 : 350/x,dists[:,4300],dists[:,4300]), title="RSP Expected Cost Proximity (inv)")
+plot(Raster(map(x -> x<350 ? 1 : 350/x, dists[:,4300]), g); 
+    title="RSP Expected Cost Proximity (inv)"
+)
 ```
 
 ```julia
-plot(map(x -> exp(-x/1000), dists[:,4300]), map(x -> x<350 ? 1 : 350/x, dists[:,4300]), seriestype = :scatter, legend=false, xlabel="log", ylabel="inv")
+plot(
+    map(x -> exp(-x / 1000), dists[:, 4300]), 
+    map(x -> x < 350 ? 1 : 350 / x, dists[:, 4300]); 
+    seriestype=:scatter, 
+    legend=false, 
+    xlabel="log", 
+    ylabel="inv"
+)
 ```
 
 # Step 4: Survival Proximity
 
 ```julia
 surv_prob = h.Z;
-tmp = surv_prob[:,4300]
-map!(t -> t>1 ? 1 : t,  tmp, tmp)
-
-ConScape.plot_values(g, tmp, title="Survival proximity")
+tmp = max.(surv_prob[:, 4300], 1)
+plot(Raster(tmp, g); title="Survival proximity")
 ```
 
 ```julia
-using Plots
 surv_prob = h.Z;
-tmp = surv_prob[:,4300]
-map!(t -> t>1 ? 1 : t,  tmp, tmp)
-
-plot(euclid[:,4300], tmp, seriestype = :scatter, legend=false, xlabel="Euclidean Distance", ylabel="Surival Probability")
+tmp = max.(surv_prob[:, 4300], 1)
+plot(euclid[:, 4300], tmp; 
+    seriestype=:scatter, 
+    legend=false, 
+    xlabel="Euclidean Distance", 
+    ylabel="Surival Probability"
+)
 ```
 
 ```julia
-plot(dists[:,4300], tmp, seriestype = :scatter, legend=false, xlabel="Expected Cost", ylabel="Surival Probability")
+plot(dists[:, 4300], tmp; 
+    seriestype=:scatter, 
+    legend=false, 
+    xlabel="Expected Cost", 
+    ylabel="Surival Probability"
+)
 ```
 
 ```julia
-plot(map(x -> exp(-x/1000), dists[:,4300]), tmp, seriestype = :scatter, legend=false, xlabel="Expected Cost Proximity", ylabel="Surival Probability")
+plot(map(x -> exp(-x / 1000), dists[:, 4300]), tmp; 
+    seriestype=:scatter, 
+    legend=false, 
+    xlabel="Expected Cost Proximity", 
+    ylabel="Surival Probability"
+)
 ```

@@ -24,9 +24,9 @@ struct Grid
     costfunction::Union{Nothing,Transformation}
     costmatrix::SparseMatrixCSC{Float64,Int}
     id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
-    source_qualities::Matrix{Float64}
+    source_qualities::AbstractMatrix{Float64}
     target_qualities::AbstractMatrix{Float64}
-    dims::Tuple
+    dims::Union{Tuple,Nothing}
 end
 
 """
@@ -63,8 +63,8 @@ function Grid(nrows::Integer,
         throw(ArgumentError("grid size ($nrows, $ncols) is incompatible with size of affinity matrix ($n, $n)"))
     end
 
-    _source_qualities = convert(Matrix{Float64}        , source_qualities)
-    _target_qualities = convert(AbstractMatrix{Float64}, target_qualities)
+    _source_qualities = convert(Matrix{Float64}        , _unwrap(source_qualities))
+    _target_qualities = convert(AbstractMatrix{Float64}, _unwrap(target_qualities))
 
     # Prune
     # id_to_grid_coordinate_list = if prune
@@ -138,7 +138,8 @@ function Base.show(io::IO, ::MIME"text/html", g::Grid)
         write(io, "</td></tr></table>")
     end
 end
-
+_unwrap(R::Raster) = parent(R)
+_unwrap(R::AbstractMatrix) = R
 # Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices
 _targetidx(q::Matrix, grididxs::Vector) = grididxs
@@ -153,31 +154,34 @@ function _targetidx_and_nodes(g::Grid)
     return targetidx, targetnodes
 end
 
-function plot_values(g::Grid, values::Vector; kwargs...)
-    canvas = fill(NaN, g.nrows, g.ncols)
-    for (i,v) in enumerate(values)
-        canvas[g.id_to_grid_coordinate_list[i]] = v
+function _fill_matrix(values, g) 
+    M = fill(NaN, g.nrows, g.ncols)
+    for (i, v) in enumerate(values)
+        M[g.id_to_grid_coordinate_list[i]] = v
     end
-    _heatmap(canvas, g; kwargs...)
+    return M
 end
 
-function plot_outdegrees(g::Grid; kwargs...)
+function Raster(values::AbstractVector, g::Grid; kwargs...)
+    isnothing(dims(g)) && throw(ArgumentError("Grid dims are `nothing` - it was not initialised with a Raster"))
+    return Raster(_fill_matrix(values, g), dims(g); kwargs...)
+end
+
+function outdegrees(g::Grid)
     values = sum(g.affinities, dims=2)
-    canvas = fill(NaN, g.nrows, g.ncols)
-    for (i,v) in enumerate(values)
-        canvas[g.id_to_grid_coordinate_list[i]] = v
-    end
-    _heatmap(canvas, g; kwargs...)
+    _maybe_raster(_fill_matrix(values, g), g)
 end
 
-function plot_indegrees(g::Grid; kwargs...)
+function indegrees(g::Grid; kwargs...)
     values = sum(g.affinities, dims=1)
-    canvas = fill(NaN, g.nrows, g.ncols)
-    for (i,v) in enumerate(values)
-        canvas[g.id_to_grid_coordinate_list[i]] = v
-    end
-    _heatmap(canvas, g; kwargs...)
+    _maybe_raster(_fill_matrix(values, g), g)
 end
+
+plot_values(g::Grid, values::Vector; kwargs...) =
+    _heatmap(_fill_matrix(values, g), g; kwargs...)
+plot_outdegrees(g::Grid; kwargs...) = _heatmap(outdegrees(g), g; kwargs...)
+plot_indegrees(g::Grid; kwargs...) = _heatmap(indegrees(g), g; kwargs...)
+
 
 # If the grid has raster dimensions, 
 # plot as a raster on a spatial grid
@@ -250,7 +254,9 @@ function largest_subgraph(g::Grid)
         g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinities),
         g.id_to_grid_coordinate_list[scci],
         g.source_qualities,
-        g.target_qualities)
+        g.target_qualities,
+        g.dims,
+    )
 end
 
 """
