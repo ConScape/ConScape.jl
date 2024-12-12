@@ -431,7 +431,8 @@ function connected_habitat(grsp::GridRSP,
                 grsp.g.costfunction === nothing ? grsp.g.costmatrix : mapnz(grsp.g.costfunction, affinities),
                 grsp.g.id_to_grid_coordinate_list,
                 newsource_qualities,
-                newtarget_qualities)
+                newtarget_qualities,
+                dims(grsp))
 
     newh = GridRSP(newg, θ=grsp.θ)
 
