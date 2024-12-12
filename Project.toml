@@ -25,3 +25,9 @@ ProgressLogging = "0.1"
 Rasters = "0.12"
 SimpleWeightedGraphs = "1.1"
 julia = "1.10"
+
+[extras]
+ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
+
+[targets]
+test = ["ArchGDAL"]
