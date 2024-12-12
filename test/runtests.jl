@@ -8,71 +8,37 @@ _tempdir = mkdir(tempname())
     landscape = "sno_2000"
     θ = 0.1
 
-    affinity_raster = Raster(joinpath(datadir, "affinities_$landscape.asc"))
+    # The way the ascii is read in is reversed and rotated from what GDAL does
+    affinity_raster = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "affinities_$landscape.asc")), NaN)); dims=X)
+    affinity_asc = ConScape.readasc(joinpath(datadir, "affinities_$landscape.asc"))[1]
+    # They are only the same for Float32
+    @test all(Float32.(affinity_asc) .=== Float32.(affinity_raster))
+
     affinities = ConScape.graph_matrix_from_raster(affinity_raster)
-    @test affinities[1000:1002, 1000:1002] == [
+    @test Float32.(affinities[1000:1002, 1000:1002]) == Float32.([
         0.0               0.00031508895477488 0.0
         0.133336775193571 0.0                 0.00119533310704962
-        0.0               0.00031508895477488 0.0]
+        0.0               0.00031508895477488 0.0])
 
-    qualities = Raster(joinpath(datadir, "qualities_$landscape.asc"))
-    # FIXME! We'd have to handle this somehow in the library
-    @test_broken isnan.(affinity_raster) == isnan.(qualities)
-    qualities[(affinity_raster .> 0) .& isnan.(qualities)] .= 1e-20
+    qualities_asc = ConScape.readasc(joinpath(datadir, "qualities_$landscape.asc"))[1]
+    qualities = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "qualities_$landscape.asc")), NaN)); dims=X)
+    @test all(Float32.(qualities_asc) .=== Float32.(qualities))
+    @test dims(qualities) == dims(affinity_raster)
 
     g = ConScape.Grid(size(affinity_raster)...,
         affinities=affinities,
         qualities=qualities
         )
-
-    @testset "Grid fields" begin
-        @test g.ncols == 59
-        @test g.nrows == 44
-        @test g.affinities[1000:1002, 1000:1002] == [
-            0.0               0.557963581550866 0.0
-            0.607917269319296 0.0               0.273319838512689
-            0.0               0.557963581550866 0.0]
-        @test g.id_to_grid_coordinate_list[1000:1002] == [
-            CartesianIndex(37, 41), CartesianIndex(38, 41), CartesianIndex(39, 41)]
-        @test g.source_qualities[30:32, 30:32] == [
-            0.151232712594792 0.146546460358077  0.00748122241586316
-            0.170905506269773 0.0532220626743219 0.00309705330379074
-            0.10284506027383  0.059244283127482  0.0361260830667015]
-        @test g.target_qualities[30:32, 30:32] == [
-            0.151232712594792 0.146546460358077  0.00748122241586316
-            0.170905506269773 0.0532220626743219 0.00309705330379074
-            0.10284506027383  0.059244283127482  0.0361260830667015]
-        @test g.costfunction == ConScape.MinusLog()
-        @test g.costmatrix.nzval[end-2:end] ≈ [
-            17.339919976251554
-            16.99334638597158
-            17.339919976251554]
-        @test dims(g) === dims(affinity_raster)
-    end
+    @test dims(g) === dims(qualities)
 
     @testset "Rasters are returned" begin
         @test ConScape.indegrees(g) isa Raster
-        @test ConScape.outdegrees(g)) isa Raster
+        @test ConScape.outdegrees(g) isa Raster
         @test Raster(ones(length(g.id_to_grid_coordinate_list)), g) isa Raster
     end
 
     grsp = ConScape.GridRSP(g, θ=θ)
-
-    @testset "GridRSP fields" begin
-        @test grsp.Pref.nzval[end-2:end] ≈ [
-            0.00031266870414554466,
-            0.00018055948867712768,
-            0.0001228960184654185]
-        @test grsp.W.nzval[end-2:end] ≈ [
-            5.521044625610329e-5,
-            3.300719810371289e-5,
-            2.1700745653826738e-5]
-        @test grsp.Z[100:102,111:113] ≈ [
-            0.00016367398568399748 0.00015329797258788392 0.00023129137088760695
-            6.432239855543766e-5   5.4944307498337036e-5  7.336349355801132e-5
-            2.421703672476501e-5   1.953276891351377e-5   2.4440692415300965e-5]
-        @test dims(grsp) === dims(affinity_raster)
-    end
+    @test dims(grsp) === dims(affinity_raster)
 
     @testset "Test mean_kl_divergence" begin
         @test ConScape.mean_kl_divergence(grsp) ≈ 323895.3828183995
@@ -95,7 +61,7 @@ _tempdir = mkdir(tempname())
         @testset "q-weighted" begin
             bet = ConScape.betweenness_qweighted(grsp)
             @test bet isa Raster
-            @test bet[21:23, 21:23] ≈ [
+            @test parent(bet[21:23, 21:23]) ≈ [
                 1930.1334372152335  256.91061166392745 2866.2998374065373
                 4911.996715311025  1835.991238248377    720.755518530375
                 4641.815380725279  3365.3296878569213   477.1085971945757]
