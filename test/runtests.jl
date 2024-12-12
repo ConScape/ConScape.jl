@@ -1,9 +1,172 @@
 using ConScape, Test, SparseArrays
+using Rasters, ArchGDAL, Plots
 
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 _tempdir = mkdir(tempname())
 
-@testset "sno_2000" begin
+@testset "sno_2000 Rasters" begin
+    landscape = "sno_2000"
+    θ = 0.1
+
+    affinity_raster = Raster(joinpath(datadir, "affinities_$landscape.asc"))
+    affinities = ConScape.graph_matrix_from_raster(affinity_raster)
+    @test affinities[1000:1002, 1000:1002] == [
+        0.0               0.00031508895477488 0.0
+        0.133336775193571 0.0                 0.00119533310704962
+        0.0               0.00031508895477488 0.0]
+
+    qualities = Raster(joinpath(datadir, "qualities_$landscape.asc"))
+    # FIXME! We'd have to handle this somehow in the library
+    @test_broken isnan.(affinity_raster) == isnan.(qualities)
+    qualities[(affinity_raster .> 0) .& isnan.(qualities)] .= 1e-20
+
+    g = ConScape.Grid(size(affinity_raster)...,
+        affinities=affinities,
+        qualities=qualities
+        )
+
+    @testset "Grid fields" begin
+        @test g.ncols == 59
+        @test g.nrows == 44
+        @test g.affinities[1000:1002, 1000:1002] == [
+            0.0               0.557963581550866 0.0
+            0.607917269319296 0.0               0.273319838512689
+            0.0               0.557963581550866 0.0]
+        @test g.id_to_grid_coordinate_list[1000:1002] == [
+            CartesianIndex(37, 41), CartesianIndex(38, 41), CartesianIndex(39, 41)]
+        @test g.source_qualities[30:32, 30:32] == [
+            0.151232712594792 0.146546460358077  0.00748122241586316
+            0.170905506269773 0.0532220626743219 0.00309705330379074
+            0.10284506027383  0.059244283127482  0.0361260830667015]
+        @test g.target_qualities[30:32, 30:32] == [
+            0.151232712594792 0.146546460358077  0.00748122241586316
+            0.170905506269773 0.0532220626743219 0.00309705330379074
+            0.10284506027383  0.059244283127482  0.0361260830667015]
+        @test g.costfunction == ConScape.MinusLog()
+        @test g.costmatrix.nzval[end-2:end] ≈ [
+            17.339919976251554
+            16.99334638597158
+            17.339919976251554]
+        @test dims(g) === dims(affinity_raster)
+    end
+
+    @testset "Rasters are returned" begin
+        @test ConScape.indegrees(g) isa Raster
+        @test ConScape.outdegrees(g)) isa Raster
+        @test Raster(ones(length(g.id_to_grid_coordinate_list)), g) isa Raster
+    end
+
+    grsp = ConScape.GridRSP(g, θ=θ)
+
+    @testset "GridRSP fields" begin
+        @test grsp.Pref.nzval[end-2:end] ≈ [
+            0.00031266870414554466,
+            0.00018055948867712768,
+            0.0001228960184654185]
+        @test grsp.W.nzval[end-2:end] ≈ [
+            5.521044625610329e-5,
+            3.300719810371289e-5,
+            2.1700745653826738e-5]
+        @test grsp.Z[100:102,111:113] ≈ [
+            0.00016367398568399748 0.00015329797258788392 0.00023129137088760695
+            6.432239855543766e-5   5.4944307498337036e-5  7.336349355801132e-5
+            2.421703672476501e-5   1.953276891351377e-5   2.4440692415300965e-5]
+        @test dims(grsp) === dims(affinity_raster)
+    end
+
+    @testset "Test mean_kl_divergence" begin
+        @test ConScape.mean_kl_divergence(grsp) ≈ 323895.3828183995
+    end
+
+    @testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
+        nn in (ConScape.N4, ConScape.N8),
+            w in (ConScape.TargetWeight, ConScape.AverageWeight),
+                mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
+# No need to test this on sno_100 and doesn't deepend on θ
+# FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
+                    @test ConScape.graph_matrix_from_raster(
+                        affinity_raster,
+                        neighbors=nn,
+                        weight=w,
+                        matrix_type=mt) isa ConScape.SparseMatrixCSC
+    end
+
+    @testset "Test betweenness" begin
+        @testset "q-weighted" begin
+            bet = ConScape.betweenness_qweighted(grsp)
+            @test bet isa Raster
+            @test bet[21:23, 21:23] ≈ [
+                1930.1334372152335  256.91061166392745 2866.2998374065373
+                4911.996715311025  1835.991238248377    720.755518530375
+                4641.815380725279  3365.3296878569213   477.1085971945757]
+        end
+
+        @testset "k-weighted" begin
+            bet = ConScape.betweenness_kweighted(grsp, diagvalue=1.)
+            @test bet isa Raster
+            @test bet[21:23, 31:33] ≈ [
+                0.04063917813171917 0.06843246983487516 0.08862506281612659
+                0.03684621201600996 0.10352876485995872 0.1255652231824746
+                0.03190640567704462 0.13832814750469344 0.1961393152256104]
+
+            # Check that summed edge betweennesses corresponds to node betweennesses:
+            bet_edge = ConScape.edge_betweenness_kweighted(grsp, diagvalue=1.)
+            @test bet_edge isa Raster
+            bet_edge_sum = fill(NaN, grsp.g.nrows, grsp.g.ncols)
+            for (i, v) in enumerate(sum(bet_edge,dims=2))
+                bet_edge_sum[grsp.g.id_to_grid_coordinate_list[i]] = v
+            end
+            @test bet_edge_sum[21:23, 31:33] ≈ bet[21:23, 31:33]
+
+            # This is a regression test based on values that we currently believe to be correct
+            bet = ConScape.betweenness_kweighted(grsp, distance_transformation=t -> exp(-t/50))
+            @test bet[21:23, 31:33] ≈ [
+                980.5828087688377 1307.981162399926 1602.8445739784497
+                826.0710054834001 1883.0940077789735 1935.4450344630702
+                676.9212075214159 2228.2700913772774 2884.0409495023364]
+
+            @test ConScape.betweenness_kweighted(grsp, distance_transformation=one)[g.id_to_grid_coordinate_list] ≈
+                ConScape.betweenness_qweighted(grsp)[g.id_to_grid_coordinate_list]
+
+            @test ConScape.edge_betweenness_kweighted(grsp, distance_transformation=one) ≈
+                ConScape.edge_betweenness_qweighted(grsp)
+        end
+    end
+
+    @testset "connected_habitat" begin
+        ch = ConScape.connected_habitat(grsp)
+        @test ch isa Raster{Float64}
+        @test size(ch) == size(grsp.g.source_qualities)
+
+        cl = ConScape.connected_habitat(grsp, CartesianIndex((20,20)))
+        @test cl isa Raster{Float64}
+        @test sum(replace(cl, NaN => 0.0)) ≈ 109.4795495188798
+    end
+
+    @testset "mean_lc_kl_divergence" begin
+        @test ConScape.ConScape.mean_lc_kl_divergence(grsp) ≈ 1.5660600315073947e6
+    end
+
+    @testset "Show methods" begin
+        b = IOBuffer()
+        show(b, "text/plain", g)
+        @test occursin("Grid", String(take!(b)))
+
+        b = IOBuffer()
+        show(b, "text/plain", grsp)
+        @test occursin("GridRSP", String(take!(b)))
+
+        b = IOBuffer()
+        show(b, "text/html", g)
+        @test occursin("Grid", String(take!(b)))
+
+        b = IOBuffer()
+        show(b, "text/html", grsp)
+        @test occursin("GridRSP", String(take!(b)))
+    end
+end
+
+@testset "sno_2000 ascii" begin
     landscape = "sno_2000"
     θ = 0.1
 
@@ -75,7 +238,7 @@ _tempdir = mkdir(tempname())
             17.339919976251554]
     end
 
-    @testset "Grid plotting" begin
+    @testset "Old Grid plotting" begin
         @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
         @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
         @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
