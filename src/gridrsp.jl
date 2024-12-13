@@ -31,15 +31,24 @@ function GridRSP(g::Grid; θ=nothing)
     return GridRSP(g, θ, Pref, W, Z)
 end
 
+_get_grid(grsp::GridRSP) = grsp.g
+_get_grid(g::Grid)       = g
+
+_maybe_raster(mat::Raster, g) = mat
+_maybe_raster(mat::AbstractMatrix, g::Union{Grid,GridRSP}) = 
+    _maybe_raster(mat, dims(g))
+_maybe_raster(mat::AbstractMatrix, ::Nothing) = mat
+_maybe_raster(mat::AbstractMatrix, dims::Tuple) = Raster(mat, dims)
+
 function Base.show(io::IO, ::MIME"text/plain", grsp::GridRSP)
     print(io, summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)
 end
-
 function Base.show(io::IO, ::MIME"text/html", grsp::GridRSP)
     t = string(summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)
     write(io, "<h4>$t</h4>")
     show(io, MIME"text/html"(), plot_outdegrees(grsp.g))
 end
+DimensionalData.dims(grsp::GridRSP) = dims(grsp.g)
 
 abstract type AbstractOperation end 
 abstract type RSPOperation <: AbstractOperation end
@@ -47,7 +56,6 @@ abstract type RSPOperation <: AbstractOperation end
 struct BetweennessQweighted <: RSPOperation end
 
 compute(r::BetweennessQweighted, grsp::GridRSP) = betweenness_qweighted(grsp)
-
 
 """
     betweenness_qweighted(grsp::GridRSP)::Matrix{Float64}
@@ -70,7 +78,7 @@ function betweenness_qweighted(grsp::GridRSP)
         bet[grsp.g.id_to_grid_coordinate_list[i]] = v
     end
 
-    return bet
+    return _maybe_raster(bet, grsp)
 end
 
 struct EdgeBetweennessQweighted <: RSPOperation end
@@ -155,7 +163,7 @@ function betweenness_kweighted(grsp::GridRSP;
         bet[grsp.g.id_to_grid_coordinate_list[i]] = v
     end
 
-    return bet
+    return _maybe_raster(bet, grsp)
 end
 
 @kwdef struct EdgeBetweennessK{CV,DT,DV} <: RSPOperation 
@@ -331,9 +339,12 @@ function least_cost_kl_divergence(C::SparseMatrixCSC, Pref::SparseMatrixCSC, tar
     return kl_div
 end
 
-struct LeastCostKullbackLeiblerDivergence <: RSPOperation end
+@kwdef struct LeastCostKullbackLeiblerDivergence <: RSPOperation 
+    target::Tuple{Int,Int}
+end
 
-compute(r::LeastCostKullbackLeiblerDivergence, grsp::GridRSP) = least_cost_kl_divergence(grsp)
+compute(r::LeastCostKullbackLeiblerDivergence, grsp::GridRSP) = 
+    least_cost_kl_divergence(grsp, r.target)
 
 """
     least_cost_kl_divergence(grsp::GridRSP, target::Tuple{Int,Int})
@@ -430,9 +441,6 @@ function connected_habitat(
 
     return connected_habitat(grsp, S, diagvalue=diagvalue)
 end
-
-_get_grid(grsp::GridRSP) = grsp.g
-_get_grid(g::Grid)       = g
 function connected_habitat(grsp::Union{Grid,GridRSP}, S::Matrix; diagvalue::Union{Nothing,Real}=nothing)
 
     g = _get_grid(grsp)
@@ -454,7 +462,7 @@ function connected_habitat(grsp::Union{Grid,GridRSP}, S::Matrix; diagvalue::Unio
         func[ij] = x
     end
 
-    return func
+    return _maybe_raster(func, grsp)
 end
 
 function connected_habitat(grsp::GridRSP,
@@ -494,7 +502,8 @@ function connected_habitat(grsp::GridRSP,
                 grsp.g.costfunction === nothing ? grsp.g.costmatrix : mapnz(grsp.g.costfunction, affinities),
                 grsp.g.id_to_grid_coordinate_list,
                 newsource_qualities,
-                newtarget_qualities)
+                newtarget_qualities,
+                dims(grsp))
 
     newh = GridRSP(newg, θ=grsp.θ)
 
@@ -685,6 +694,6 @@ function criticality(grsp::GridRSP;
     landscape = fill(NaN, size(grsp.g))
     landscape[targetidx] = critvec
 
-    return landscape
+    return _maybe_raster(landscape, grsp)
 end
 

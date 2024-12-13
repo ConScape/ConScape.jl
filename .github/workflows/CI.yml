@@ -3,9 +3,11 @@ on:
   pull_request:
     branches:
       - main
+      - dev
   push:
     branches:
       - main
+      - dev
     tags: '*'
   workflow_dispatch:
 jobs:
@@ -16,7 +18,6 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - 'min'
           - 'lts'
           - '1'
           - 'pre'
