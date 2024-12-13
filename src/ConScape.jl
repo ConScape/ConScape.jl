@@ -24,5 +24,6 @@ module ConScape
     include("io.jl")
     # Utilities
     include("utils.jl")
-
+    include("problem.jl")
+    # include("tiles.jl")
 end
