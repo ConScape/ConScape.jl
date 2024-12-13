@@ -53,6 +53,11 @@ DimensionalData.dims(grsp::GridRSP) = dims(grsp.g)
 abstract type AbstractOperation end 
 abstract type RSPOperation <: AbstractOperation end
 
+function keywords(o::T) where T<:AbstractOperation
+    vals = map(f -> getfield(o, f), fieldnames(T))
+    return NamedTuple{fieldnames(T)}(vals) 
+end
+
 struct BetweennessQweighted <: RSPOperation end
 
 compute(r::BetweennessQweighted, grsp::GridRSP) = betweenness_qweighted(grsp)
@@ -104,13 +109,14 @@ function edge_betweenness_qweighted(grsp::GridRSP)
     return betmatrix
 end
 
-@kwdef struct BetweennessK{CV,DT,DV} <: RSPOperation 
+@kwdef struct BetweennessKweighted{CV,DT,DV} <: RSPOperation 
     connectivity_function::CV=expected_cost
     distance_transformation::DT=nothing
     diagvalue::DV=nothing
 end
 
-compute(r::BetweennessK, grsp::GridRSP) = betweenness_kweighted(grsp; keywords(r)...)
+compute(o::BetweennessKweighted, grsp::GridRSP) = 
+    betweenness_kweighted(grsp; keywords(o)...)
 
 """
     betweenness_kweighted(grsp::GridRSP;
@@ -374,7 +380,7 @@ end
     approx::Bool=false
 end
 
-compute(r::ConnectedHabitat, grsp::GridRSP) = eigmax(grsp; keywords(r)...)
+compute(r::ConnectedHabitat, grsp::GridRSP) = connected_habitat(grsp; keywords(r)...)
 
 """
     connected_habitat(grsp::Union{Grid,GridRSP};

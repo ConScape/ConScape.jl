@@ -99,6 +99,41 @@ kbetw_coarse = @time ConScape.betweenness_kweighted(h_coarse, distance_transform
 cor(filter(!isnan, kbetw), filter(!isnan, kbetw_coarse))
 ```
 
+We can write this using a lazy problem definition:
+
+```julia
+ops = (;
+    func=ConScape.ConnectedHabitat(; distance_transformation=x -> exp(-x/75)),
+    qbetw=ConScape.BetweennessQweighted(),
+    kbetw=ConScape.BetweennessKweighted(),
+)
+problem = ConScape.Problem(ops; θ=theta, mode=ConScape.MatrixSolve())
+problem = ConScape.Problem(ops; θ=theta, mode=ConScape.VectorSolve())
+```
+
+Then run it for all operations on both normal and coarse grids
+
+```julia
+res = ConScape.compute(problem, g)
+res_coarse = ConScape.compute(problem, g_coarse)
+```
+
+We can plot these outputs:
+```julia
+heatmap(res.qbetw)
+heatmap(res_coarse.qbetw)
+heatmap(res.kbetw)
+heatmap(res_coarse.kbetw)
+heatmap(res.func)
+heatmap(res_coarse.func)
+```
+
+And we can check the corelation similarly to above, by getting
+layers from `res` and `res_coarse`
+```julia
+cor(filter(!isnan, res.kbetw), filter(!isnan, res_coarse.kbetw))
+```
+
 # Test landmark performance for amount of connected habitat
 
 ```julia

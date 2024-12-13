@@ -3,6 +3,7 @@ module ConScape
     using SparseArrays, LinearAlgebra
     using Graphs, Plots, SimpleWeightedGraphs, ProgressLogging, ArnoldiMethod
     using Rasters
+    using LinearSolve
     using Rasters.DimensionalData
 
     abstract type ConnectivityFunction <: Function end
@@ -27,5 +28,5 @@ module ConScape
     # Utilities
     include("utils.jl")
     include("problem.jl")
-    # include("tiles.jl")
+    include("tiles.jl")
 end
