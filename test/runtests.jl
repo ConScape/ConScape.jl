@@ -25,6 +25,8 @@ _tempdir = mkdir(tempname())
     @test all(Float32.(qualities_asc) .=== Float32.(qualities))
     @test dims(qualities) == dims(affinity_raster)
 
+    qualities[(affinity_raster .> 0) .& isnan.(qualities)] .= 1e-20
+
     g = ConScape.Grid(size(affinity_raster)...,
         affinities=affinities,
         qualities=qualities
