@@ -8,7 +8,7 @@ This is a small demo of the functionalty in the `ConScape` package for Julia.
 First we need to load the package
 
 ```julia
-using ConScape
+using ConScape, Plots
 ```
 
 ```julia
@@ -31,7 +31,9 @@ Cg = ConScape.SimpleWeightedGraph(h.g.costmatrix)
 ```
 
 ```julia
-map!(t -> ifelse(isfinite(t) && !iszero(t), exp(-t), t), distances_all2L_shortestpath, distances_all2L_shortestpath)
+map!(distances_all2L_shortestpath, distances_all2L_shortestpath) do t
+    (isfinite(t) && !iszero(t)) ? exp(-t) : t 
+end
 ```
 
 ```julia
@@ -41,7 +43,7 @@ ConScape.heatmap(reshape(bet_shortest, 30, 60), yflip=true)
 
 ```julia
 bet_q = ConScape.betweenness_qweighted(h)
-ConScape.heatmap(bet_q, yflip=true)
+heatmap(bet_q; yflip=true)
 ```
 
 ```julia
@@ -50,5 +52,5 @@ ConScape.heatmap(bet_q, yflip=true)
 
 ```julia
 bet_k = ConScape.betweenness_kweighted(h);
-ConScape.heatmap(bet_k, yflip=true)
+heatmap(bet_k; yflip=true)
 ```
