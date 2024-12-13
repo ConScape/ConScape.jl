@@ -1,6 +1,3 @@
-abstract type AbstractOperation end 
-abstract type RSPOperation <: AbstractOperation end
-
 abstract type AbstractProblem end
 
 """
@@ -58,10 +55,14 @@ end
 Problem(args...; kw...) = Problem(args; kw...)
 Problem(p::AbstractProblem; θ=nothing, mode=p.mode) = Problem(o.ops; mode, θ)
 
+function compute(p::Problem, rast::RasterStack)
+    g = Grid(p, rast)
+    compute(p, g)
+end
 compute(p::Problem, g::Grid) = compute(p.mode, p, g::Grid)
 
 # Use an iterative solver so the grid is not materialised
-function compute(m::VectorSolve, p::Problem, g::Grid)
+function compute(m::VectorSolve, p::AbstractProblem, g::Grid)
     # Compute Z column by column
     _, targetnodes = _targetidx_and_nodes(g)
     P = _Pref(g.affinities)
@@ -89,7 +90,7 @@ function compute(m::VectorSolve, p::Problem, g::Grid)
     end
 end
 # Materialise the whole rhs matrix
-function compute(m::MatrixSolve, o::Problem, g::Grid) 
+function compute(m::MatrixSolve, o::AbstractProblem, g::Grid) 
     # Legacy code... but maybe materialising is faster for CUDSS?
     Pref = _Pref(g.affinities)
     W    = _W(Pref, θ, g.costmatrix)

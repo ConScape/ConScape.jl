@@ -5,21 +5,33 @@ Combine multiple compute operations into a single object,
 to be run over the same windowed grids.
 
 """
-@kwdef struct WindowedProblem{O,SS,WS,WC} <: AbstractProblem
-    op::O
-    sourcesize::SS
-    size::WS
-    centers::WC
+@kwdef struct WindowedProblem{P,S,WC} <: AbstractProblem
+    problem::P
+    size::S
+    cntr_size::WC
 end
-function WindowedProblem(op::O, radius::Tuple, windowcenters::AbstractMatrix; 
-    θ::T=nothing
-) where O<:Tuple 
-    WindowedProblem{O}(Problem(op; θ), windowsize, windowcenters)
+function WindowedProblem(op::Tuple; 
+    cntr_size::Integer=1; 
+    θ=nothing,
+    problem=Problem(op; θ=nothing),
+)
+    WindowedProblem(problem, size, cntr_size)
 end
 
-function compute(p::WindowedProblem, rasterstack)
-    map(_window_grids(p, rasterstack)) do g
+function compute(p::WindowedProblem, rast::RasterStack)
+    map(_window_ranges(p, size(rast))) do wr
+        g = Grid(p, rast[wr...])
         compute(p, g)
+    end
+end
+
+function _window_ranges(wp::WindowedProblem, tilesize::NTuple{2,Int})
+    ci = CartesianIndices(tilesize)
+    # Create an array of ranges for retreiving each window
+    Iterators.map(ci) do window_corner
+        map(Tuple(window_corner), wp.size) do i, s
+            i:min(s, i + r)
+        end
     end
 end
 
@@ -44,16 +56,16 @@ Combine multiple compute operations into a single object,
 to be run over tiles of windowed grids.
 
 """
-@kwdef struct TiledProblem{O,SS,WS,WC}
-    op::O
+@kwdef struct TiledProblem{P,R,M}
+    problem::P
     ranges::R
     layout::M
 end
-function TiledProblem(w::WindowedProblem;
+function TiledProblem(p::AbstractProblem;
     target::Raster,
     radius::Real,
     overlap::Real,
-) where O<:Tuple 
+)
     res = resolution(target)
     # Convert distances to pixels
     r = radius / res
@@ -78,12 +90,13 @@ function TiledProblem(w::WindowedProblem;
     return TiledProblem(w, ranges, mask)
 end
 
-function compute(p::TiledProblem, rast)
+function compute(p::TiledProblem, rast::RasterStack)
     map(p.ranges, p.mask) do rs, m
         m || return nothing
         tile = rast[rs...]
+        mask!(tile; with=tile)
         g = Grid(tile)
-        outputs = compute(p, w, g)
+        outputs = compute(p, g)
         write(outputs, p.storage)
         nothing
     end

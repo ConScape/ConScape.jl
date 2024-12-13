@@ -41,10 +41,12 @@ function Base.show(io::IO, ::MIME"text/html", grsp::GridRSP)
     show(io, MIME"text/html"(), plot_outdegrees(grsp.g))
 end
 
+abstract type AbstractOperation end 
+abstract type RSPOperation <: AbstractOperation end
 
 struct BetweennessQweighted <: RSPOperation end
 
-compute(r::BetweennessQ, grsp::GridRSP) = betweenness_qweighted(grsp)
+compute(r::BetweennessQweighted, grsp::GridRSP) = betweenness_qweighted(grsp)
 
 
 """
@@ -70,10 +72,9 @@ function betweenness_qweighted(grsp::GridRSP)
 
     return bet
 end
-Qweighted
+
 struct EdgeBetweennessQweighted <: RSPOperation end
-edge_
-compute(r::EdgeBetweenness, grsp::GridRSP) = edge_betweenness_qweighted(grsp)
+compute(r::EdgeBetweennessQweighted, grsp::GridRSP) = edge_betweenness_qweighted(grsp)
 
 """
     edge_betweenness_qweighted(grsp::GridRSP)::Matrix{Float64}
@@ -100,7 +101,6 @@ end
     distance_transformation::DT=nothing
     diagvalue::DV=nothing
 end
-
 
 compute(r::BetweennessK, grsp::GridRSP) = betweenness_kweighted(grsp; keywords(r)...)
 
