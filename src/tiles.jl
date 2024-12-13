@@ -1,3 +1,5 @@
+# This file is a work in progress...
+
 """
     WindowedProblem(op; size, centers, θ)
 
@@ -11,7 +13,7 @@ to be run over the same windowed grids.
     cntr_size::WC
 end
 function WindowedProblem(op::Tuple; 
-    cntr_size::Integer=1; 
+    cntr_size::Integer=1,
     θ=nothing,
     problem=Problem(op; θ=nothing),
 )
