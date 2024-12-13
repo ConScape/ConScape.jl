@@ -95,7 +95,7 @@ function edge_betweenness_qweighted(grsp::GridRSP)
         [grsp.g.target_qualities[i] for i in grsp.g.id_to_grid_coordinate_list ∩ targetidx],
         targetnodes)
 
-    return _maybe_raster(betmatrix, grsp)
+    return betmatrix
 end
 
 
