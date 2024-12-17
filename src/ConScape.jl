@@ -6,6 +6,7 @@ module ConScape
     using LinearSolve
     using Rasters.DimensionalData
 
+    # Old funcion-based interface
     abstract type ConnectivityFunction <: Function end
     abstract type DistanceFunction <: ConnectivityFunction end
     abstract type ProximityFunction <: ConnectivityFunction end
@@ -17,6 +18,9 @@ module ConScape
     struct survival_probability  <: ProximityFunction end
     struct power_mean_proximity  <: ProximityFunction end
 
+    # Need to define before loading files
+    abstract type AbstractProblem end
+
     # Randomized shortest path algorithms
     include("randomizedshortestpath.jl")
     # Grid struct and methods
@@ -27,6 +31,8 @@ module ConScape
     include("io.jl")
     # Utilities
     include("utils.jl")
+    include("graph_measure.jl")
+    include("connectivity_measure.jl")
     include("problem.jl")
     include("tiles.jl")
 end

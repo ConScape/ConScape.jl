@@ -52,18 +52,17 @@ end
 
 
 """
-    TiledProblem(op; size, centers, θ)
+    StoredProblem(op; size, centers, θ)
 
 Combine multiple compute operations into a single object, 
 to be run over tiles of windowed grids.
-
 """
-@kwdef struct TiledProblem{P,R,M}
+@kwdef struct StoredProblem{P,R,M}
     problem::P
     ranges::R
     layout::M
 end
-function TiledProblem(p::AbstractProblem;
+function StoredProblem(p::AbstractProblem;
     target::Raster,
     radius::Real,
     overlap::Real,
@@ -89,15 +88,14 @@ function TiledProblem(p::AbstractProblem;
         any(x -> !isnan(x) && x > zero(x), tile)
     end
 
-    return TiledProblem(w, ranges, mask)
+    return StoredProblem(w, ranges, mask)
 end
 
-function compute(p::TiledProblem, rast::RasterStack)
+function compute(p::StoredProblem, rast::RasterStack)
     map(p.ranges, p.mask) do rs, m
         m || return nothing
-        tile = rast[rs...]
-        mask!(tile; with=tile)
-        g = Grid(tile)
+        window = rast[rs...]
+        mask!(tile; with=window)
         outputs = compute(p, g)
         write(outputs, p.storage)
         nothing

@@ -26,6 +26,10 @@ struct Grid
     id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
     source_qualities::AbstractMatrix{Float64}
     target_qualities::AbstractMatrix{Float64}
+    targetidx::Vector{CartesianIndex{2}}
+    targetnodes::Vector{Int}
+    qs::Vector{Float64}
+    qt::Vector{Float64}
     dims::Union{Tuple,Nothing}
 end
 
@@ -75,7 +79,7 @@ function Grid(nrows::Integer,
     #     _affinities = affinities
     #     vec(CartesianIndices((nrows, ncols)))
     # end
-    id_to_grid_coordinate_list = vec(CartesianIndices((nrows, ncols)))
+    id_to_grid_coordinate_list = vec(collect(CartesianIndices((nrows, ncols))))
 
     costfunction, costmatrix = if costs isa Transformation
         costs, mapnz(costs, affinities)
@@ -95,6 +99,11 @@ function Grid(nrows::Integer,
         throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
     end
 
+    targetidx, targetnodes = _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
+    qs = [_source_qualities[i] for i in id_to_grid_coordinate_list]
+    qt = [_target_qualities[i] for i in id_to_grid_coordinate_list ∩ targetidx]
+
+    @show typeof(qs) typeof(qt) typeof(targetidx) typeof(targetnodes)
     g = Grid(
         nrows,
         ncols,
@@ -104,6 +113,10 @@ function Grid(nrows::Integer,
         id_to_grid_coordinate_list,
         _source_qualities,
         _target_qualities,
+        targetidx,
+        targetnodes,
+        qs,
+        qt,
         dims(source_qualities),
     )
 
@@ -142,15 +155,17 @@ _unwrap(R::Raster) = parent(R)
 _unwrap(R::AbstractMatrix) = R
 # Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices
-_targetidx(q::Matrix, grididxs::Vector) = grididxs
+_targetidx(q::AbstractMatrix, grididxs::Vector) = grididxs
 _targetidx(q::SparseMatrixCSC, grididxs::Vector) =
     CartesianIndex.(findnz(q)[1:2]...) ∩ grididxs
 
-function _targetidx_and_nodes(g::Grid)
-    targetidx = _targetidx(g.target_qualities, g.id_to_grid_coordinate_list)
+_targetidx_and_nodes(g::Grid) = 
+    _targetidx_and_nodes(g.target_qualities, g.id_to_grid_coordinate_list)
+function _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
+    targetidx = _targetidx(target_qualities, id_to_grid_coordinate_list)
     targetnodes = findall(
         t -> t ∈ targetidx,
-        g.id_to_grid_coordinate_list)
+        id_to_grid_coordinate_list)
     return targetidx, targetnodes
 end
 
@@ -191,12 +206,6 @@ function _heatmap(canvas, g; kwargs...)
     else
         heatmap(Raster(canvas, dims(g)); kwargs...)
     end
-end
-
-function assess(g::Grid) 
-    targetidx, targetnodes = _targetidx_and_nodes(g)
-    # Calculate memory use and expected flops for 
-    # targetnodes, or something...
 end
 
 """
@@ -252,15 +261,23 @@ function largest_subgraph(g::Grid)
     affinities = g.affinities[scci, scci]
     # affinities = convert(SparseMatrixCSC{Float64,Int}, graph[scci])
 
+    id_to_grid_coordinate_list = g.id_to_grid_coordinate_list[scci]
+    targetidx, targetnodes = _targetidx_and_nodes(g.target_qualities, id_to_grid_coordinate_list)
+    qs = [g.source_qualities[i] for i in id_to_grid_coordinate_list]
+    qt = [g.target_qualities[i] for i in id_to_grid_coordinate_list ∩ targetidx]
     return Grid(
         g.nrows,
         g.ncols,
         affinities,
         g.costfunction,
         g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinities),
-        g.id_to_grid_coordinate_list[scci],
+        id_to_grid_coordinate_list,
         g.source_qualities,
         g.target_qualities,
+        targetidx,
+        targetnodes,
+        qs,
+        qt,
         g.dims,
     )
 end
@@ -300,13 +317,12 @@ function least_cost_distance(g::Grid; θ::Nothing=nothing, approx::Bool=false)
     if approx
         throw(ArgumentError("no approximate algorithm is available for this distance function"))
     end
-    targets = ConScape._targetidx_and_nodes(g)[1]
-    @progress vec_of_vecs = [_least_cost_distance(g, target) for target in targets]
+    targets = g.targetidx
+    @progress vec_of_vecs = [least_cost_distance(g, target) for target in targets]
 
     return reduce(hcat, vec_of_vecs)
 end
-
-function _least_cost_distance(g::Grid, target::CartesianIndex{2})
+function least_cost_distance(g::Grid, target::CartesianIndex{2})
     graph = SimpleWeightedDiGraph(g.costmatrix)
     targetnode = findfirst(isequal(target), g.id_to_grid_coordinate_list)
     distvec = dijkstra_shortest_paths(graph, targetnode).dists

@@ -1,6 +1,7 @@
 # Landmark function for testing purposes
 
 ```julia
+nothing
 using ConScape, Rasters, ArchGDAL, SparseArrays, LinearAlgebra, Plots
 ```
 
@@ -16,6 +17,7 @@ grid = 10
 
 ```julia
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+
 ```
 
 ```julia
@@ -83,7 +85,7 @@ heatmap(qbetw)
 
 ```julia
 qbetw_coarse = ConScape.betweenness_qweighted(h_coarse);
-ConScape.heatmap(qbetw_coarse)
+heatmap(qbetw_coarse)
 ```
 
 ```julia
@@ -103,29 +105,39 @@ We can write this using a lazy problem definition:
 
 ```julia
 ops = (;
-    func=ConScape.ConnectedHabitat(; distance_transformation=x -> exp(-x/75)),
+    func=ConScape.ConnectedHabitat(),
     qbetw=ConScape.BetweennessQweighted(),
     kbetw=ConScape.BetweennessKweighted(),
 )
-problem = ConScape.Problem(ops; θ=theta, mode=ConScape.MatrixSolve())
-problem = ConScape.Problem(ops; θ=theta, mode=ConScape.VectorSolve())
+# Put least cost, random walk, and rsp
+problem = ConScape.Problem(ops; 
+    connectivity_measure=ConScape.ExpectedCost(θ=1.0),
+    distance_transformation=(exp=x -> exp(-x/75), oddsfor=ConScape.OddsFor()),
+    solver=ConScape.MatrixSolve(),
+)
+problem = ConScape.Problem(ops; 
+    distance_transformation=(exp=x -> exp(-x/75), oddsfor=ConScape.OddsFor()),
+    connectivity_measure=ConScape.ExpectedCost(θ=1.0),
+    solver=ConScape.VectorSolve(nothing),
+)
 ```
 
 Then run it for all operations on both normal and coarse grids
 
 ```julia
-res = ConScape.compute(problem, g)
-res_coarse = ConScape.compute(problem, g_coarse)
+res = ConScape.solve(problem, g)
+res_coarse = ConScape.solve(problem, g_coarse)
 ```
 
 We can plot these outputs:
 ```julia
-heatmap(res.qbetw)
-heatmap(res_coarse.qbetw)
-heatmap(res.kbetw)
-heatmap(res_coarse.kbetw)
-heatmap(res.func)
-heatmap(res_coarse.func)
+heatmap(res.qbetw.oddsfor)
+heatmap(res.qbetw.exp)
+heatmap(res_coarse.qbetw.exp)
+heatmap(res.kbetw.exp)
+heatmap(res_coarse.kbetw.exp)
+heatmap(res.func.exp)
+heatmap(res_coarse.func.exp)
 ```
 
 And we can check the corelation similarly to above, by getting
