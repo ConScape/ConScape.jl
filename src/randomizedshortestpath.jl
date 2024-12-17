@@ -18,7 +18,6 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
                                    qˢ::AbstractVector,
                                    qᵗ::AbstractVector,
                                    targetnodes::AbstractVector)
-
     Zⁱ = inv.(Z)
     Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
 

@@ -188,3 +188,9 @@ function mapnz(f, A::SparseMatrixCSC)
     map!(f, B.nzval, A.nzval)
     return B
 end
+
+# Helper to get keyword arguments
+function _keywords(o::T) where T
+    vals = map(f -> getfield(o, f), fieldnames(T))
+    return NamedTuple{fieldnames(T)}(vals) 
+end
