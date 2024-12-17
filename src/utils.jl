@@ -86,54 +86,69 @@ end
 end
 
 """
-    graph_matrix_from_raster(R::Matrix[, type=AffinityMatrix, neighbors::Tuple=N8, weight=TargetWeight])::SparseMatrixCSC
+    graph_matrix_from_raster(R::Matrix;
+        matrix_type::MatrixType=AffinityMatrix,
+        neighbors::Tuple=N8,
+        weight::AdjacencyWeight=TargetWeight,
+        fun::Function=nothing)::SparseMatrixCSC
 
-Compute a graph matrix, i.e. an affinity or cost matrix of the raster image `R` of cell affinities or cell costs.
-The values are computed as either the value of the target cell (TargetWeight) or as harmonic (arithmetic) means
-of the cell affinities (costs) weighted by the grid distance (AverageWeight). The values can be computed with
-respect to eight neighbors (`N8`) or four neighbors (`N4`).
+Compute the graph matrix of the raster `R`. Use predefined weight modes
+(`matrix_type` and `AdjacencyWeight`) or provide a custom function `fun` to
+compute edge weights.
+
+`neighbors` defines the contiguity pattern, which can currently be either `N8`
+or `N4`.
+
+When `fun` is not provided, the edge weights are computed as either the value of
+the target cell (TargetWeight) or as harmonic (arithmetic) means of the cell
+affinities (costs) weighted by the grid distance (AverageWeight). The values can
+be computed with respect to eight neighbors (`N8`) or four neighbors (`N4`).
+
+When `fun` is provided, the edge from one pixel with value `source` to its
+neighbour pixel with value `target` will be assigned a weight defined by
+`fun(source, target)`.
 """
 function graph_matrix_from_raster(
     R::Matrix;
-    matrix_type=AffinityMatrix,
+    matrix_type::MatrixType=AffinityMatrix,
     neighbors::Tuple=N8,
-    weight=TargetWeight
-)
+    weight::AdjacencyWeight=TargetWeight,
+    fun::Function=nothing
+)::SparseMatrixCSC
     m, n = size(R)
-
-    # Initialize the buffers of the SparseMatrixCSC
-    is, js, vs = Int[], Int[], Float64[]
+    is, js, vs = Int[], Int[], eltype(R)[]
 
     for j in 1:n
         for i in 1:m
-            # Base node
             rij = R[i, j]
             for (ki, kj, l) in neighbors
-                if !(1 <= i + ki <= m) || !(1 <= j + kj <= n)
-                    # Continue when computing edge out of raster image
+                ni, nj = i + ki, j + kj
+                if ni < 1 || ni > m || nj < 1 || nj > n
                     continue
-                else
-                    # Target node
-                    rijk = R[i + ki, j + kj]
-                    if iszero(rijk) || isnan(rijk)
-                        # Don't include zero or NaN similaritiers
-                        continue
-                    end
+                end
+                rijk = R[ni, nj]
+                if iszero(rijk) || isnan(rijk)
+                    continue
+                end
 
-                    push!(is, (j - 1)*m + i)
-                    push!(js, (j - 1)*m + i + ki + kj*m)
+                push!(is, (j - 1)*m + i)
+                push!(js, (j - 1)*m + ni)
+
+                if fun !== nothing
+                    push!(vs, fun(rij, rijk))
+                else
                     if weight == TargetWeight
                         if matrix_type == AffinityMatrix
-                            push!(vs, rijk/l)
+                            push!(vs, rijk / l)
                         elseif matrix_type == CostMatrix
-                            push!(vs, rijk*l)
+                            push!(vs, rijk * l)
                         end
                     elseif weight == AverageWeight
                         if matrix_type == AffinityMatrix
-                            v = 2/((inv(rij) + inv(rijk))*l)
+                            v = 2 / ((inv(rij) + inv(rijk)) * l)
                             push!(vs, v)
                         elseif matrix_type == CostMatrix
-                            v = ((rij + rijk)*l)/2
+                            v = ((rij + rijk) * l) / 2
                             push!(vs, v)
                         end
                     else
