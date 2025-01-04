@@ -8,6 +8,7 @@ abstract type GraphMeasure end
 
 keywords(o::GraphMeasure) = _keywords(o)
 
+# TODO: document/rethink these
 abstract type TopologicalMeasure <: GraphMeasure end
 abstract type BetweennessMeasure <: GraphMeasure end
 abstract type PerturbationMeasure <: GraphMeasure end

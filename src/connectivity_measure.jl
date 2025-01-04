@@ -2,7 +2,7 @@
 # Easier to add parameters to these
 abstract type ConnectivityMeasure end
 
-
+# TODO document these groups
 abstract type FundamentalMeasure <: ConnectivityMeasure end
 abstract type DistanceMeasure <: FundamentalMeasure end
 

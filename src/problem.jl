@@ -16,14 +16,14 @@ distance_transformation(p::AbstractProblem) =
 solver(p::AbstractProblem) = solver(p.problem)
 
 """
-    solve(problem, grid::Union{Grid,GridRSP})
+    solve(problem::AbstractProblem, grid::Union{Grid,GridRSP,RasterStack})
 
-Solve problem `o` for a grid.
+Solve `problem` for a grid or Rasters.jl `RasterStack`.
 """
 function solve end
 
 """
-    assess(p::AbstractProblem, g)
+    assess(problem::AbstractProblem, g)
 
 Assess the memory and solve requirements of problem
 `p` on grid `g`. This can be used to indicate memory
@@ -32,7 +32,8 @@ and time reequiremtents on a cluster
 function assess end
 
 """
-    Problem(graph_measures...; solver, θ)
+    Problem(graph_measures; kw...)
+    Problem(; kw...)
 
 Combine multiple solve operations into a single object, 
 to be run in the same job.
