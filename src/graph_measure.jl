@@ -86,16 +86,15 @@ function compute(::NeedsConnectivity,
     p::AbstractProblem, 
     g::Union{Grid,GridRSP}
 )
-    cm = p.connectivity_measure
-    distance_transformation = cm.distance_transformation
-    connectivity_function = ConScape.connectivity_function(cm)
+    cf = connectivity_function(p)
+    dt = distance_transformation(p) 
     # Handle multiple distance transformations
-    if distance_transformation isa NamedTuple
-        map(distance_transformation) do dt
-            graph_function(gm)(g; keywords(gm, p)..., distance_transformation=dt, connectivity_function)
+    if dt isa NamedTuple
+        map(distance_transformation) do dtx
+            graph_function(gm)(g; keywords(gm, p)..., distance_transformation=dtx, connectivity_function=cf)
         end
     else
-        graph_function(gm)(g; keywords(gm, p)..., distance_transformation=dt, connectivity_function)
+        graph_function(gm)(g; keywords(gm, p)..., distance_transformation=dt, connectivity_function=cf)
     end
 end
 function compute(::NoConnectivity,

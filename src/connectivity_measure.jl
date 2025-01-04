@@ -2,6 +2,7 @@
 # Easier to add parameters to these
 abstract type ConnectivityMeasure end
 
+
 abstract type FundamentalMeasure <: ConnectivityMeasure end
 abstract type DistanceMeasure <: FundamentalMeasure end
 
@@ -34,6 +35,9 @@ connectivity_function(::ExpectedCost) = expected_cost
 connectivity_function(::FreeEnergyDistance) = free_energy_distance
 connectivity_function(::SurvivalProbability) = survival_probability
 connectivity_function(::PowerMeanProximity) = power_mean_proximity
+
+distance_transformation(::ConnectivityMeasure) = nothing
+distance_transformation(cm::Union{ExpectedCost,FreeEnergyDistance}) = cm.distance_transformation
 
 # This is not used yet but could be
 compute(cm::ConnectivityMeasure, g; kw...) = 

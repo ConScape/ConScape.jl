@@ -11,6 +11,8 @@ graph_measures(p::AbstractProblem) = graph_measures(p.problem)
 connectivity_measure(p::AbstractProblem) = connectivity_measure(p.problem)
 connectivity_function(p::AbstractProblem) =
     connectivity_function(connectivity_measure(p))
+distance_transformation(p::AbstractProblem) =
+    distance_transformation(connectivity_measure(p))
 solver(p::AbstractProblem) = solver(p.problem)
 
 """
