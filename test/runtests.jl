@@ -1,7 +1,7 @@
 using ConScape, Test, SparseArrays
 using Rasters, ArchGDAL, Plots
 
-inclued("problem.jl")
+include("problem.jl")
 
 # TODO reorganise this into separate files
 
@@ -433,8 +433,7 @@ end
                                          (ConScape.survival_probability, 1.3475609129305437e7),
                                          (ConScape.power_mean_proximity, 3.279995546746518e6))
 
-        vˡ, λ, vʳ = ConScape.eigmax(grsp,
-            connectivity_function=connectivity_function)
+        vˡ, λ, vʳ = ConScape.eigmax(grsp; connectivity_function)
 
         # Compute the weighted proximity matrix to check results
         S   = connectivity_function(grsp)

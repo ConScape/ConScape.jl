@@ -8,8 +8,9 @@ Abstract supertype for ConScape solvers.
 
 # RSP is not used for ConnectivityMeasure, so the solver isn't used
 function solve(s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid) 
+    workspaces = _setup_workspace(p, g)
     return map(p.graph_measures) do gm
-        compute(gm, p, g; solver=s)
+        compute(gm, p, g; solver=s, workspaces...)
     end
 end
 
@@ -21,8 +22,9 @@ function solve(s::Solver, cm::FundamentalMeasure, p::AbstractProblem, g::Grid)
 
     # TODO remove use of GridRSP where possible
     grsp = GridRSP(g, cm.θ, Pref, W, Z)
+    workspaces = _setup_workspace(p, grsp)
     results = map(p.graph_measures) do gm
-        compute(gm, p, grsp)
+        compute(gm, p, grsp; workspaces...)
     end
     return _merge_to_stack(results)
 end

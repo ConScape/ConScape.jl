@@ -108,7 +108,7 @@ function betweenness_kweighted(grsp::GridRSP;
     end
 
     if !isnothing(diagvalue)
-        for (j, i) in enumerate(targetnodes)
+        for (j, i) in enumerate(g.targetnodes)
             proximities[i, j] = diagvalue
         end
     end
@@ -138,6 +138,7 @@ function edge_betweenness_kweighted(grsp::GridRSP;
     expected_cost=nothing,
     kw...
 )
+    g = grsp.g
     if isnothing(expected_cost)
         expected_cost = ConScape.expected_cost(grsp; kw...)
     end
@@ -165,13 +166,13 @@ expected_cost(grsp::GridRSP; kw...) =
 free_energy_distance(grsp::GridRSP; kw...) =
     RSP_free_energy_distance(grsp.Z, grsp.θ, grsp.g.targetnodes; kw...)
 
-survival_probability(grsp::GridRSP) =
+survival_probability(grsp::GridRSP; kw...) =
     RSP_survival_probability(grsp.Z, grsp.θ, grsp.g.targetnodes; kw...)
 
 power_mean_proximity(grsp::GridRSP; kw...) =
     RSP_power_mean_proximity(grsp.Z, grsp.θ, grsp.g.targetnodes; kw...)
 
-least_cost_distance(grsp::GridRSP) = least_cost_distance(grsp.g; kw...)
+least_cost_distance(grsp::GridRSP; kw...) = least_cost_distance(grsp.g; kw...)
 
 """
     mean_kl_divergence(grsp::GridRSP)::Float64
@@ -346,7 +347,7 @@ function connected_habitat(grsp::Union{Grid,GridRSP}, S::Matrix;
     g = _get_grid(grsp)
 
     if diagvalue !== nothing
-        for (j, i) in enumerate(targetnodes)
+        for (j, i) in enumerate(g.targetnodes)
             S[i, j] = diagvalue
         end
     end
@@ -368,36 +369,46 @@ function connected_habitat(grsp::GridRSP,
                            qˢvalue=0.0,
                            qᵗvalue=0.0)
 
+    g = grsp.g
+
     if avalue <= 0.0
         throw("Affinity value has to be positive. Otherwise the graph will become disconnected.")
     end
 
     # Compute (linear) node indices from (cartesian) grid indices
-    node = findfirst(isequal(cell), grsp.g.id_to_grid_coordinate_list)
+    node = findfirst(isequal(cell), g.id_to_grid_coordinate_list)
 
     # Check that cell is in targetidx
-    if cell ∉ targetidx
+    if cell ∉ g.targetidx
         throw(ArgumentError("Computing adjusted connected_habitat is only supported for target cells"))
     end
 
-    affinities = copy(grsp.g.affinities)
+    affinities = copy(g.affinities)
     affinities[:, node] .= ifelse.(iszero.(affinities[:, node]), 0, avalue)
     affinities[node, :] .= ifelse.(iszero.(affinities[node, :]), 0, avalue)
 
-    newsource_qualities = copy(grsp.g.source_qualities)
+    newsource_qualities = copy(g.source_qualities)
     newsource_qualities[cell] = qˢvalue
-    newtarget_qualities = copy(grsp.g.target_qualities)
+    newtarget_qualities = copy(g.target_qualities)
     newtarget_qualities[cell] = qᵗvalue
 
-    newg = Grid(grsp.g.nrows,
-                grsp.g.ncols,
+    newtargetidx, newtargetnodes = _targetidx_and_nodes(newtarget_qualities, g.id_to_grid_coordinate_list)
+    newqs = [newsource_qualities[i] for i in g.id_to_grid_coordinate_list]
+    newqt = [newtarget_qualities[i] for i in g.id_to_grid_coordinate_list ∩ newtargetidx]
+
+    newg = Grid(g.nrows,
+                g.ncols,
                 affinities,
-                grsp.g.costfunction,
-                grsp.g.costfunction === nothing ? grsp.g.costmatrix : mapnz(grsp.g.costfunction, affinities),
-                grsp.g.id_to_grid_coordinate_list,
+                g.costfunction,
+                g.costfunction === nothing ? g.costmatrix : mapnz(g.costfunction, affinities),
+                g.id_to_grid_coordinate_list,
                 newsource_qualities,
                 newtarget_qualities,
-                dims(grsp))
+                newtargetidx,
+                newtargetnodes,
+                newqs,
+                newqt,
+                dims(g))
 
     newh = GridRSP(newg; θ=grsp.θ)
 
@@ -522,14 +533,14 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
 
     # compute left vector (of submatrix) by shift-invert
     Flu = lu(qSq₀₀ - λ₀[1]*I)
-    vˡ₀ = ldiv!(Flu', rand(length(targetidx)))
+    vˡ₀ = ldiv!(Flu', rand(length(g.targetidx)))
     rmul!(vˡ₀, inv(vˡ₀[1]))
 
     # construct full left vector
     vˡ = zeros(n)
     vˡ[g.targetnodes] = vˡ₀
 
-    return vˡ, λ₀=λ₀[1], vʳ
+    return (vˡ, λ₀=λ₀[1], vʳ)
 end
 
 """
@@ -567,7 +578,7 @@ function criticality(grsp::GridRSP;
     end
 
     landscape = fill(NaN, size(grsp.g))
-    landscape[targetidx] = critvec
+    landscape[g.targetidx] = critvec
 
     return _maybe_raster(landscape, grsp)
 end

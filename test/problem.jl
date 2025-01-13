@@ -7,9 +7,8 @@ _tempdir = mkdir(tempname())
 
 mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
 hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN)
-rast = ConScape.coarse_graining(RasterStack((; affinities=mov_prob, qualities=hab_qual)), 10)
-
-# rast = RasterStack((; affinities=mov_prob, qualities=hab_qual))
+rast = RasterStack((; affinities=mov_prob, qualities=hab_qual))
+rast = ConScape.coarse_graining(rast, 10)
 
 graph_measures = graph_measures = (;
     func=ConScape.ConnectedHabitat(),
@@ -27,6 +26,7 @@ expected_layers = (:func_exp, :func_oddsfor, :qbetw, :kbetw_exp, :kbetw_oddsfor)
 problem = ConScape.Problem(; 
     graph_measures, connectivity_measure, solver=ConScape.MatrixSolver(),
 )
+@be ConScape.solve(problem, rast)
 @time result = ConScape.solve(problem, rast)
 @test result isa RasterStack
 @test size(result) == size(rast)
@@ -37,6 +37,7 @@ vector_problem = ConScape.Problem(;
     graph_measures, connectivity_measure,
     solver = ConScape.VectorSolver(; threaded=true),
 )
+@benchmark ConScape.solve(vector_problem, rast)
 @time vector_result = ConScape.solve(vector_problem, rast)
 @test vector_result isa RasterStack
 @test size(vector_result) == size(rast)

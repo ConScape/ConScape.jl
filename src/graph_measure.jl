@@ -79,12 +79,13 @@ needs_connectivity(::Criticality) = NeedsConnectivity()
 # This is where things actually happen
 #
 # Add dispatch on connectivity measure
-compute(gm::GraphMeasure, p::AbstractProblem, g::Union{Grid,GridRSP}) = 
-    compute(needs_connectivity(gm), gm, p, g)
+compute(gm::GraphMeasure, p::AbstractProblem, g::Union{Grid,GridRSP}; kw...) = 
+    compute(needs_connectivity(gm), gm, p, g; kw...)
 function compute(::NeedsConnectivity,
     gm::GraphMeasure, 
     p::AbstractProblem, 
-    g::Union{Grid,GridRSP}
+    g::Union{Grid,GridRSP};
+    workspace_kw...
 )
     cm = p.connectivity_measure
     distance_transformation = cm.distance_transformation
@@ -92,16 +93,49 @@ function compute(::NeedsConnectivity,
     # Handle multiple distance transformations
     if distance_transformation isa NamedTuple
         map(distance_transformation) do dt
-            graph_function(gm)(g; keywords(gm, p)..., distance_transformation=dt, connectivity_function)
+            graph_function(gm)(g; 
+                keywords(gm, p)..., 
+                distance_transformation=dt, 
+                connectivity_function,
+                workspace_kw...
+            )
         end
     else
-        graph_function(gm)(g; keywords(gm, p)..., distance_transformation=dt, connectivity_function)
+        graph_function(gm)(g; 
+            keywords(gm, p)..., 
+            distance_transformation=dt, 
+            connectivity_function,
+            workspace_kw...
+        )
     end
 end
 function compute(::NoConnectivity,
     gm::GraphMeasure, 
     p::AbstractProblem, 
-    g::Union{Grid,GridRSP}
+    g::Union{Grid,GridRSP}; 
+    workspace_kw...
 ) 
-    graph_function(gm)(g; keywords(gm, p)...)
+    graph_function(gm)(g; keywords(gm, p)..., workspace_kw...)
+end
+
+# Workspace allocation traits
+needs_inv(::GraphMeasure) = false
+needs_inv(::BetweennessMeasure) = true
+needs_workspace(::GraphMeasure) = false
+needs_workspace(::BetweennessMeasure) = true
+
+function _setup_workspace(p::AbstractProblem, grsp::GridRSP)
+    gm = p.graph_measures
+    workspace = if mapreduce(needs_workspace, |, gm; init=false)
+        similar(grsp.Z)
+    else
+        nothing
+    end
+    Zⁱ = if mapreduce(needs_inv, |, gm; init=false)
+        _inv(grsp.Z) 
+    else
+        nothing
+    end
+
+    return (; Zⁱ, workspace)
 end

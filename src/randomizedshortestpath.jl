@@ -43,8 +43,9 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
     qˢZⁱqᵗ .= qˢ .* Zⁱ .* qᵗ'
     sumqˢ = sum(qˢ)
     for j in axes(Z, 2)
-        qˢZⁱqᵗ[targetnodes[j], j] -= sumqˢ * qᵗ[j] * Zⁱ[targetnodes[j], j]
+        qˢZⁱqᵗ[targetnodes[j], j] -=  sumqˢ * qᵗ[j] * Zⁱ[targetnodes[j], j]
     end
+
     ZqˢZⁱqᵗZt = solve_ldiv!(solver, (I - W)', qˢZⁱqᵗ)
     ZqˢZⁱqᵗZt .*= Z
 
@@ -59,7 +60,7 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
                                    S::AbstractMatrix,  # Matrix of proximities
                                    landmarks::AbstractVector;
     Zⁱ=_inv(Z),
-    workspace=zeros(size(Z)),
+    workspace1=zeros(size(Z)),
     kw...
 )
     axis1, axis2 = axes(Z)
@@ -76,22 +77,21 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
         throw(DimensionMismatch(""))
     end
 
-    KZⁱ = workspace
+    KZⁱ = workspace1
     KZⁱ .= qˢ .* S .* qᵗ'
 
     # If any of the values of KZⁱ is above one then there is a risk of overflow.
     # Hence, we scale the matrix and apply the scale factor by the end of the
     # computation.
     λ = max(1.0, maximum(KZⁱ))
-    s = sum(KZⁱ, dims=1)
-    s .*= inv(λ)
-    k = vec(s)
+    k = vec(sum(KZⁱ, dims=1)) * inv(λ)
 
     KZⁱ .*= inv.(λ) .* Zⁱ
     for j in axis2
         KZⁱ[landmarks[j], j] -= k[j] .* Zⁱ[landmarks[j], j]
     end
 
+    # KZi overwritten from here
     ZKZⁱt = solve_ldiv!(solver, (I - W)', KZⁱ)
     ZKZⁱt .*= λ .* Z
 
@@ -108,6 +108,10 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
     solver=nothing,
     kw...
 )
+    n = size(W,1)
+
+    diagZⁱ = [Zⁱ[targetnodes[t], t] for t in 1:length(targetnodes)]
+    sumqˢ = sum(qˢ)
 
     # FIXME: This should be only done when actually size(Z, 2) < size(Z, 1)/K where K ≈ 10 or so.
     # Otherwise we just compute many of the elements of Z twice...
@@ -115,23 +119,17 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
         B = workspace1
         B .= sparse_rhs(targetnodes, size(W, 1))
         Zrows = solve_ldiv!(solver, (I - W'), B)'
+        Zrows .*= sumqˢ * qᵗ .* diagZⁱ
     else
-        Zrows = Z
+
+        Zrows = Z .* (sumqˢ * qᵗ .* diagZⁱ)
     end
-
-    n = size(W, 1)
-
-    diagZⁱ = [Zⁱ[targetnodes[t], t] for t in 1:length(targetnodes)]
-    sumqˢ = sum(qˢ)
-
-    Zrows .*= sumqˢ*qᵗ .* diagZⁱ
 
     qˢZⁱqᵗ = qˢ .* Zⁱ .* qᵗ'
 
-    QZⁱᵀZ = qˢZⁱqᵗ' / (I - W)
+    QZⁱᵀZ = qˢZⁱqᵗ'/(I - W)
 
-    RHS = workspace1
-    RHS .= QZⁱᵀZ .- Zrows
+    RHS = QZⁱᵀZ - Zrows
 
     edge_betweennesses = copy(W)
 
@@ -163,18 +161,18 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
     k̂ = vec(sum(K̂, dims=1))
     K̂ .*= Zⁱ
 
-    K̂ᵀZ = K̂' / (I - W)
 
-    k̂diagZⁱ = k̂ .* [Zⁱ[targetnodes[t], t] for t in 1:length(targetnodes)]
+    K̂ᵀZ = K̂'/(I - W)
+
+    k̂diagZⁱ = k̂.*[Zⁱ[targetnodes[t], t] for t in 1:length(targetnodes)]
 
     B = workspace1
     B .= sparse_rhs(targetnodes, size(W, 1))
     Zrows = solve_ldiv!(solver, (I - W'), B)
-    k̂diagZⁱZ = workspace2
+    k̂diagZⁱZ = workspace1
     k̂diagZⁱZ .= k̂diagZⁱ .* Zrows'
 
-    K̂ᵀZ_minus_diag = workspace2
-    K̂ᵀZ_minus_diag .= K̂ᵀZ .- k̂diagZⁱZ
+    K̂ᵀZ_minus_diag = K̂ᵀZ .- k̂diagZⁱZ
 
     edge_betweennesses = copy(W)
 
@@ -206,11 +204,11 @@ function RSP_expected_cost(W::SparseMatrixCSC,
         throw(DimensionMismatch(""))
     end
     if axes(Z, 2) != axes(landmarks, 1)
-        Z = Z[:, landmarks]
+        Z = Z[:,landmarks]
     end
 
     if size(Z, 1) == size(Z, 2)
-        C̄ = Z * ((C .* W) * Z)
+        C̄   = Z*((C .* W)*Z)
     else
         C̄ = solve_ldiv!(solver, (I - W), ((C .* W) * Z))
     end
@@ -237,9 +235,13 @@ function RSP_survival_probability(Z::AbstractMatrix, θ::Real, landmarks::Abstra
 end
 
 function RSP_power_mean_proximity(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector; 
-    survival_probability=RSP_survival_probability(Z, θ, landmarks; kw...),
-    kw...
+    survival_probability=nothing, kw...
 )
+    survival_probability = if isnothing(survival_probability) 
+        RSP_survival_probability(Z, θ, landmarks; kw...)
+    else
+        survival_probability
+    end
     survival_probability .^ (1 / θ)
 end
 
