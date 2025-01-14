@@ -37,6 +37,8 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
     Zⁱ=_inv(Z),
     workspace1=zeros(size(Z)),
     solver=nothing,
+    Aadj = (I - W)',
+    Aadj_init=solver_init(solver, Aadj),
     kw...
 )
     qˢZⁱqᵗ = workspace1
@@ -46,7 +48,8 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
         qˢZⁱqᵗ[targetnodes[j], j] -=  sumqˢ * qᵗ[j] * Zⁱ[targetnodes[j], j]
     end
 
-    ZqˢZⁱqᵗZt = solve_ldiv!(solver, (I - W)', qˢZⁱqᵗ)
+    # TODO adjoint of LinearSolver?
+    ZqˢZⁱqᵗZt = solve_ldiv!(solver, Aadj_init, Aadj, qˢZⁱqᵗ)
     ZqˢZⁱqᵗZt .*= Z
 
     return sum(ZqˢZⁱqᵗZt, dims=2) # diag(Z * ZqˢZⁱqᵗ')
@@ -61,6 +64,8 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
                                    landmarks::AbstractVector;
     Zⁱ=_inv(Z),
     workspace1=zeros(size(Z)),
+    Aadj = (I - W)',
+    Aadj_init=solver_init(solver, Aadj),
     kw...
 )
     axis1, axis2 = axes(Z)
@@ -92,7 +97,7 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
     end
 
     # KZi overwritten from here
-    ZKZⁱt = solve_ldiv!(solver, (I - W)', KZⁱ)
+    ZKZⁱt = solve_ldiv!(solver, Aadj_init, Aadj, KZⁱ)
     ZKZⁱt .*= λ .* Z
 
     return vec(sum(ZKZⁱt, dims=2)) # diag(Z * KZⁱ')
@@ -105,6 +110,8 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
                                         targetnodes::AbstractVector;
     Zⁱ=_inv(Z),
     workspace1=zeros(size(Z)),
+    Aadj = (I - W)',
+    Aadj_init=solver_init(solver, Aadj),
     solver=nothing,
     kw...
 )
@@ -118,7 +125,7 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
     if size(Z, 2) < size(Z, 1)
         B = workspace1
         B .= sparse_rhs(targetnodes, size(W, 1))
-        Zrows = solve_ldiv!(solver, (I - W'), B)'
+        Zrows = solve_ldiv!(solver, Aadj_init, Aadj, B)'
         Zrows .*= sumqˢ * qᵗ .* diagZⁱ
     else
 
@@ -153,7 +160,9 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
                                         targetnodes::AbstractVector;
     Zⁱ=_inv(Z),
     workspace1=zeros(size(Z)),
-    workspace2=zeros(size(Z)),
+    # workspace2=zeros(size(Z)),
+    Aadj = (I - W)',
+    Aadj_init=solver_init(solver, Aadj),
     solver=nothing,
     kw...
 )
@@ -168,7 +177,7 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
 
     B = workspace1
     B .= sparse_rhs(targetnodes, size(W, 1))
-    Zrows = solve_ldiv!(solver, (I - W'), B)
+    Zrows = solve_ldiv!(solver, Aadj_init, Aadj, B)
     k̂diagZⁱZ = workspace1
     k̂diagZⁱZ .= k̂diagZⁱ .* Zrows'
 
@@ -194,6 +203,8 @@ function RSP_expected_cost(W::SparseMatrixCSC,
                            Z::AbstractMatrix,
                            landmarks::AbstractVector;
     solver=nothing,
+    A,# = (I - W),
+    A_init, # =solver_init(solver, A),
     kw...
 )
 
@@ -210,7 +221,7 @@ function RSP_expected_cost(W::SparseMatrixCSC,
     if size(Z, 1) == size(Z, 2)
         C̄   = Z*((C .* W)*Z)
     else
-        C̄ = solve_ldiv!(solver, (I - W), ((C .* W) * Z))
+        C̄ = solve_ldiv!(solver, A_init, A, ((C .* W) * Z))
     end
 
     C̄ ./= Z

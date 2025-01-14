@@ -123,19 +123,43 @@ needs_inv(::GraphMeasure) = false
 needs_inv(::BetweennessMeasure) = true
 needs_workspace(::GraphMeasure) = false
 needs_workspace(::BetweennessMeasure) = true
+needs_expected_cost(::GraphMeasure) = false
+needs_expected_cost(::EdgeBetweennessKweighted) = true
+needs_expected_cost(::MeanKullbackLeiblerDivergence) = true
+needs_free_energy_distance(::GraphMeasure) = false
+needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
+needs_Aaj_init(::GraphMeasure) = true
+hastrait(t, gms) = mapreduce(t, |, gms; init=false)
 
-function _setup_workspace(p::AbstractProblem, grsp::GridRSP)
-    gm = p.graph_measures
-    workspace = if mapreduce(needs_workspace, |, gm; init=false)
+function _setup_workspace(p::AbstractProblem, grsp::GridRSP; kw...)
+    gms = p.graph_measures
+    workspace1 = if hastrait(needs_workspace, gms)
         similar(grsp.Z)
     else
         nothing
     end
-    Zⁱ = if mapreduce(needs_inv, |, gm; init=false)
+    Zⁱ = if hastrait(needs_inv, gms)
         _inv(grsp.Z) 
     else
         nothing
     end
+    Aadj_init, Aadj = if hastrait(needs_Aaj_init, gms)
+        Aadj = (I - grsp.W)'
+        solver_init(p.solver, Aadj), Aadj 
+    else
+        nothing
+    end
+    workspace_kw =  (; Zⁱ, workspace1, Aadj_init, Aadj)
+    expected_cost = if hastrait(needs_expected_cost, gms)
+        ConScape.expected_cost(grsp; workspace_kw..., kw...)
+    else
+        nothing
+    end
+    free_energy_distance = if hastrait(needs_free_energy_distance, gms)
+        ConScape.free_energy_distance(grsp; workspace_kw..., kw...)
+    else
+        nothing
+    end
 
-    return (; Zⁱ, workspace)
+    return (; workspace_kw..., kw..., expected_cost, free_energy_distance)
 end

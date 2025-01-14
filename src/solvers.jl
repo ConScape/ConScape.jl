@@ -16,18 +16,28 @@ end
 
 function solve(s::Solver, cm::FundamentalMeasure, p::AbstractProblem, g::Grid) 
     (; A, B, Pref, W) = setup_sparse_problem(g, cm)
-    Z = solve_ldiv!(s, A, Matrix(B))
+    A_init = solver_init(s, A)
+    Z = solve_ldiv!(s, A_init, A, Matrix(B))
     # Check that values in Z are not too small:
 #    _check_z(s, Z, W, g)
 
     # TODO remove use of GridRSP where possible
     grsp = GridRSP(g, cm.θ, Pref, W, Z)
-    workspaces = _setup_workspace(p, grsp)
+    workspaces = _setup_workspace(p, grsp; A, A_init)
     results = map(p.graph_measures) do gm
         compute(gm, p, grsp; workspaces...)
     end
     return _merge_to_stack(results)
 end
+
+# Fallback generic ldiv solver
+solve_ldiv!(solver, A, B) = solve_ldiv!(solver, lu(A), A, B)
+# Pre-factorized
+function solve_ldiv!(solver, F, A, B) 
+    ldiv!(F, B)
+end
+
+solver_init(solver, A) = lu(A)
 
 """
    MatrixSolver(; check)
@@ -41,9 +51,6 @@ But may be best for GPUs using CuSSP.jl ?
     check::Bool = true
 end
 
-# Fallback generic ldiv solver
-solve_ldiv!(solver, A, B) = ldiv!(lu(A), B)
-
 """
    VectorSolver(; check, threaded)
 
@@ -55,8 +62,7 @@ less memory use and the capacity for threading
     threaded::Bool = false
 end
 
-function solve_ldiv!(s::VectorSolver, A, B)
-    F = lu(A)
+function solve_ldiv!(s::VectorSolver, F, A, B)
     transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
     # for SparseArrays.UMFPACK._AqldivB_kernel!(Z, F, B, transposeoptype)
 
@@ -137,6 +143,9 @@ function solve_ldiv!(s::LinearSolver, A, B)
     # Define and initialise the linear problem
     linprob = LinearProblem(A, b)
     linsolve = init(linprob, s.args...; s.keywords...)
+    solve_ldiv!(s, linsolve, A, B)
+end
+function solve_ldiv!(s::LinearSolver, linsolve, A, B)
     # TODO: for now we define a Z matrix, but later modify ops 
     # to run column by column without materialising Z
     # if s.threaded

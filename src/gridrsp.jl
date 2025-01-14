@@ -89,10 +89,22 @@ function betweenness_kweighted(grsp::GridRSP;
     connectivity_function=expected_cost,
     distance_transformation=nothing,
     diagvalue=nothing,
-    proximities=connectivity_function(grsp),
+    proximities=nothing,
+    expected_cost=nothing,
+    free_energy_distance=nothing,
     kw...
 )
     g = grsp.g
+
+    if isnothing(proximities)
+        proximities = if connectivity_function == ConScape.expected_cost && !isnothing(expected_cost)
+            expected_cost
+        elseif connectivity_function == ConScape.free_energy_distance && !isnothing(free_energy_distance)
+            free_energy_distance
+        else
+            connectivity_function(grsp; kw...)
+        end
+    end
 
     # Check that distance_transformation function has been passed if no cost function is saved
     if distance_transformation === nothing && connectivity_function <: DistanceFunction
@@ -138,6 +150,7 @@ function edge_betweenness_kweighted(grsp::GridRSP;
     expected_cost=nothing,
     kw...
 )
+
     g = grsp.g
     if isnothing(expected_cost)
         expected_cost = ConScape.expected_cost(grsp; kw...)
@@ -213,10 +226,10 @@ function mean_lc_kl_divergence(grsp::GridRSP; kw...)
 end
 
 function least_cost_kl_divergence(C::SparseMatrixCSC, Pref::SparseMatrixCSC, targetnode::Integer;
+    graph=SimpleWeightedDiGraph(C),
     kw...
 )
     n = size(C, 1)
-    graph = SimpleWeightedDiGraph(C)
     if !(1 <= targetnode <= n)
         throw(ArgumentError("target node not found"))
     end
@@ -309,6 +322,8 @@ function connected_habitat(grsp::Union{Grid,GridRSP};
     diagvalue=nothing,
     θ::Union{Nothing,Real}=nothing,
     approx::Bool=false,
+    expected_cost=nothing,
+    free_energy_distance=nothing,
     kw...
 )
     # Check that distance_transformation function has been passed if no cost function is saved
@@ -326,12 +341,24 @@ function connected_habitat(grsp::Union{Grid,GridRSP};
         if θ === nothing && connectivity_function !== least_cost_distance
             throw(ArgumentError("θ must be a positive real number when passing a Grid"))
         end
-        connectivity_function(grsp; θ=θ, approx=approx)
+        if connectivity_function == ConScape.expected_cost && !isnothing(expected_cost)
+            expected_cost
+        elseif connectivity_function == ConScape.free_energy_distance && !isnothing(free_energy_distance)
+            free_energy_distance
+        else
+            connectivity_function(grsp; θ=θ, approx=approx, kw...)
+        end
     else
         if θ !== nothing
             throw(ArgumentError("θ must be unspecified when passing a GridRSP"))
         end
-        connectivity_function(grsp)
+        if connectivity_function == ConScape.expected_cost && !isnothing(expected_cost)
+            expected_cost
+        elseif connectivity_function == ConScape.free_energy_distance && !isnothing(free_energy_distance)
+            free_energy_distance
+        else
+            connectivity_function(grsp; kw...)
+        end
     end
 
     if connectivity_function <: DistanceFunction
@@ -385,7 +412,7 @@ function connected_habitat(grsp::GridRSP,
 
     affinities = copy(g.affinities)
     affinities[:, node] .= ifelse.(iszero.(affinities[:, node]), 0, avalue)
-    affinities[node, :] .= ifelse.(iszero.(affinities[node, :]), 0, avalue)
+    affinitie[node, :] .= ifelse.(iszero.(affinities[node, :]), 0, avalue)
 
     newsource_qualities = copy(g.source_qualities)
     newsource_qualities[cell] = qˢvalue

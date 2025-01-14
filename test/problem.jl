@@ -14,8 +14,8 @@ graph_measures = graph_measures = (;
     func=ConScape.ConnectedHabitat(),
     qbetw=ConScape.BetweennessQweighted(),
     kbetw=ConScape.BetweennessKweighted(),
-    # mkld=ConScape.MeanKullbackLeiblerDivergence(),
-    # mlcd=ConScape.MeanLeastCostKullbackLeiblerDivergence(),
+    #mkld=ConScape.MeanKullbackLeiblerDivergence(),
+    #mlcd=ConScape.MeanLeastCostKullbackLeiblerDivergence(),
 )
 distance_transformation = (exp=x -> exp(-x/75), oddsfor=ConScape.OddsFor())
 connectivity_measure = ConScape.ExpectedCost(; θ=1.0, distance_transformation)
@@ -26,7 +26,8 @@ expected_layers = (:func_exp, :func_oddsfor, :qbetw, :kbetw_exp, :kbetw_oddsfor)
 problem = ConScape.Problem(; 
     graph_measures, connectivity_measure, solver=ConScape.MatrixSolver(),
 )
-@be ConScape.solve(problem, rast)
+ConScape.solve(problem, rast)
+@profview ConScape.solve(problem, rast)
 @time result = ConScape.solve(problem, rast)
 @test result isa RasterStack
 @test size(result) == size(rast)
@@ -35,8 +36,11 @@ problem = ConScape.Problem(;
 # Threaded solve problem
 vector_problem = ConScape.Problem(; 
     graph_measures, connectivity_measure,
-    solver = ConScape.VectorSolver(; threaded=true),
+    solver = ConScape.VectorSolver(; threaded=false),
 )
+ConScape.solve(vector_problem, rast)
+@profview ConScape.solve(vector_problem, rast)
+using BenchmarkTools
 @benchmark ConScape.solve(vector_problem, rast)
 @time vector_result = ConScape.solve(vector_problem, rast)
 @test vector_result isa RasterStack
