@@ -412,7 +412,7 @@ function connected_habitat(grsp::GridRSP,
 
     affinities = copy(g.affinities)
     affinities[:, node] .= ifelse.(iszero.(affinities[:, node]), 0, avalue)
-    affinitie[node, :] .= ifelse.(iszero.(affinities[node, :]), 0, avalue)
+    affinities[node, :] .= ifelse.(iszero.(affinities[node, :]), 0, avalue)
 
     newsource_qualities = copy(g.source_qualities)
     newsource_qualities[cell] = qˢvalue

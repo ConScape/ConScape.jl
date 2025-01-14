@@ -35,7 +35,7 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
                                    qᵗ::AbstractVector,
                                    targetnodes::AbstractVector;
     Zⁱ=_inv(Z),
-    workspace1=zeros(size(Z)),
+    workspace1=similar(Z),
     solver=nothing,
     Aadj = (I - W)',
     Aadj_init=solver_init(solver, Aadj),
@@ -63,7 +63,8 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
                                    S::AbstractMatrix,  # Matrix of proximities
                                    landmarks::AbstractVector;
     Zⁱ=_inv(Z),
-    workspace1=zeros(size(Z)),
+    workspace1=similar(Z),
+    solver=nothing,
     Aadj = (I - W)',
     Aadj_init=solver_init(solver, Aadj),
     kw...
@@ -109,7 +110,7 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
                                         qᵗ::AbstractVector,
                                         targetnodes::AbstractVector;
     Zⁱ=_inv(Z),
-    workspace1=zeros(size(Z)),
+    workspace1=similar(Z),
     Aadj = (I - W)',
     Aadj_init=solver_init(solver, Aadj),
     solver=nothing,
@@ -159,8 +160,7 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
                                         K::AbstractMatrix,  # Matrix of proximities
                                         targetnodes::AbstractVector;
     Zⁱ=_inv(Z),
-    workspace1=zeros(size(Z)),
-    # workspace2=zeros(size(Z)),
+    workspace1=similar(Z),
     Aadj = (I - W)',
     Aadj_init=solver_init(solver, Aadj),
     solver=nothing,
@@ -203,8 +203,9 @@ function RSP_expected_cost(W::SparseMatrixCSC,
                            Z::AbstractMatrix,
                            landmarks::AbstractVector;
     solver=nothing,
-    A,# = (I - W),
-    A_init, # =solver_init(solver, A),
+    A = (I - W),
+    A_init = solver_init(solver, A),
+    workspace1=similar(Z),
     kw...
 )
 
@@ -218,11 +219,18 @@ function RSP_expected_cost(W::SparseMatrixCSC,
         Z = Z[:,landmarks]
     end
 
-    if size(Z, 1) == size(Z, 2)
-        C̄   = Z*((C .* W)*Z)
-    else
-        C̄ = solve_ldiv!(solver, A_init, A, ((C .* W) * Z))
-    end
+
+    # When threaded the solver is faster than # a dense matmul
+    # C̄ = if size(Z, 1) == size(Z, 2)
+        # B = mul!(workspace1, C .* W,  Z)
+        # mul!(B, C .* W,  Z)
+        # This is a dense-dense matmul... very slow
+        # Z * B
+    # else
+        # TODO
+        B = mul!(workspace1, C .* W,  Z)
+        C̄ = solve_ldiv!(solver, A_init, A, B)
+    # end
 
     C̄ ./= Z
     # Zeros in Z can cause NaNs in C̄ ./= Z computation but the limit

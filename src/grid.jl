@@ -261,7 +261,7 @@ function largest_subgraph(g::Grid)
     # Find the subgraphs
     scc = strongly_connected_components(graph)
 
-    @info "cost graph contains $(length(scc)) strongly connected subgraphs"
+    # @info "cost graph contains $(length(scc)) strongly connected subgraphs"
 
     # Find the largest subgraph
     i = argmax(length.(scc))
@@ -269,10 +269,10 @@ function largest_subgraph(g::Grid)
     # extract node list and sort it
     scci = sort(scc[i])
 
-    ndiffnodes = size(g.costmatrix, 1) - length(scci)
-    if ndiffnodes > 0
-        @info "removing $ndiffnodes nodes from affinity and cost graphs"
-    end
+    # ndiffnodes = size(g.costmatrix, 1) - length(scci)
+    # if ndiffnodes > 0
+        # @info "removing $ndiffnodes nodes from affinity and cost graphs"
+    # end
 
     # Extract the adjacency matrix of the largest subgraph
     affinities = g.affinities[scci, scci]

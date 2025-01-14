@@ -31,11 +31,9 @@ function solve(s::Solver, cm::FundamentalMeasure, p::AbstractProblem, g::Grid)
 end
 
 # Fallback generic ldiv solver
-solve_ldiv!(solver, A, B) = solve_ldiv!(solver, lu(A), A, B)
+solve_ldiv!(solver, A, B) = solve_ldiv!(solver, solver_init(solver, A), A, B)
 # Pre-factorized
-function solve_ldiv!(solver, F, A, B) 
-    ldiv!(F, B)
-end
+solve_ldiv!(solver::Union{MatrixSolver,Nothing}, F, A, B) = ldiv!(F, B)
 
 solver_init(solver, A) = lu(A)
 
@@ -187,7 +185,6 @@ function solve_ldiv!(s::LinearSolver, linsolve, A, B)
             B[:, i] .= sol.u
         end
     # end
-    @info "LinearSolver finished"
     return B
 end
 

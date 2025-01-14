@@ -61,9 +61,9 @@ graph_function(m::EigMax) = eigmax
 # Map structs to function keywords, 
 # a bit of a hack until we refactor the rest
 keywords(gm::GraphMeasure, p::AbstractProblem) = 
-    (; _keywords(gm)...)#, solver=solver(p))
+    (; _keywords(gm)..., solver=solver(p))
 keywords(gm::ConnectedHabitat, p::AbstractProblem) = 
-    (; _keywords(gm)..., approx=connectivity_measure(p).approx)#, solver=solver(p))
+    (; _keywords(gm)..., approx=connectivity_measure(p).approx, solver=solver(p))
 
 # A trait for connectivity requirement
 struct NeedsConnectivity end
@@ -123,9 +123,12 @@ needs_inv(::GraphMeasure) = false
 needs_inv(::BetweennessMeasure) = true
 needs_workspace(::GraphMeasure) = false
 needs_workspace(::BetweennessMeasure) = true
+# needs_workspace_cr(::GraphMeasure) = false
+# needs_workspace_cr(::BetweennessMeasure) = true
 needs_expected_cost(::GraphMeasure) = false
 needs_expected_cost(::EdgeBetweennessKweighted) = true
 needs_expected_cost(::MeanKullbackLeiblerDivergence) = true
+needs_edge_betweenness_workspace(::MeanKullbackLeiblerDivergence) = true
 needs_free_energy_distance(::GraphMeasure) = false
 needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
 needs_Aaj_init(::GraphMeasure) = true
@@ -150,16 +153,17 @@ function _setup_workspace(p::AbstractProblem, grsp::GridRSP; kw...)
         nothing
     end
     workspace_kw =  (; Zⁱ, workspace1, Aadj_init, Aadj)
-    expected_cost = if hastrait(needs_expected_cost, gms)
-        ConScape.expected_cost(grsp; workspace_kw..., kw...)
+    cf = connectivity_function(p)
+    expected_cost = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
+        ConScape.expected_cost(grsp; workspace_kw..., solver=solver(p), kw...)
     else
         nothing
     end
-    free_energy_distance = if hastrait(needs_free_energy_distance, gms)
-        ConScape.free_energy_distance(grsp; workspace_kw..., kw...)
+    free_energy_distance = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
+        ConScape.free_energy_distance(grsp; workspace_kw..., solver=solver(p), kw...)
     else
         nothing
     end
 
-    return (; workspace_kw..., kw..., expected_cost, free_energy_distance)
+    return (; ) #workspace_kw..., kw..., expected_cost, free_energy_distance)
 end
