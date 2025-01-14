@@ -8,14 +8,14 @@ _tempdir = mkdir(tempname())
 mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
 hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN)
 rast = RasterStack((; affinities=mov_prob, qualities=hab_qual))
-rast = ConScape.coarse_graining(rast, 10)
+# rast = ConScape.coarse_graining(rast, 10)
 
 graph_measures = graph_measures = (;
     func=ConScape.ConnectedHabitat(),
     qbetw=ConScape.BetweennessQweighted(),
     kbetw=ConScape.BetweennessKweighted(),
-    #mkld=ConScape.MeanKullbackLeiblerDivergence(),
-    #mlcd=ConScape.MeanLeastCostKullbackLeiblerDivergence(),
+    # mkld=ConScape.MeanKullbackLeiblerDivergence(),
+    # mlcd=ConScape.MeanLeastCostKullbackLeiblerDivergence(),
 )
 distance_transformation = (exp=x -> exp(-x/75), oddsfor=ConScape.OddsFor())
 connectivity_measure = ConScape.ExpectedCost(; θ=1.0, distance_transformation)
@@ -26,9 +26,12 @@ expected_layers = (:func_exp, :func_oddsfor, :qbetw, :kbetw_exp, :kbetw_oddsfor)
 problem = ConScape.Problem(; 
     graph_measures, connectivity_measure, solver=ConScape.MatrixSolver(),
 )
-ConScape.solve(problem, rast)
 @profview ConScape.solve(problem, rast)
 @time result = ConScape.solve(problem, rast)
+ConScape.solve(problem, rast)
+using BenchmarkTools
+@benchmark ConScape.solve(problem, rast)
+plot(result)
 @test result isa RasterStack
 @test size(result) == size(rast)
 @test keys(result) == expected_layers
@@ -36,13 +39,14 @@ ConScape.solve(problem, rast)
 # Threaded solve problem
 vector_problem = ConScape.Problem(; 
     graph_measures, connectivity_measure,
-    solver = ConScape.VectorSolver(; threaded=false),
+    solver = ConScape.VectorSolver(; threaded=true),
 )
-ConScape.solve(vector_problem, rast)
-@profview ConScape.solve(vector_problem, rast)
+@time vector_result = ConScape.solve(vector_problem, rast)
+plot(vector_result)
+using ProfileView
+ProfileView.@profview ConScape.solve(vector_problem, rast)
 using BenchmarkTools
 @benchmark ConScape.solve(vector_problem, rast)
-@time vector_result = ConScape.solve(vector_problem, rast)
 @test vector_result isa RasterStack
 @test size(vector_result) == size(rast)
 @test keys(vector_result) == expected_layers
