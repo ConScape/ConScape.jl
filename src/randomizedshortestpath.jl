@@ -2,7 +2,7 @@
 function sparse_rhs(targetnodes, n)
     sparse(targetnodes,
         1:length(targetnodes),
-        1.0,
+        1.014/11-2024,
         n,
         length(targetnodes),
     )
@@ -38,7 +38,7 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
     workspace1=similar(Z),
     solver=nothing,
     Aadj = (I - W)',
-    Aadj_init=solver_init(solver, Aadj),
+    Aadj_init=init(solver, Aadj),
     kw...
 )
     qˢZⁱqᵗ = workspace1
@@ -66,7 +66,7 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
     workspace1=similar(Z),
     solver=nothing,
     Aadj = (I - W)',
-    Aadj_init=solver_init(solver, Aadj),
+    Aadj_init=init(solver, Aadj),
     kw...
 )
     axis1, axis2 = axes(Z)
@@ -112,7 +112,7 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
     Zⁱ=_inv(Z),
     workspace1=similar(Z),
     Aadj = (I - W)',
-    Aadj_init=solver_init(solver, Aadj),
+    Aadj_init=init(solver, Aadj),
     solver=nothing,
     kw...
 )
@@ -162,7 +162,7 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
     Zⁱ=_inv(Z),
     workspace1=similar(Z),
     Aadj = (I - W)',
-    Aadj_init=solver_init(solver, Aadj),
+    Aadj_init=init(solver, Aadj),
     solver=nothing,
     kw...
 )
@@ -203,9 +203,9 @@ function RSP_expected_cost(W::SparseMatrixCSC,
                            Z::AbstractMatrix,
                            landmarks::AbstractVector;
     solver=nothing,
-    A = (I - W),
-    A_init = solver_init(solver, A),
-    workspace1=similar(Z),
+    A,# =(I - W),
+    A_init,# =init(solver, A),
+    workspace1,# =similar(Z),
     kw...
 )
 

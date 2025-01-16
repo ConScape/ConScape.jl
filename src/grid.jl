@@ -91,13 +91,13 @@ function Grid(nrows::Integer,
         nothing, costs
     end
 
-    if any(t -> t < 0, nonzeros(costmatrix))
-        throw(ArgumentError("The cost graph can have only non-negative edge weights. Perhaps you should change the cost function?"))
-    end
+    # if any(t -> t < 0, nonzeros(costmatrix))
+    #     throw(ArgumentError("The cost graph can have only non-negative edge weights. Perhaps you should change the cost function?"))
+    # end
 
-    if ne(difference(SimpleDiGraph(costmatrix), SimpleDiGraph(affinities))) > 0
-        throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
-    end
+    # if ne(difference(SimpleDiGraph(costmatrix), SimpleDiGraph(affinities))) > 0
+    #     throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
+    # end
 
     targetidx, targetnodes = _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
     qs = [_source_qualities[i] for i in id_to_grid_coordinate_list]

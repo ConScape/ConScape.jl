@@ -52,28 +52,16 @@ graph_measures(p::Problem) = p.graph_measures
 connectivity_measure(p::Problem) = p.connectivity_measure
 solver(p::Problem) = p.solver
 
-solve(p::Problem, rast::RasterStack) = solve(p, Grid(p, rast))
-solve(p::Problem, g::Grid) = solve(p.solver, connectivity_measure(p), p, g)
+solve(p::Problem, g::Grid; workspace=nothing) =
+    solve(p.solver, connectivity_measure(p), p, g; workspace)
+function solve(p::Problem, rast::RasterStack; workspace=nothing)
+    grid = isnothing(workspace) ? Grid(p, rast) : workspace.grid
+    return solve(p, grid; workspace)
+end
 
-# @kwdef struct ComputeAssesment{P,M,T}
-#     problem::P
-#     mem_stats::M
-#     totalmem::T
-# end
-
-# """
-#     allocate(co::ComputeAssesment)
-
-# Allocate memory required to run `solve` for the assessed ops.
-
-# The returned object can be passed as the `allocs` keyword to `solve`.
-# """
-# function allocate(co::ComputeAssesment)
-#     zmax = co.zmax
-#     # But actually do this with GenericMemory using Julia v1.11
-#     Z = Matrix{Float64}(undef, co.zmax) 
-#     S = sparse(1:zmax[1], 1:zmax[2], 1.0, zmax...)
-#     L = lu(S)
-#     # Just return a NamedTuple for now
-#     return (; Z, S, L)
-# end
+function init(p::Problem, rast::RasterStack)
+    grid = Grid(p, rast)
+    return (; grid, init(p, grid)...)
+end
+# Init is conditional on solver and connectivity measure
+init(p::AbstractProblem, g::Grid) = init(solver(p), connectivity_measure(p), p, g)

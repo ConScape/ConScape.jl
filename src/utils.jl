@@ -144,7 +144,9 @@ function graph_matrix_from_raster(
             end
         end
     end
-    return sparse(is, js, vs, m*n, m*n)
+    # TODO just make a BandedMatrix from the start
+    # and what happens when this is not square?
+    return (sparse(is, js, vs, m*n, m*n))
 end
 
 
@@ -186,6 +188,11 @@ Map the non-zero values of a sparse matrix `A` with the function `f`.
 function mapnz(f, A::SparseMatrixCSC)
     B = copy(A)
     map!(f, B.nzval, A.nzval)
+    return B
+end
+function mapnz(f, A::AbstractArray)
+    B = copy(A)
+    map!(f, B.data, A.data)
     return B
 end
 

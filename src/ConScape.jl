@@ -1,10 +1,19 @@
 module ConScape
 
-using SparseArrays, LinearAlgebra
-using Graphs, Plots, SimpleWeightedGraphs, ProgressLogging, ArnoldiMethod
-using Rasters
+using ArnoldiMethod
+using Graphs
+using LinearAlgebra
 using LinearSolve
+using Plots
+using ProgressLogging
+using Rasters
+using SimpleWeightedGraphs
+using SparseArrays
 using Rasters.DimensionalData
+using BandedMatrices
+
+import CommonSolve
+import CommonSolve: solve, init
 
 # Old funcion-based interface
 abstract type ConnectivityFunction <: Function end

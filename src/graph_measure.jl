@@ -134,7 +134,11 @@ needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
 needs_Aaj_init(::GraphMeasure) = true
 hastrait(t, gms) = mapreduce(t, |, gms; init=false)
 
-function _setup_workspace(p::AbstractProblem, grsp::GridRSP; kw...)
+function _measures_workspace(p::AbstractProblem, grsp::GridRSP; 
+    A, 
+    A_init,
+    kw...
+)
     gms = p.graph_measures
     workspace1 = if hastrait(needs_workspace, gms)
         similar(grsp.Z)
@@ -147,12 +151,13 @@ function _setup_workspace(p::AbstractProblem, grsp::GridRSP; kw...)
         nothing
     end
     Aadj_init, Aadj = if hastrait(needs_Aaj_init, gms)
-        Aadj = (I - grsp.W)'
-        solver_init(p.solver, Aadj), Aadj 
+        Aadj = A'
+        (; F) = A_init
+        merge(A_init, (; F=F')), Aadj
     else
         nothing
     end
-    workspace_kw =  (; Zⁱ, workspace1, Aadj_init, Aadj)
+    workspace_kw =  (; Zⁱ, workspace1, Aadj_init, Aadj, A, A_init)
     cf = connectivity_function(p)
     expected_cost = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
         ConScape.expected_cost(grsp; workspace_kw..., solver=solver(p), kw...)
@@ -165,5 +170,5 @@ function _setup_workspace(p::AbstractProblem, grsp::GridRSP; kw...)
         nothing
     end
 
-    return (; ) #workspace_kw..., kw..., expected_cost, free_energy_distance)
+    return (; workspace_kw..., kw..., expected_cost, free_energy_distance)
 end

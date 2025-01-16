@@ -7,35 +7,32 @@ Abstract supertype for ConScape solvers.
 """ Solver 
 
 # RSP is not used for ConnectivityMeasure, so the solver isn't used
-function solve(s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid) 
-    workspaces = _setup_workspace(p, g)
+function solve(s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid;
+    workspace=init(s, cm, p, g),
+) 
     return map(p.graph_measures) do gm
-        compute(gm, p, g; solver=s, workspaces...)
+        compute(gm, p, g; solver=s, workspace...)
     end
 end
-
-function solve(s::Solver, cm::FundamentalMeasure, p::AbstractProblem, g::Grid) 
-    (; A, B, Pref, W) = setup_sparse_problem(g, cm)
-    A_init = solver_init(s, A)
-    Z = solve_ldiv!(s, A_init, A, Matrix(B))
-    # Check that values in Z are not too small:
-#    _check_z(s, Z, W, g)
-
+function solve(s::Solver, cm::FundamentalMeasure, p::AbstractProblem, g::Grid; 
+    workspace=nothing,
+) 
+    workspace = isnothing(workspace) ? init(s, cm, p, g) : workspace
     # TODO remove use of GridRSP where possible
-    grsp = GridRSP(g, cm.θ, Pref, W, Z)
-    workspaces = _setup_workspace(p, grsp; A, A_init)
     results = map(p.graph_measures) do gm
-        compute(gm, p, grsp; workspaces...)
+        compute(gm, p, workspace.grsp; workspace...)
     end
     return _merge_to_stack(results)
 end
 
-# Fallback generic ldiv solver
-solve_ldiv!(solver, A, B) = solve_ldiv!(solver, solver_init(solver, A), A, B)
-# Pre-factorized
-solve_ldiv!(solver::Union{MatrixSolver,Nothing}, F, A, B) = ldiv!(F, B)
+function init(s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid) 
+    # TODO what is needed here?
+    return (;)
+end
 
-solver_init(solver, A) = lu(A)
+# Fallback generic ldiv solver
+solve_ldiv!(solver, A, B) = 
+    solve_ldiv!(solver, init(solver, A), A, B)
 
 """
    MatrixSolver(; check)
@@ -49,6 +46,10 @@ But may be best for GPUs using CuSSP.jl ?
     check::Bool = true
 end
 
+solve_ldiv!(::Union{MatrixSolver,Nothing}, (; F), A, B) = ldiv!(F, B)
+
+init(::Union{Nothing,MatrixSolver}, A::AbstractMatrix) = (; F=lu(A))
+
 """
    VectorSolver(; check, threaded)
 
@@ -60,34 +61,59 @@ less memory use and the capacity for threading
     threaded::Bool = false
 end
 
-function solve_ldiv!(s::VectorSolver, F, A, B)
+function init(s::Union{MatrixSolver,VectorSolver,Nothing}, 
+    cm::FundamentalMeasure, 
+    p::AbstractProblem, 
+    g::Grid
+) 
+    (; A, B, Pref, W) = setup_sparse_problem(g, cm)
+    # Check that values in Z are not too small:
+    A_init = init(s, A)
+    Z = solve_ldiv!(s, A_init, A, Matrix(B))
+    _check_z(s, Z, W, g)
+    grsp = GridRSP(g, cm.θ, Pref, W, Z)
+    return (; grsp, _measures_workspace(p, grsp; A, A_init)...)
+end
+
+function init(s::VectorSolver, A::AbstractMatrix)
+    F = lu(A)
+    if s.threaded
+        nbuffers = Threads.nthreads()
+        channel = Channel{Tuple{typeof(F),Vector{Float64}}}(nbuffers)
+        for _ in 1:nbuffers
+            # TODO not all of F needs to be duplicated?
+            # Can we just copy the workspace arrays and resuse the rest?
+            put!(channel, (deepcopy(F), Vector{eltype(A)}(undef, size(A, 2))))
+        end
+        return (; F, channel)
+    else
+        b = zeros(eltype(A), size(A, 2))
+        return (; F, b)
+    end
+end
+
+function solve_ldiv!(s::VectorSolver, init, A, B)
     transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
     # for SparseArrays.UMFPACK._AqldivB_kernel!(Z, F, B, transposeoptype)
 
     # This is basically SparseArrays.UMFPACK._AqldivB_kernel!
     # But we unroll it to avoid copies or allocation of B
     if s.threaded
+        (; F, channel) = init
         # Create a channel to store problem b vectors for threads
         # see https://juliafolds2.github.io/OhMyThreads.jl/stable/literate/tls/tls/
-        nbuffers = Threads.nthreads()
-        ch = Channel{Tuple{typeof(F),Vector{Float64}}}(nbuffers)
-        for i in 1:nbuffers
-            # TODO not all of F needs to be duplicated?
-            # Can we just copy the workspace arrays and resuse the rest?
-            put!(ch, (deepcopy(F), Vector{eltype(A)}(undef, size(B, 1))))
-        end
         Threads.@threads for col in 1:size(B, 2)
             # Get a workspace from the channel
-            F_t, b_t = take!(ch)
+            F_t, b_t = take!(channel)
             # Copy a column from B
             b_t .= view(B, :, col)
             # Solve for the column
             SparseArrays.UMFPACK.solve!(view(B, :, col), F_t, b_t, transposeoptype)
             # Reuse the workspace 
-            put!(ch, (F_t, b_t))
+            put!(channel, (F_t, b_t))
         end
     else
-        b = zeros(eltype(B), size(B, 1))
+        (; F, b) = init
         for col in 1:size(B, 2)
             b .= view(B, :, col)
             SparseArrays.UMFPACK.solve!(view(B, :, col), F, b, transposeoptype)
@@ -200,7 +226,6 @@ function setup_sparse_problem(g::Grid, cm::FundamentalMeasure)
     B = sparse_rhs(g.targetnodes, size(g.costmatrix, 1))
     return (; A, B, Pref, W)
 end
-
 
 # We may have multiple distance_measures per
 # graph_measure, but we want a single RasterStack.

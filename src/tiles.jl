@@ -23,19 +23,34 @@ to be run over the same windowed grids.
 end
 WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 
-function solve(wp::WindowedProblem, rast::RasterStack)
-    ranges = collect(_get_window_ranges(wp, rast))
+function solve(p::WindowedProblem, rast::RasterStack; 
+    test_windows=false,
+    verbose=false,
+    workspace=init(p, rast),
+)
+    ranges = collect(_get_window_ranges(p, rast))
     mask = _get_window_mask(rast, ranges)
-    p = wp.problem
     output_stacks = Vector{RasterStack}(undef, count(mask))
     used_ranges = ranges[mask]
-    if wp.threaded
+    if test_windows
+        output_stacks = map(eachindex(used_ranges)) do i
+            _mask_target_qualities_overlap!(rast, used_ranges[i], p)
+        end
+        return Rasters.mosaic(sum, output_stacks; to=rast, missingval=NaN)
+    end
+    function run(i)
+        rs = used_ranges[i]
+        verbose && println("Solving window $i $rs ")
+        rast_window = _mask_target_qualities_overlap!(rast, rs, p)
+        output_stacks[i] = solve(p.problem, rast_window; workspace)
+    end
+    if p.threaded
         Threads.@threads for i in eachindex(used_ranges)
-            output_stacks[i] = solve(p, rast[used_ranges[i]...])
+            run(i)
         end
     else
         for i in eachindex(used_ranges)
-            output_stacks[i] = solve(p, rast[used_ranges[i]...])
+            run(i)
         end
     end
     # Return mosaics of outputs
@@ -84,50 +99,74 @@ for nested operations.
 end
 StoredProblem(problem; kw...) =  StoredProblem(; problem, kw...)
 
-function solve(sp::StoredProblem, rast::RasterStack)
-    ranges = collect(_get_window_ranges(sp, rast))
+function solve(p::StoredProblem, rast::RasterStack;
+    verbose=false,
+)
+    ranges = collect(_get_window_ranges(p, rast))
     mask = _get_window_mask(rast, ranges)
-    if sp.threaded
-        Threads.@threads for rs in ranges[mask]
-            output = solve(sp.problem, rast[rs...])
-            _store(sp, output, rs)
+    used_ranges = ranges[mask]
+    function run(i) 
+        rs = used_ranges[i]
+        verbose && println("Solving window $i $rs ")
+        rast_window = _mask_target_qualities_overlap!(rast, rs, p)
+        output = solve(p.problem, rast_window)
+        _store(p, output, rs)
+    end
+    if p.threaded
+        Threads.@threads for i in eachindex(used_ranges)
+            run(i) 
         end
     else
-        for rs in ranges[mask]
-            output = solve(sp.problem, rast[rs...])
-            _store(sp, output, rs)
+        for i in eachindex(used_ranges)
+            run(i) 
         end
     end
 end
-# Single batch job for clusters
-function solve(sp::StoredProblem, rast::RasterStack, i::Int)
-    ranges = collect(_get_window_ranges(sp, rast))
-    rs = ranges[i]
-    output = solve(sp.problem, rast[rs...])
-    _store(sp, output, rs)
+# Single batch job for running on clusters
+function solve(p::StoredProblem, rast::RasterStack, i::Int;
+    verbose=false,
+)
+    # Indices i are contiguous so we need to spread them
+    # accross the actual tiles that need to be done
+
+    # Get all the tile ranges
+    ranges = collect(_get_window_ranges(p, rast))
+    # Get the Bool mask of needed windows
+    mask = _get_window_mask(rast, ranges)
+    # Get the Int indices of the needed windows
+    tile_inds = eachindex(mask)[vec(mask)]
+    # Get the current window for this job
+    rs = ranges[tile_inds[i]]
+    # Get the ranges of the window for this job
+    output = solve(p.problem, rast[rs...])
+    # Store the output rasters for this job to disk
+    filename = _store(p, output, rs)
+    return filename
 end
 
 """
-    batch_ids(sp::StoredProblem, rast::RasterStack)
+    count_batches(p::StoredProblem, rast::RasterStack)
 
-Return the batch indices of the windows that need to be computed.
+Count the number of batch jobs that would need to be run.
 
-Returns a `Vector{Int}`
+A Slurm array job would then be specified "0-$(N-1)"
+
+Returns an `Int`.
 """
-function batch_ids(sp::StoredProblem, rast::RasterStack)
-    ranges = _get_window_ranges(sp, rast)
+function count_batches(p::StoredProblem, rast::RasterStack)
+    ranges = _get_window_ranges(p, rast)
     mask = _get_window_mask(rast, ranges)
-    return eachindex(mask)[vec(mask)]
+    return count(mask)
 end
 
 # Mosaic the stored files to a RasterStack
-function Rasters.mosaic(sp::StoredProblem; 
+function Rasters.mosaic(p::StoredProblem; 
     to, lazy=false, filename=nothing, missingval=NaN, kw...
 )
-    ranges = _get_window_ranges(sp, to)
+    ranges = _get_window_ranges(p, to)
     mask = _get_window_mask(to, ranges)
-    paths = [_window_path(sp, rs) for (rs, m) in zip(ranges, mask) if m]
-    stacks = [RasterStack(p; lazy, name) for p in paths if isdir(p)]
+    paths = [_window_path(p, rs) for (rs, m) in zip(ranges, mask) if m]
+    stacks = [RasterStack(path; lazy, name) for path in paths if isdir(path)]
 
     return Rasters.mosaic(sum, stacks; to, filename, missingval, kw...)
 end
@@ -168,6 +207,17 @@ function _get_window_ranges(size::Tuple{Int,Int}, r::Int, overlap::Int)
     corners = CartesianIndices(size)[begin:s:end, begin:s:end]
     # Create an iterator of ranges for retreiving each window
     return (map((i, sz) -> i:min(sz, i + d), Tuple(c), size) for c in corners)
+end
+
+function _mask_target_qualities_overlap!(rast, rs, p, last=false)
+    o = p.overlap ÷ 2
+    fill = zero(eltype(rast.target_qualities))
+    dest = rast[rs...]
+    dest.target_qualities[end-o:end, :] .= fill
+    dest.target_qualities[begin:begin+o, :] .= fill
+    dest.target_qualities[:, end-o:end] .= fill
+    dest.target_qualities[:, begin:begin+o] .= fill
+    return rast
 end
 
 _get_window_mask(::Nothing, ranges) = nothing
