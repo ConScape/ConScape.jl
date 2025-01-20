@@ -1,7 +1,7 @@
 using ConScape, Test, SparseArrays
 using Rasters, ArchGDAL, Plots
 
-include("problem.jl")
+# include("problem.jl")
 
 # TODO reorganise this into separate files
 
@@ -891,7 +891,7 @@ end
     hab_qual[non_matches] .= 1e-20
 
     g = ConScape.Grid(size(mov_prob)...,
-        affinities=ConScape.graph_matrix_from_raster(mov_prob),
+        affinities=ConScape.graph_matrix_from_rasterG(mov_prob),
         qualities=hab_qual,
         costs=ConScape.MinusLog())
 

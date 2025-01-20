@@ -94,10 +94,12 @@ function Grid(nrows::Integer,
     # if any(t -> t < 0, nonzeros(costmatrix))
     #     throw(ArgumentError("The cost graph can have only non-negative edge weights. Perhaps you should change the cost function?"))
     # end
+    cost_digraph = SimpleDiGraph(costmatrix)
+    affinity_digraph = SimpleDiGraph(affinities)
 
-    # if ne(difference(SimpleDiGraph(costmatrix), SimpleDiGraph(affinities))) > 0
-    #     throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
-    # end
+    if ne(difference(cost_digraph, affinity_digraph)) > 0
+        throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
+    end
 
     targetidx, targetnodes = _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
     qs = [_source_qualities[i] for i in id_to_grid_coordinate_list]
@@ -141,7 +143,7 @@ function Grid(rast::RasterStack;
     Grid(size(rast)...; affinities, qualities, source_qualities, target_qualities, costs, kw...)  
 end
 # TODO move functions like MinusLog to problems and pass in here
-Grid(p::AbstractProblem, rast::RasterStack) = Grid(rast)
+Grid(p::AbstractProblem, rast::RasterStack; kw...) = Grid(rast; kw...)
 
 Base.size(g::Grid) = (g.nrows, g.ncols)
 DimensionalData.dims(g::Grid) = g.dims
@@ -172,8 +174,8 @@ _unwrap(R::Raster) = parent(R)
 _unwrap(R::AbstractMatrix) = R
 # Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices
-_targetidx(q::AbstractMatrix, grididxs::Vector) = grididxs
-_targetidx(q::SparseMatrixCSC, grididxs::Vector) =
+_targetidx(q::AbstractMatrix, grididxs::AbstractVector) = grididxs
+_targetidx(q::SparseMatrixCSC, grididxs::AbstractVector) =
     CartesianIndex.(findnz(q)[1:2]...) ∩ grididxs
 
 _targetidx_and_nodes(g::Grid) = 
@@ -255,7 +257,7 @@ will have the same size as the input `Grid` but only nodes associated with the
 largest subgraph of the affinities will be active.
 """
 function largest_subgraph(g::Grid)
-    # Convert cost matrix to graph
+    # Convert cost matrix to graph, todo: is `permute=false` needed
     graph = SimpleWeightedDiGraph(g.costmatrix, permute=false)
 
     # Find the subgraphs
@@ -278,16 +280,17 @@ function largest_subgraph(g::Grid)
     affinities = g.affinities[scci, scci]
     # affinities = convert(SparseMatrixCSC{Float64,Int}, graph[scci])
 
-    id_to_grid_coordinate_list = g.id_to_grid_coordinate_list[scci]
-    targetidx, targetnodes = _targetidx_and_nodes(g.target_qualities, id_to_grid_coordinate_list)
-    qs = [g.source_qualities[i] for i in id_to_grid_coordinate_list]
-    qt = [g.target_qualities[i] for i in id_to_grid_coordinate_list ∩ targetidx]
+    costmatrix = g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinities)
+    id_to_grid_coordinate_list = NoWriteArray(g.id_to_grid_coordinate_list[scci])
+    targetidx, targetnodes = map(NoWriteArray, _targetidx_and_nodes(g.target_qualities, id_to_grid_coordinate_list))
+    qs = NoWriteArray([g.source_qualities[i] for i in id_to_grid_coordinate_list])
+    qt = NoWriteArray([g.target_qualities[i] for i in id_to_grid_coordinate_list ∩ targetidx])
     return Grid(
         g.nrows,
         g.ncols,
         affinities,
         g.costfunction,
-        g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinities),
+        costmatrix,
         id_to_grid_coordinate_list,
         g.source_qualities,
         g.target_qualities,

@@ -6,6 +6,29 @@ These are lazy definitions of conscape functions.
 """
 abstract type GraphMeasure end
 
+abstract type ReturnType end
+struct ReturnsDenseSpatial <: ReturnType end
+struct ReturnsSparse <: ReturnType end
+struct ReturnsScalar <: ReturnType end
+struct ReturnsOther{F} <: ReturnType 
+    f::F
+end
+
+"""
+    NoWriteArray
+
+A Julia AbstractArray wrapper that errors on `setindex!`, for testing.
+"""
+mutable struct NoWriteArray{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
+    __data::A
+end
+
+Base.size(A::NoWriteArray) = size(A.__data)
+Base.copy(A::NoWriteArray) = copy(A.__data)
+Base.getindex(A::NoWriteArray, i...) = A.__data[i...]
+Base.setindex!(A::NoWriteArray, v, i...) = error("Cannot write to NoWriteArray")
+Base.:(==)(A::NoWriteArray, B::NoWriteArray) = A.__data == B.__data
+
 keywords(o::GraphMeasure) = _keywords(o)
 
 abstract type TopologicalMeasure <: GraphMeasure end
@@ -41,6 +64,16 @@ end
 
 struct MeanLeastCostKullbackLeiblerDivergence <: PathDistributionMeasure end
 struct MeanKullbackLeiblerDivergence <: PathDistributionMeasure end
+
+returntype(::EdgeBetweennessQweighted) = ReturnsSparse()
+returntype(::EdgeBetweennessKweighted) = ReturnsSparse()
+returntype(::BetweennessQweighted) = ReturnsDenseSpatial()
+returntype(::BetweennessKweighted) = ReturnsDenseSpatial()
+returntype(::ConnectedHabitat) = ReturnsDenseSpatial()
+returntype(::Criticality) = ReturnsDenseSpatial()
+returntype(::EigMax) = ReturnsOther((n, m) -> n + m)
+returntype(::MeanLeastCostKullbackLeiblerDivergence) = ReturnsScalar()
+returntype(::MeanKullbackLeiblerDivergence) = ReturnsScalar()
 
 # Map structs to functions
 
@@ -119,16 +152,27 @@ function compute(::NoConnectivity,
 end
 
 # Workspace allocation traits
+return_type(::GraphMeasure) = false
 needs_inv(::GraphMeasure) = false
 needs_inv(::BetweennessMeasure) = true
-needs_workspace(::GraphMeasure) = false
-needs_workspace(::BetweennessMeasure) = true
-# needs_workspace_cr(::GraphMeasure) = false
-# needs_workspace_cr(::BetweennessMeasure) = true
+needs_workspaces(::GraphMeasure) = 0
+needs_workspaces(::BetweennessMeasure) = 2
+needs_workspaces(
+    ::Union{EdgeBetweennessKweighted,EdgeBetweennessQweighted}
+) = 3
+needs_permuted_workspaces(::GraphMeasure) = 0
+needs_permuted_workspaces(::EdgeBetweennessKweighted) = 1
+needs_edge_betweennesses(::GraphMeasure) = false
+needs_edge_betweennesses(
+    ::Union{EdgeBetweennessKweighted,EdgeBetweennessQweighted}
+) = true
+needs_dense_A(::GraphMeasure) = false
+needs_dense_A(
+    ::Union{EdgeBetweennessKweighted,EdgeBetweennessQweighted}
+) = true
 needs_expected_cost(::GraphMeasure) = false
 needs_expected_cost(::EdgeBetweennessKweighted) = true
 needs_expected_cost(::MeanKullbackLeiblerDivergence) = true
-needs_edge_betweenness_workspace(::MeanKullbackLeiblerDivergence) = true
 needs_free_energy_distance(::GraphMeasure) = false
 needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
 needs_Aaj_init(::GraphMeasure) = true
@@ -137,38 +181,57 @@ hastrait(t, gms) = mapreduce(t, |, gms; init=false)
 function _measures_workspace(p::AbstractProblem, grsp::GridRSP; 
     A, 
     A_init,
+    workspace,
     kw...
 )
     gms = p.graph_measures
-    workspace1 = if hastrait(needs_workspace, gms)
-        similar(grsp.Z)
-    else
-        nothing
-    end
+    n_workspaces = mapreduce(needs_workspaces, max, gms)
+    n_permuted_workspaces = mapreduce(needs_permuted_workspaces, max, gms)
+    workspaces = [workspace, (similar(grsp.Z) for _ in 1:n_workspaces-1)...]
+    permuted_workspaces = [similar(grsp.Z') for _ in 1:n_permuted_workspaces]
     Zⁱ = if hastrait(needs_inv, gms)
-        _inv(grsp.Z) 
+        NoWriteArray(_inv(grsp.Z))
     else
         nothing
     end
     Aadj_init, Aadj = if hastrait(needs_Aaj_init, gms)
-        Aadj = A'
-        (; F) = A_init
-        merge(A_init, (; F=F')), Aadj
+        # Just take the adjoint of the factorization of A
+        # where possible to save calculations and memory
+        Aadj_init, Aadj = if hasproperty(A_init, :F)
+            Aadj = A'
+            # Use adjoint factorization of A rather than recalculating for A'
+            Aadj_init = merge(A_init, (; F=A_init.F'))
+            Aadj_init, Aadj
+        else
+            # LinearSolve.jl cant handle the adjoint 
+            # so we duplicate work and allocations
+            Aadj = sparse(A')
+            Aadj_init = init(solver(p), Aadj)
+            Aadj_init, Aadj
+        end
+        Aadj_init, Aadj
     else
-        nothing
+        nothing, nothing
     end
-    workspace_kw =  (; Zⁱ, workspace1, Aadj_init, Aadj, A, A_init)
+    # Create an intermediate workspace to use in computations
+    workspace_kw =  (; Zⁱ, workspaces, permuted_workspaces, Aadj_init, Aadj, A, A_init, kw...)
     cf = connectivity_function(p)
-    expected_cost = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
-        ConScape.expected_cost(grsp; workspace_kw..., solver=solver(p), kw...)
+    expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
+        NoWriteArray(ConScape.expected_cost(grsp; workspace_kw..., solver=solver(p), kw...))
     else
         nothing
     end
-    free_energy_distance = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
-        ConScape.free_energy_distance(grsp; workspace_kw..., solver=solver(p), kw...)
+    free_energy_distances = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
+        NoWriteArray(ConScape.free_energy_distance(grsp; workspace_kw..., solver=solver(p), kw...))
+    else
+        nothing
+    end
+    edge_betweennesses = if hastrait(needs_edge_betweennesses, gms)
+        copy(grsp.W)
     else
         nothing
     end
 
-    return (; workspace_kw..., kw..., expected_cost, free_energy_distance)
+    CW = grsp.g.costmatrix .* grsp.W
+    return (; grsp, workspace_kw..., CW, free_energy_distances, expected_costs, edge_betweennesses)
 end

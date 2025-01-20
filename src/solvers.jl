@@ -6,6 +6,27 @@
 Abstract supertype for ConScape solvers.
 """ Solver 
 
+function init(s::Solver, 
+    cm::FundamentalMeasure, 
+    p::AbstractProblem, 
+    g::Grid
+) 
+    Pref = _Pref(g.affinities)
+    W = _W(Pref, cm.θ, g.costmatrix)
+    # Sparse lhs
+    A = I - W
+    # Sparse rhs
+    B_sparse = sparse_rhs(g.targetnodes, size(g.costmatrix, 1))
+    A_init = init(s, A)
+    B_dense = Matrix(B_sparse)
+    workspace = copy(B_dense)
+    Z = ldiv!(s, A_init, B_dense; B_copy=workspace)
+    # Check that values in Z are not too small:
+    _check_z(s, Z, W, g)
+    grsp = GridRSP(g, cm.θ, Pref, W, Z)
+    return _measures_workspace(p, grsp; A, A_init, workspace, B_sparse)
+end
+
 # RSP is not used for ConnectivityMeasure, so the solver isn't used
 function solve(s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid;
     workspace=init(s, cm, p, g),
@@ -30,9 +51,7 @@ function init(s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid)
     return (;)
 end
 
-# Fallback generic ldiv solver
-solve_ldiv!(solver, A, B) = 
-    solve_ldiv!(solver, init(solver, A), A, B)
+LinearAlgebra.ldiv!(solver::Solver, A, B; kw...) = ldiv!(solver, init(solver, A), A, B; kw...)
 
 """
    MatrixSolver(; check)
@@ -46,9 +65,11 @@ But may be best for GPUs using CuSSP.jl ?
     check::Bool = true
 end
 
-solve_ldiv!(::Union{MatrixSolver,Nothing}, (; F), A, B) = ldiv!(F, B)
-
 init(::Union{Nothing,MatrixSolver}, A::AbstractMatrix) = (; F=lu(A))
+
+# TODO: no type pyracy
+LinearAlgebra.ldiv!(::Union{MatrixSolver,Nothing}, (; F), B; B_copy=copy(B)) = 
+    ldiv!(B, F, B_copy)
 
 """
    VectorSolver(; check, threaded)
@@ -61,45 +82,38 @@ less memory use and the capacity for threading
     threaded::Bool = false
 end
 
-function init(s::Union{MatrixSolver,VectorSolver,Nothing}, 
-    cm::FundamentalMeasure, 
-    p::AbstractProblem, 
-    g::Grid
-) 
-    (; A, B, Pref, W) = setup_sparse_problem(g, cm)
-    # Check that values in Z are not too small:
-    A_init = init(s, A)
-    Z = solve_ldiv!(s, A_init, A, Matrix(B))
-    _check_z(s, Z, W, g)
-    grsp = GridRSP(g, cm.θ, Pref, W, Z)
-    return (; grsp, _measures_workspace(p, grsp; A, A_init)...)
-end
-
 function init(s::VectorSolver, A::AbstractMatrix)
     F = lu(A)
+    Tb = Vector{eltype(A)}
     if s.threaded
         nbuffers = Threads.nthreads()
-        channel = Channel{Tuple{typeof(F),Vector{Float64}}}(nbuffers)
-        for _ in 1:nbuffers
-            # TODO not all of F needs to be duplicated?
-            # Can we just copy the workspace arrays and resuse the rest?
-            put!(channel, (deepcopy(F), Vector{eltype(A)}(undef, size(A, 2))))
-        end
-        return (; F, channel)
+        # channel = Channel{Tuple{typeof(F),Vector{Float64}}}(nbuffers)
+        # Create one init per thread
+        # UMFPACK `copy` shares memory but avoids workspace race conditions
+        [
+            (; 
+                F=(i == 1 ? F : copy(F)), 
+                b=Tb(undef, size(A, 2))
+            )
+            for i in 1:nbuffers
+        ]
     else
-        b = zeros(eltype(A), size(A, 2))
-        return (; F, b)
+        b = Tb(undef, size(A, 2))
+        return [(; F, b)]
     end
 end
 
-function solve_ldiv!(s::VectorSolver, init, A, B)
+function LinearAlgebra.ldiv!(s::VectorSolver, init, B; B_copy=nothing)
     transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
     # for SparseArrays.UMFPACK._AqldivB_kernel!(Z, F, B, transposeoptype)
 
     # This is basically SparseArrays.UMFPACK._AqldivB_kernel!
     # But we unroll it to avoid copies or allocation of B
     if s.threaded
-        (; F, channel) = init
+        channel = Channel{typeof(init[1])}(length(init))
+        for x in init
+            put!(channel, x)
+        end
         # Create a channel to store problem b vectors for threads
         # see https://juliafolds2.github.io/OhMyThreads.jl/stable/literate/tls/tls/
         Threads.@threads for col in 1:size(B, 2)
@@ -113,7 +127,7 @@ function solve_ldiv!(s::VectorSolver, init, A, B)
             put!(channel, (F_t, b_t))
         end
     else
-        (; F, b) = init
+        (; F, b) = init[1]
         for col in 1:size(B, 2)
             b .= view(B, :, col)
             SparseArrays.UMFPACK.solve!(view(B, :, col), F, b, transposeoptype)
@@ -162,47 +176,27 @@ struct LinearSolver <: Solver
 end
 LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
 
-function solve_ldiv!(s::LinearSolver, A, B)
-    b = zeros(eltype(A), size(B, 1))
-    # Define and initialise the linear problem
-    linprob = LinearProblem(A, b)
-    linsolve = init(linprob, s.args...; s.keywords...)
-    solve_ldiv!(s, linsolve, A, B)
-end
-function solve_ldiv!(s::LinearSolver, linsolve, A, B)
+function LinearAlgebra.ldiv!(s::LinearSolver, (; linsolve, channel, b), B)
     # TODO: for now we define a Z matrix, but later modify ops 
     # to run column by column without materialising Z
-    # if s.threaded
-    #     nbuffers = Threads.nthreads()
-    #     # Create a channel to store problem b vectors for threads
-    #     # see https://juliafolds2.github.io/OhMyThreads.jl/stable/literate/tls/tls/
-    #     ch = Channel{Tuple{typeof(linsolve),Vector{Float64}}}(nbuffers)
-    #     for i in 1:nbuffers
-    #         # TODO fix this in LinearSolve.jl with batching
-    #         # We should not need to `deepcopy` the whole problem we 
-    #         # just need to replicate the specific workspace arrays 
-    #         # that will cause race conditions.
-    #         # But currently there is no parallel mode for LinearSolve.jl
-    #         # See https://github.com/SciML/LinearSolve.jl/issues/552
-    #         put!(ch, (deepcopy(linsolve), Vector{eltype(A)}(undef, size(B, 1))))
-    #     end
-    #     Threads.@threads for i in 1:size(B, 2)
-    #         # Get column memory from the channel
-    #         linsolve_t, b_t = take!(ch)
-    #         # Update it
-    #         b_t .= view(B, :, i)
-    #         # Update solver with new b values
-    #         reinit!(linsolve_t; b=b_t, reuse_precs=true)
-    #         sol = LinearSolve.solve(linsolve_t, s.args...; s.keywords...)
-    #         # Aim for something like this ?
-    #         # res = map(connectivity_measures(p)) do cm
-    #         #     compute(cm, g, sol.u, i)
-    #         # end
-    #         # For now just use Z
-    #         B[:, i] .= sol.u
-    #         put!(ch, (linsolve_t, b_t))
-    #     end
-    # else
+    if s.threaded
+        Threads.@threads for i in 1:size(B, 2)
+            # Get column memory from the channel
+            linsolve_t, b_t = take!(channel)
+            # Update it
+            b_t .= view(B, :, i)
+            # Update solver with new b values
+            reinit!(linsolve_t; b=b_t, reuse_precs=false)
+            sol = LinearSolve.solve(linsolve_t, s.args...; s.keywords...)
+            # Aim for something like this ?
+            # res = map(connectivity_measures(p)) do cm
+            #     compute(cm, g, sol.u, i)
+            # end
+            # For now just use Z
+            B[:, i] .= sol.u
+            put!(channel, (linsolve_t, b_t))
+        end
+    else
         for i in 1:size(B, 2)
             b .= view(B, :, i)
             reinit!(linsolve; b, reuse_precs=true)
@@ -210,22 +204,33 @@ function solve_ldiv!(s::LinearSolver, linsolve, A, B)
             # Udate the column
             B[:, i] .= sol.u
         end
-    # end
+    end
     return B
 end
 
+function init(s::LinearSolver, A)
+    b = zeros(eltype(A), size(A, 2))
+    # Define and initialise the linear problem
+    linprob = LinearProblem(A, b)
+    linsolve = init(linprob, s.args...; s.keywords...)
+    # TODO what is needed here?
+    nbuffers = Threads.nthreads()
+    # Create a channel to store problem b vectors for threads
+    # see https://juliafolds2.github.io/OhMyThreads.jl/stable/literate/tls/tls/
+    channel = Channel{Tuple{typeof(linsolve),Vector{Float64}}}(nbuffers)
+    for i in 1:nbuffers
+        # TODO fix this in LinearSolve.jl with batching
+        # We should not need to `deepcopy` the whole problem we 
+        # just need to replicate the specific workspace arrays 
+        # that will cause race conditions.
+        # But currently there is no parallel mode for LinearSolve.jl
+        # See https://github.com/SciML/LinearSolve.jl/issues/552
+        put!(channel, (deepcopy(linsolve), Vector{eltype(A)}(undef, size(A, 2))))
+    end
+    return (; linsolve, channel, b)
+end
 
 # Utils
-
-function setup_sparse_problem(g::Grid, cm::FundamentalMeasure)
-    Pref = _Pref(g.affinities)
-    W = _W(Pref, cm.θ, g.costmatrix)
-    # Sparse lhs
-    A = I - W
-    # Sparse rhs
-    B = sparse_rhs(g.targetnodes, size(g.costmatrix, 1))
-    return (; A, B, Pref, W)
-end
 
 # We may have multiple distance_measures per
 # graph_measure, but we want a single RasterStack.
@@ -233,18 +238,7 @@ end
 
 function _merge_to_stack(nt::NamedTuple{K}) where K
     unique_nts = map(K) do k
-        gm = nt[k]
-        if gm isa NamedTuple
-            # Combine outer and inner names with an underscore
-            joinedkeys = map(keys(gm)) do k_inner
-                Symbol(k, :_, k_inner)
-            end
-            # And rename the NamedTuple
-            NamedTuple{joinedkeys}(map(_maybe_raster, values(gm)))
-        else
-            # We keep the name as is
-            NamedTuple{(k,)}((_maybe_raster(gm),))
-        end
+        _mergename(Val{k}(), nt[k])
     end
     # merge unique layers into a sinlge RasterStack
     nt = merge(unique_nts...)
@@ -258,9 +252,21 @@ _maybe_raster(x::Raster) = x
 _maybe_raster(x::Number) = Raster(fill(x), ())
 _maybe_raster(x) = x
 
+function _mergename(::Val{K1}, gm::NamedTuple{K2}) where {K1, K2}
+    # Combine outer and inner names with an underscore
+    joinedkeys = map(K2) do k2
+        Symbol(K1, :_, k2)
+    end
+    # And rename the NamedTuple
+    NamedTuple{joinedkeys}(map(_maybe_raster, values(gm)))
+end
+_mergename(::Val{K1}, gm) where {K1, K2} =
+    # We keep the name as is
+    NamedTuple{(K1,)}((_maybe_raster(gm),))
+
 function _check_z(s, Z, W, g)
     # Check that values in Z are not too small:
-    if s.check && minimum(Z) * minimum(nonzeros(g.costmatrix .* W)) == 0
+    if hasproperty(s, :check) && s.check && minimum(Z) * minimum(nonzeros(g.costmatrix .* W)) == 0
         @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
     end
 end

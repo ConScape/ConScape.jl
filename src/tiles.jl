@@ -1,5 +1,10 @@
 # This file is a work in progress...
 
+abstract type AbstractWindowedProblem end
+
+function allocations(p::AbstractWindowedProblem, sze::Tuple{Int,Int})
+end
+
 """
     WindowedProblem(problem::AbstractProblem; size, centers, θ)
 
@@ -15,7 +20,7 @@ to be run over the same windowed grids.
 - `overlap`: The overlap between windows.
 - `threaded`: Whether to run in parallel. `false` by default
 """
-@kwdef struct WindowedProblem <: AbstractProblem
+@kwdef struct WindowedProblem <: AbstractWindowedProblem
     problem::AbstractProblem
     radius::Int
     overlap::Int
@@ -23,10 +28,20 @@ to be run over the same windowed grids.
 end
 WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 
+function sizeofallocations(p::Problem, sze::Tuple{Int,Int})
+    gms = graph_measures(p)
+    A_size = sizeofAs(gms, sze)
+    Z_size = sizeofZs(gms, sze)
+    init_size = sizeofinits(solver(p), gms, sze)
+
+    return_size = sum(map(sizeofreturn, gms, sze))
+
+    return A_size + Z_size + init_size + return_size
+end
+
 function solve(p::WindowedProblem, rast::RasterStack; 
     test_windows=false,
     verbose=false,
-    workspace=init(p, rast),
 )
     ranges = collect(_get_window_ranges(p, rast))
     mask = _get_window_mask(rast, ranges)
@@ -42,7 +57,7 @@ function solve(p::WindowedProblem, rast::RasterStack;
         rs = used_ranges[i]
         verbose && println("Solving window $i $rs ")
         rast_window = _mask_target_qualities_overlap!(rast, rs, p)
-        output_stacks[i] = solve(p.problem, rast_window; workspace)
+        output_stacks[i] = solve(p.problem, rast_window)#; workspace)
     end
     if p.threaded
         Threads.@threads for i in eachindex(used_ranges)
@@ -89,11 +104,12 @@ for nested operations.
     But can be `.nc` for NetCDF or most other common extensions.
 - `threaded`: Whether to run in parallel. `false` by default
 """
-@kwdef struct StoredProblem
+@kwdef struct StoredProblem <: AbstractWindowedProblem
     problem::AbstractProblem
     radius::Int
     overlap::Int
     path::String
+    grain::Union{Nothing,Int} = nothing
     ext::String = ".tif"
     threaded::Bool = false
 end
@@ -101,6 +117,7 @@ StoredProblem(problem; kw...) =  StoredProblem(; problem, kw...)
 
 function solve(p::StoredProblem, rast::RasterStack;
     verbose=false,
+    # workspace=init(p, rast),
 )
     ranges = collect(_get_window_ranges(p, rast))
     mask = _get_window_mask(rast, ranges)
@@ -109,7 +126,7 @@ function solve(p::StoredProblem, rast::RasterStack;
         rs = used_ranges[i]
         verbose && println("Solving window $i $rs ")
         rast_window = _mask_target_qualities_overlap!(rast, rs, p)
-        output = solve(p.problem, rast_window)
+        output = solve(p.problem, rast_window)#; workspace)
         _store(p, output, rs)
     end
     if p.threaded
@@ -138,6 +155,11 @@ function solve(p::StoredProblem, rast::RasterStack, i::Int;
     # Get the current window for this job
     rs = ranges[tile_inds[i]]
     # Get the ranges of the window for this job
+    rast_window = _mask_target_qualities_overlap!(rast, rs, p)
+    # Maybe thin the target qualities
+    if !isnothing(p.grain)
+        rast_window = ConScape.coarse_graining(rast_window, p.grain)
+    end
     output = solve(p.problem, rast[rs...])
     # Store the output rasters for this job to disk
     filename = _store(p, output, rs)
@@ -149,7 +171,7 @@ end
 
 Count the number of batch jobs that would need to be run.
 
-A Slurm array job would then be specified "0-$(N-1)"
+A Slurm array job would then be specified "0-(N-1)"
 
 Returns an `Int`.
 """
@@ -187,37 +209,16 @@ end
 
 ### Shared utilities
 
-# Generate a new mask if nested
-_initialise(p::Problem, target) = p
-function _initialise(p::WindowedProblem, target)
-    WindowedProblem(p.problem, p.ranges, mask)
-end
-function _initialise(p::StoredProblem, target)
-    mask = _get_window_mask(target, p.ranges)
-    StoredProblem(p.problem, p.ranges, mask, p.path)
-end
-
 _get_window_ranges(p::Union{StoredProblem,WindowedProblem}, rast::AbstractRasterStack) = 
     _get_window_ranges(size(rast), p.radius, p.overlap)
 function _get_window_ranges(size::Tuple{Int,Int}, r::Int, overlap::Int)
+    2r <= overlap && throw(ArgumentError("2 * radius must be larger than overlap"))
     d = 2r
-    d <= overlap && throw(ArgumentError("2radius must be larger than overlap"))
     s = d - overlap # Step between each window corner
     # Define the corners of each window
     corners = CartesianIndices(size)[begin:s:end, begin:s:end]
     # Create an iterator of ranges for retreiving each window
     return (map((i, sz) -> i:min(sz, i + d), Tuple(c), size) for c in corners)
-end
-
-function _mask_target_qualities_overlap!(rast, rs, p, last=false)
-    o = p.overlap ÷ 2
-    fill = zero(eltype(rast.target_qualities))
-    dest = rast[rs...]
-    dest.target_qualities[end-o:end, :] .= fill
-    dest.target_qualities[begin:begin+o, :] .= fill
-    dest.target_qualities[:, end-o:end] .= fill
-    dest.target_qualities[:, begin:begin+o] .= fill
-    return rast
 end
 
 _get_window_mask(::Nothing, ranges) = nothing
@@ -226,6 +227,17 @@ _get_window_mask(rast::AbstractRasterStack, ranges) =
 function _get_window_mask(target::AbstractRaster, ranges)
     # Create a mask to skip tiles that have no target cells
     map(r -> _has_values(target, r), ranges)
+end
+
+function _mask_target_qualities_overlap!(rast, rs, p, last=false)
+    o = p.overlap
+    fill = zero(eltype(rast.target_qualities))
+    dest = rast[rs...]
+    dest.target_qualities[max(begin, end-o):end, :] .= fill
+    dest.target_qualities[begin:min(end,begin+o), :] .= fill
+    dest.target_qualities[:, max(begin, end-o):end] .= fill
+    dest.target_qualities[:, begin:min(end, begin+o)] .= fill
+    return rast
 end
 
 function _has_values(target::AbstractRaster, rs::Tuple{Vararg{AbstractUnitRange}})

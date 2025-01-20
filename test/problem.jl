@@ -7,77 +7,119 @@ _tempdir = mkdir(tempname())
 
 mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
 hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN)
+mask!(mov_prob; with=hab_qual)
+mask!(hab_qual; with=mov_prob)
 rast = RasterStack((; affinities=mov_prob, qualities=hab_qual, target_qualities=hab_qual))
 rast.qualities[(rast.affinities .> 0) .& isnan.(rast.qualities)] .= 1e-20
-#rast = ConScape.coarse_graining(rast, 10)
-
+size(rast)
+# rast = ConScape.coarse_graining(rast, 10)
 
 graph_measures = graph_measures = (;
     func=ConScape.ConnectedHabitat(),
     qbetw=ConScape.BetweennessQweighted(),
     kbetw=ConScape.BetweennessKweighted(),
+    # TODO sens=ConScape.Sensitivity(),
+    # eigmax=ConScape.EigMax(),
+    # qedgebetw=ConScape.EdgeBetweennessQweighted(),
+    # kedgebetw=ConScape.EdgeBetweennessKweighted(),
     # mkld=ConScape.MeanKullbackLeiblerDivergence(),
     # mlcd=ConScape.MeanLeastCostKullbackLeiblerDivergence(),
+    # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 )
 distance_transformation = (exp=x -> exp(-x/75), oddsfor=ConScape.OddsFor())
 connectivity_measure = ConScape.ExpectedCost(; θ=1.0, distance_transformation)
 
-expected_layers = (:func_exp, :func_oddsfor, :qbetw, :kbetw_exp, :kbetw_oddsfor)#, :mkld, :mlcd)
+expected_layers = (:func_exp, :func_oddsfor, :qbetw, :kbetw_exp, :kbetw_oddsfor, :mkld, :mlcd)
 
 # Basic Problem
 problem = ConScape.Problem(; 
     graph_measures, connectivity_measure, solver=ConScape.MatrixSolver(),
 )
+@time workspace = init(problem, rast; prune=true);
+workspace.B_sparse
+map(x -> x / 1e6, ConScape.allocations(problem, rast))
+map(x -> x / 1e6, ConScape.allocations(problem, size(workspace.B_sparse)))
+Base.summarysize(workspace) / 1e6
+
+map(x -> Base.summarysize(x) / 1e6, workspace)
+map(propertynames(workspace.grid)) do n
+    n => Base.summarysize(getproperty(workspace.grid, n)) / 1e6
+end
+
+using BenchmarkTools
+@time result = ConScape.solve(problem, workspace);
+@btime result = ConScape.solve(problem, workspace);
+# workspace_copy = deepcopy(workspace)
+# workspace.expected_costs
+# workspace_copy.expected_costs
+# map(workspace, workspace_copy) do x, y
+#     if x isa Union{Tuple,NamedTuple} 
+#         all(map(==, x, y))
+#     else
+#         x == y
+#     end
+# end
+using BenchmarkTools
 @time workspace = init(problem, rast);
-@time result = ConScape.solve(problem, rast; workspace)
+@btime ConScape.solve(problem, workspace);
+@profview_allocs workspace = init(problem, rast)
+@profview_allocs ConScape.solve(problem, workspace) sample_rate=1.0
+#@profview_allocs ConScape.solve(problem, workspace)
 @test result isa RasterStack
 @test size(result) == size(rast)
 @test keys(result) == expected_layers
 
 plot(result)
-map(Base.summarysize, workspace)
-Base.summarysize(workspace)
+sum(skipmissing(rebuild(result.func_exp; missingval=NaN)))
+Base.summarysize(workspace) / 1e6
+
+400 * 400 * 21 * 21 / 1e6 * sizeof(Float64) * 8
 @profview ConScape.init(problem, rast)
 @profview ConScape.solve(problem, rast; workspace)
 ConScape.solve(problem, rast)
-using BenchmarkTools
-@benchmark ConScape.solve(problem, rast)
 
-F = lu(rand(100, 100))
 # Threaded solve problem
 vector_problem = ConScape.Problem(; 
     graph_measures, connectivity_measure,
     solver = ConScape.VectorSolver(; threaded=true),
 )
 @time workspace = init(vector_problem, rast);
-@time vector_result = ConScape.solve(vector_problem, rast; workspace)
+@time vector_result = ConScape.solve(vector_problem, workspace);
+@btime vector_result = ConScape.solve(vector_problem, workspace);
 @test vector_result isa RasterStack
 @test size(vector_result) == size(rast)
 @test keys(vector_result) == expected_layers
 @test all(vector_result.func_exp .=== result.func_exp)
-
-@profview workspace = init(vector_problem, rast);
-map(w -> sizeof(w) / 10^6, workspace) 
-@profview ConScape.solve(vector_problem, rast; workspace)
 Plots.plot(vector_result)
-@benchmark 
-ConScape.solve(vector_problem, rast)
+
+Base.summarysize(workspace) / 1e6
+sum(skipmissing(rebuild(vector_result.func_exp; missingval=NaN)))
+@profview workspace = init(vector_problem, rast);
+@profview ConScape.solve(vector_problem, workspace)
+map(w -> Base.summarysize(w) / 10^6, workspace) 
+map(w -> Base.summarysize(w) / 10^6, workspace.A_init) 
 
 # Problem with custom solver
 linearsolve_problem = ConScape.Problem(; 
     graph_measures, connectivity_measure,
-    solver = ConScape.LinearSolver(KrylovJL_GMRES(precs = (A, p) -> (Diagonal(A), I))),
+    solver = ConScape.LinearSolver(MKLPardisoIterate(; nprocs=20)),
+    # solver = ConScape.LinearSolver(KrylovJL_GMRES(precs = (A, p) -> (Diagonal(A), I))),
 )
+Base.summarysize(workspace) / 1e6
 @time ls_result = ConScape.solve(linearsolve_problem, rast)
 @test ls_result isa RasterStack
 @test size(ls_result) == size(rast)
 @test keys(ls_result) == expected_layers
+
+@profview ConScape.init(linearsolve_problem, rast)
+@profview ConScape.solve(linearsolve_problem, rast)
 
 # WindowedProblem returns a RasterStack
 windowed_problem = ConScape.WindowedProblem(problem; 
     radius=40, overlap=10, threaded=true
 )
 windowed_result = ConScape.solve(windowed_problem, rast, verbose=true)
+plot(windowed_result)
 
 using GLMakie
 Rasters.rplot(windowed_result)
@@ -102,17 +144,22 @@ stored_result = mosaic(stored_problem; to=rast)
 @test keys(stored_result) == Tuple(sort(collect(expected_layers)))
 # Check the answer matches the WindowedProblem
 @test all(stored_result.func_exp .=== windowed_result.func_exp)
+
 plot(stored_result)
+Rasters.rplot(stored_result.func_exp .- result.func_exp)
+sum(skipmissing(windowed_result.func_exp))
+sum(skipmissing(stored_result.func_exp))
+sum(skipmissing(rebuild(result.func_exp; missingval=NaN)))
 
 # StoredProblem can be run as batch jobs for clusters
 # We just need a new path to make sure the result is from a new run
 stored_problem2 = ConScape.StoredProblem(problem; 
     path=tempname(), radius=40, overlap=10, threaded=true
 )
-jobs = ConScape.batch_ids(stored_problem2, rast) 
+njobs = ConScape.count_batches(stored_problem2, rast) 
 @test jobs isa Vector{Int}
 
-for job in jobs
+for job in 1:njobs
     ConScape.solve(stored_problem2, rast, job)
 end
 batch_result = mosaic(stored_problem2; to=rast)

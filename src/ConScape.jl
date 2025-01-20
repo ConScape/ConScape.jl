@@ -46,5 +46,6 @@ include("connectivity_measure.jl")
 include("problem.jl")
 include("solvers.jl")
 include("tiles.jl")
+include("allocations.jl")
 
 end

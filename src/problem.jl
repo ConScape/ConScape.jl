@@ -30,6 +30,27 @@ and time reequiremtents on a cluster
 function assess end
 
 """
+    allocations(p::AbstractProblem, size::Tuple{Int,Int})
+    allocations(p::AbstractProblem, rast::RasterStack)
+
+Calculate allocations in Bytes required to run the problem.
+The maximum dense target size will be used, so that `size`
+is symmetrical. You can pass e.g. `(1000, 200)`. where you 
+know the size of the largest sparse matrix generated from `rast`.
+
+`allocations` will likely underestimate as Julia may need to allocate
+for compilatation and other things outside of our control.
+
+A warning will be thrown for problem components whos allocations
+are not well known.
+"""
+function allocations end
+function allocations(p::AbstractProblem, rast::RasterStack)
+    s = prod(size(rast))
+    allocations(p, (s, s))
+end
+
+"""
     Problem(graph_measures...; solver, θ)
 
 Combine multiple solve operations into a single object, 
@@ -58,9 +79,10 @@ function solve(p::Problem, rast::RasterStack; workspace=nothing)
     grid = isnothing(workspace) ? Grid(p, rast) : workspace.grid
     return solve(p, grid; workspace)
 end
+solve(p::Problem, workspace::NamedTuple) = solve(p, workspace.grid; workspace)
 
-function init(p::Problem, rast::RasterStack)
-    grid = Grid(p, rast)
+function init(p::Problem, rast::RasterStack; kw...)
+    grid = Grid(p, rast; kw...)
     return (; grid, init(p, grid)...)
 end
 # Init is conditional on solver and connectivity measure
