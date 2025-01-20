@@ -90,9 +90,9 @@ function betweenness_kweighted(grsp::GridRSP;
     distance_transformation=nothing,
     diagvalue=nothing,
     proximities=nothing,
-    workspaces=nothing,
     expected_costs=nothing,
     free_energy_distances=nothing,
+    workspaces=(similar(grsp.Z), similar(grsp.Z)),
     kw...
 )
     g = grsp.g
@@ -149,7 +149,7 @@ function edge_betweenness_kweighted(grsp::GridRSP;
     distance_transformation=inv(grsp.g.costfunction), 
     diagvalue=nothing,
     expected_costs=nothing,
-    workspaces=[similar(grsp.Z), similar(grsp.Z)],
+    workspaces=[similar(grsp.Z), similar(grsp.Z), similar(grsp.Z)],
     kw...
 )
     workspace1, workspaces... = workspaces
@@ -216,10 +216,11 @@ function mean_kl_divergence(grsp::GridRSP;
 end
 
 function mean_kl_divergence(grsp::GridRSP, free_energy_distances, expected_costs; 
-    workspaces, kw...
+    workspaces=(similar(grsp.Z),), kw...
 )
     g = grsp.g
-    return g.qs' * (workspaces[1] .= free_energy_distances .- expected_costs) * g.qt * grsp.θ
+    fed_exp = workspaces[1] .= free_energy_distances .- expected_costs
+    return g.qs' * fed_exp * g.qt * grsp.θ
 end
 
 
@@ -228,25 +229,36 @@ end
 
 Compute the mean Kullback–Leibler divergence between the least-cost path and the random path distribution for `grsp::GridRSP`, weighted by the qualities of the source and target node.
 """
-function mean_lc_kl_divergence(grsp::GridRSP; kw...)
+function mean_lc_kl_divergence(grsp::GridRSP; 
+    workspaces=[similar(grsp.Z)],
+    kw...
+)
+    workspace1 = workspaces[1]
     g = grsp.g
     C = g.costmatrix
     cost_weighted_digraph = SimpleWeightedDiGraph(C)
     n = size(C, 1)
-    from = collect(1:n)
-    kl_div = zeros(n)
-    # TODO make this a loop
-    div = hcat([least_cost_kl_divergence(C, grsp.Pref, i; n, from, kl_div, cost_weighted_digraph, kw...) for i in g.targetnodes]...)
+    from = Array{Int}(undef, n)
+    kl_div = Array{Float64}(undef, n) 
+    # Previously
+    # div = hcat([least_cost_kl_divergence(C, grsp.Pref, i; cost_weighted_digraph, from, kl_div, kw...) for i in g.targetnodes]...)
+    div = workspace1
+    for i in g.targetnodes
+        div[i, :] .= least_cost_kl_divergence(C, grsp.Pref, i; cost_weighted_digraph, from, kl_div, kw...)
+    end
     return g.qs' * div * g.qt
 end
 
 function least_cost_kl_divergence(C::SparseMatrixCSC, Pref::SparseMatrixCSC, targetnode::Integer;
     cost_weighted_digraph=SimpleWeightedDiGraph(C),
     n=size(C, 1),
-    from=collect(1:n),
-    kl_div=zeros(n),
+    from=Array{Int}(undef, n),
+    kl_div=Array{Float64}(undef, n),
     kw...
 )
+    from .= 1:n
+    fill!(kl_div, 0)
+
     if !(1 <= targetnode <= n)
         throw(ArgumentError("target node not found"))
     end
@@ -476,7 +488,7 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
     connectivity_function=expected_cost,
     distance_transformation=nothing,
     diagvalue=nothing,
-    workspaces=[similar(grsp.Z), similar(grsp.Z)],
+    workspaces=[similar(grsp.Z), similar(grsp.Z), similar(grsp.Z)],
     tol=1e-14,
     expected_costs=nothing,
     free_energy_distances=nothing,

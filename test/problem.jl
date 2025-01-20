@@ -39,7 +39,10 @@ problem = ConScape.Problem(;
 workspace.B_sparse
 map(x -> x / 1e6, ConScape.allocations(problem, rast))
 map(x -> x / 1e6, ConScape.allocations(problem, size(workspace.B_sparse)))
+
+ConScape.allocations(problem, rast).total / 1e6
 Base.summarysize(workspace) / 1e6
+ConScape.allocations(problem, size(workspace.B_sparse)).total / 1e6
 
 map(x -> Base.summarysize(x) / 1e6, workspace)
 map(propertynames(workspace.grid)) do n

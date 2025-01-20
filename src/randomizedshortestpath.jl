@@ -63,11 +63,11 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
                                    qᵗ::AbstractVector, # Target qualities
                                    S::AbstractMatrix,  # Matrix of proximities
                                    landmarks::AbstractVector;
-    Zⁱ, # =_inv(Z),
-    workspaces, # =similar(Z),
+    Zⁱ=_inv(Z),
+    workspaces=similar(Z),
     solver=nothing,
-    Aadj, #  = (I - W)',
-    Aadj_init, # =init(solver, Aadj),
+    Aadj=(I - W)',
+    Aadj_init=init(solver, Aadj),
     kw...
 )
     workspace1 = workspaces[1]
@@ -93,8 +93,9 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
     # Hence, we scale the matrix and apply the scale factor by the end of the
     # computation.
     λ = max(1.0, maximum(KZⁱ))
-    scratch = view(workspace1, :, 1:1)
-    k = vec(sum!(scratch, KZⁱ))
+    # k = vec(sum(KZⁱ, dims=1)) * inv(λ)
+    ws_col = view(workspace1, 1:1, :)
+    k = vec(sum!(ws_col, KZⁱ))
     k .*= inv(λ)
 
     KZⁱ .*= inv.(λ) .* Zⁱ
@@ -109,6 +110,7 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
 
     scratch = view(workspace1, :, 1:1)
     return vec(sum!(scratch, ZKZⁱt)) # diag(Z * KZⁱ')
+    # return vec(sum(ZKZⁱt, dims=2)) # diag(Z * KZⁱ')
 end
 
 function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
@@ -117,12 +119,12 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
                                         qᵗ::AbstractVector,
                                         targetnodes::AbstractVector;
     solver=nothing,
-    Zⁱ, # =_inv(Z),
-    workspaces, # =similar(Z),
-    Aadj, # = (I - W)',
-    Aadj_init, # =init(solver, Aadj),
-    B_sparse, # =sparse_rhs(targetnodes, size(W, 1)),
-    edge_betweennesses, # =copy(W),
+    Zⁱ=_inv(Z),
+    workspaces=[similar(Z), similar(Z), similar(Z)],
+    Aadj=(I - W)',
+    Aadj_init=init(solver, Aadj),
+    B_sparse=sparse_rhs(targetnodes, size(W, 1)),
+    edge_betweennesses=copy(W),
     kw...
 )
     n = size(W, 1)
@@ -168,13 +170,13 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
                                         K::AbstractMatrix,  # Matrix of proximities
                                         targetnodes::AbstractVector;
     solver=nothing,
-    Zⁱ, # =_inv(Z),
-    workspaces, # =(similar(Z), similar(Z)),
-    permuted_workspaces,
-    A, # =(I - W),
-    Aadj, # =(I - W)',
-    Aadj_init, # =init(solver, Aadj),
-    B_sparse, # =sparse_rhs(targetnodes, size(W, 1)),
+    Zⁱ=_inv(Z),
+    workspaces=[similar(Z), similar(Z)],
+    permuted_workspaces=(similar(Z'),),
+    A=(I - W),
+    Aadj=(I - W)',
+    Aadj_init=init(solver, Aadj),
+    B_sparse=sparse_rhs(targetnodes, size(W, 1)),
     edge_betweennesses=copy(W),
     kw...
 )
@@ -214,10 +216,10 @@ function RSP_expected_cost(W::SparseMatrixCSC,
                            Z::AbstractMatrix,
                            landmarks::AbstractVector;
     solver=nothing,
-    A =(I - W),
-    A_init = init(solver, A),
-    workspaces = [similar(Z), similar(Z)],
-    CW = C .* W,
+    A=(I - W),
+    A_init=init(solver, A),
+    workspaces=(similar(Z), similar(Z)),
+    CW=C .* W,
     kw...
 )
     workspace1, workspace2 = workspaces
@@ -284,7 +286,8 @@ end
 function connected_habitat(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities
                            S::AbstractMatrix; # Matrix of proximities
-    workspaces, kw...
+    workspaces=(similar(S, size(S, 1), 1),),
+    kw...
 )  
     mul!(view(workspaces[1], :, 1), S, qᵗ) .*= qˢ
 end
