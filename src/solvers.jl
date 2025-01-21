@@ -1,11 +1,5 @@
 # Defined in ConScape.jl for load order
 # abstract type Solver end
-@doc """
-    Solver
-
-Abstract supertype for ConScape solvers.
-""" Solver 
-
 function init(s::Solver, 
     cm::FundamentalMeasure, 
     p::AbstractProblem, 

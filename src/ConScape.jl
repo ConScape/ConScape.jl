@@ -28,6 +28,12 @@ struct survival_probability  <: ProximityFunction end
 struct power_mean_proximity  <: ProximityFunction end
 
 # Need to define before loading files
+
+"""
+    Solver
+
+Abstract supertype for ConScape solvers.
+"""
 abstract type AbstractProblem end
 abstract type Solver end
 
