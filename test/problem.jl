@@ -1,181 +1,273 @@
 using ConScape, Test, SparseArrays, LinearAlgebra
-using Rasters, ArchGDAL, Plots
+using Rasters, ArchGDAL, NCDatasets, Plots
 using LinearSolve
 
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 _tempdir = mkdir(tempname())
 
-mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
-hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN)
-mask!(mov_prob; with=hab_qual)
-mask!(hab_qual; with=mov_prob)
-rast = RasterStack((; affinities=mov_prob, qualities=hab_qual, target_qualities=hab_qual))
-rast.qualities[(rast.affinities .> 0) .& isnan.(rast.qualities)] .= 1e-20
-size(rast)
-# rast = ConScape.coarse_graining(rast, 10)
+θ = 0.1
+landscape = "sno_2000"
+# The way the ascii is read in is reversed and rotated from what GDAL does
+affinities = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "affinities_$landscape.asc")), NaN)); dims=X)
+qualities = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "qualities_$landscape.asc")), NaN)); dims=X)
+qualities[(affinities .> 0) .& isnan.(qualities)] .= 1e-20
+rast = RasterStack((; affinities, qualities, target_qualities=qualities))
+
+affinities_asc = ConScape.readasc(joinpath(datadir, "affinities_$landscape.asc"))[1]
+qualities_asc = ConScape.readasc(joinpath(datadir, "qualities_$landscape.asc"))[1]
+qualities_asc[(affinities_asc .> 0) .& isnan.(qualities_asc)] .= 1e-20
+# They are only the same for Float32
+@test all(Float32.(affinities_asc) .=== Float32.(rast.affinities))
+@test all(Float32.(qualities_asc) .=== Float32.(rast.qualities))
 
 graph_measures = graph_measures = (;
-    func=ConScape.ConnectedHabitat(),
-    qbetw=ConScape.BetweennessQweighted(),
-    kbetw=ConScape.BetweennessKweighted(),
-    # TODO sens=ConScape.Sensitivity(),
-    # eigmax=ConScape.EigMax(),
-    # qedgebetw=ConScape.EdgeBetweennessQweighted(),
-    # kedgebetw=ConScape.EdgeBetweennessKweighted(),
-    # mkld=ConScape.MeanKullbackLeiblerDivergence(),
-    # mlcd=ConScape.MeanLeastCostKullbackLeiblerDivergence(),
+    ch=ConScape.ConnectedHabitat(),
+    betq=ConScape.BetweennessQweighted(),
+    betk=ConScape.BetweennessKweighted(),
+    # # TODO sens=ConScape.Sensitivity(),
+    ebetq=ConScape.EdgeBetweennessQweighted(),
+    ebetk=ConScape.EdgeBetweennessKweighted(),
+    mkld=ConScape.MeanKullbackLeiblerDivergence(),
+    mlcd=ConScape.MeanLeastCostKullbackLeiblerDivergence(),
+    eigmax=ConScape.EigMax(),
     # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 )
-distance_transformation = (exp=x -> exp(-x/75), oddsfor=ConScape.OddsFor())
-connectivity_measure = ConScape.ExpectedCost(; θ=1.0, distance_transformation)
+distance_transformation = (nodist=nothing, one=one, exp50=t -> exp(-t/50))
+connectivity_measure = ConScape.ExpectedCost(; θ, distance_transformation)
 
-expected_layers = (:func_exp, :func_oddsfor, :qbetw, :kbetw_exp, :kbetw_oddsfor, :mkld, :mlcd)
-
-# Basic Problem
-problem = ConScape.Problem(; 
-    graph_measures, connectivity_measure, solver=ConScape.MatrixSolver(),
+expected_layers = (
+    :ch_nodist, :ch_one, :ch_exp50, 
+    :betq, 
+    :betk_nodist, :betk_one, :betk_exp50, 
+    :ebetq, 
+    :ebetk_nodist, :ebetk_one, :ebetk_exp50, 
+    :mkld, 
+    :mlcd,
+    :eigmax_nodist, :eigmax_one, :eigmax_exp50, 
 )
-@time workspace = init(problem, rast; prune=true);
-workspace.B_sparse
-map(x -> x / 1e6, ConScape.allocations(problem, rast))
-map(x -> x / 1e6, ConScape.allocations(problem, size(workspace.B_sparse)))
+affinities_sparse = ConScape.graph_matrix_from_raster(affinities)
+test_g = ConScape.Grid(size(affinities)...;
+    affinities=affinities_sparse,
+    qualities
+)
+test_grsp = ConScape.GridRSP(test_g; θ)
 
-ConScape.allocations(problem, rast).total / 1e6
-Base.summarysize(workspace) / 1e6
-ConScape.allocations(problem, size(workspace.B_sparse)).total / 1e6
+solvers = (
+    ConScape.MatrixSolver(),
+    ConScape.VectorSolver(),
+    ConScape.VectorSolver(; threaded=true),
+    ConScape.LinearSolver(),
+)
+solver = ConScape.VectorSolver(; threaded=true)
+solver = ConScape.MatrixSolver()
 
-map(x -> Base.summarysize(x) / 1e6, workspace)
-map(propertynames(workspace.grid)) do n
-    n => Base.summarysize(getproperty(workspace.grid, n)) / 1e6
+for solver in solvers
+    println("\n Testing with solver: ", solver)
+    # Basic Problem
+    problem = ConScape.Problem(; 
+        graph_measures, connectivity_measure, solver,
+    )
+    @time workspace = init(problem, rast);
+    @testset "initialised grids are the same" begin
+        @test workspace.grsp.W == test_grsp.W
+        @test workspace.grsp.Z == test_grsp.Z
+        @test workspace.grsp.Pref == test_grsp.Pref
+        @test workspace.grsp.θ == test_grsp.θ
+        foreach(propertynames(test_g)) do n
+            @test isequal(getproperty(workspace.grid, n), getproperty(test_g, n))
+        end
+        @test workspace.expected_costs == ConScape.expected_cost(test_grsp)
+        @test workspace.free_energy_distances == ConScape.free_energy_distance(test_grsp)
+    end
+
+    ConScape.allocations(problem, rast).total / 1e6
+
+    @time result = ConScape.solve(problem, workspace);
+    # @profview result = ConScape.solve(problem, workspace)
+    @test result isa NamedTuple
+    @test size(result.ch_one) == size(rast)
+    @test keys(result) == expected_layers
+    g = workspace.grid
+    # Base.summarysize(workspace) / 1e6
+    # ConScape.allocations(problem, size(workspace.B_sparse)).total / 1e6
+
+    @testset "Test mean_kl_divergence" begin
+        @test ConScape.mean_kl_divergence(test_grsp) ≈ 323895.3828183995
+        @test result.mkld[] ≈ 323895.3828183995
+    end
+
+    @testset "mean_lc_kl_divergence" begin
+        @test result.mlcd[] ≈ 1.5660600315073947e6
+    end
+    @testset "q-weighted" begin
+        @test result.betq isa Raster
+        @test isapprox(result.betq[21:23, 21:23], [
+            1930.1334372152335  256.91061166392745 2866.2998374065373
+            4911.996715311025  1835.991238248377    720.755518530375
+            4641.815380725279  3365.3296878569213   477.1085971945757], atol=1e-3)
+    end
+    @testset "k-weighted" begin
+        @test result.betk_nodist isa Raster
+        bet = ConScape.betweenness_kweighted(test_grsp)
+        @test isapprox(result.betk_nodist[21:23, 31:33],
+            [0.04063917813171917 0.06843246983487516 0.08862506281612659
+            0.03684621201600996 0.10352876485995872 0.1255652231824746
+            0.03190640567704462 0.13832814750469344 0.1961393152256104], atol=1e-6)
+
+        # Check that summed edge betweennesses corresponds to node betweennesses:
+        @test result.ebetk_nodist isa SparseMatrixCSC
+        bet_edge_sum = fill(NaN, g.nrows, workspace.grid.ncols)
+        for (i, v) in enumerate(sum(result.ebetk_nodist, dims=2))
+            bet_edge_sum[g.id_to_grid_coordinate_list[i]] = v
+        end
+        @test bet_edge_sum[21:23, 31:33] ≈ parent(result.betk_nodist[21:23, 31:33])
+
+        # TODO the floating point differnce is more 
+        # significant here, 1e-3 is as gooda as it can get
+        @test isapprox(result.betk_exp50[21:23, 31:33], [
+            980.5828087688377 1307.981162399926 1602.8445739784497
+            826.0710054834001 1883.0940077789735 1935.4450344630702
+            676.9212075214159 2228.2700913772774 2884.0409495023364], atol=1e-3)
+
+        @test result.betk_one[g.id_to_grid_coordinate_list] ≈
+            result.betq[g.id_to_grid_coordinate_list]
+        # ebetk_one is wrong here
+        @test result.ebetk_one ≈ result.ebetq
+    end
+
+    @testset "connected_habitat" begin
+        @test result.ch_nodist isa Raster{Float64}
+        @test size(result.ch_nodist) == size(g.source_qualities)
+        # TODO we need some real tests here
+    end
 end
 
-using BenchmarkTools
-@time result = ConScape.solve(problem, workspace);
-@btime result = ConScape.solve(problem, workspace);
-# workspace_copy = deepcopy(workspace)
-# workspace.expected_costs
-# workspace_copy.expected_costs
-# map(workspace, workspace_copy) do x, y
-#     if x isa Union{Tuple,NamedTuple} 
-#         all(map(==, x, y))
-#     else
-#         x == y
-#     end
-# end
-using BenchmarkTools
-@time workspace = init(problem, rast);
-@btime ConScape.solve(problem, workspace);
-@profview_allocs workspace = init(problem, rast)
-@profview_allocs ConScape.solve(problem, workspace) sample_rate=1.0
-#@profview_allocs ConScape.solve(problem, workspace)
-@test result isa RasterStack
-@test size(result) == size(rast)
-@test keys(result) == expected_layers
 
-plot(result)
-sum(skipmissing(rebuild(result.func_exp; missingval=NaN)))
-Base.summarysize(workspace) / 1e6
-
-400 * 400 * 21 * 21 / 1e6 * sizeof(Float64) * 8
-@profview ConScape.init(problem, rast)
-@profview ConScape.solve(problem, rast; workspace)
-ConScape.solve(problem, rast)
-
-# Threaded solve problem
-vector_problem = ConScape.Problem(; 
-    graph_measures, connectivity_measure,
-    solver = ConScape.VectorSolver(; threaded=true),
+graph_measures = (;
+    ch=ConScape.ConnectedHabitat(),
+    betq=ConScape.BetweennessQweighted(),
+    betk=ConScape.BetweennessKweighted(),
+    # # TODO sens=ConScape.Sensitivity(),
+    # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 )
-@time workspace = init(vector_problem, rast);
-@time vector_result = ConScape.solve(vector_problem, workspace);
-@btime vector_result = ConScape.solve(vector_problem, workspace);
-@test vector_result isa RasterStack
-@test size(vector_result) == size(rast)
-@test keys(vector_result) == expected_layers
-@test all(vector_result.func_exp .=== result.func_exp)
-Plots.plot(vector_result)
+distance_transformation = x -> exp(-x / 5)
+distance_transformation(10)
+connectivity_measure = ConScape.ExpectedCost(; θ, distance_transformation)
+expected_layers = (:ch_nodist, :ch_one, :betq, :betk_nodist, :betk_one)
 
-Base.summarysize(workspace) / 1e6
-sum(skipmissing(rebuild(vector_result.func_exp; missingval=NaN)))
-@profview workspace = init(vector_problem, rast);
-@profview ConScape.solve(vector_problem, workspace)
-map(w -> Base.summarysize(w) / 10^6, workspace) 
-map(w -> Base.summarysize(w) / 10^6, workspace.A_init) 
-
-# Problem with custom solver
-linearsolve_problem = ConScape.Problem(; 
-    graph_measures, connectivity_measure,
-    solver = ConScape.LinearSolver(MKLPardisoIterate(; nprocs=20)),
-    # solver = ConScape.LinearSolver(KrylovJL_GMRES(precs = (A, p) -> (Diagonal(A), I))),
+solver = ConScape.MatrixSolver()
+problem = ConScape.Problem(; graph_measures, connectivity_measure, solver)
+windowed_problem = ConScape.WindowedProblem(problem; 
+    source_radius=20, target_radius=10, threaded=false
 )
-Base.summarysize(workspace) / 1e6
-@time ls_result = ConScape.solve(linearsolve_problem, rast)
-@test ls_result isa RasterStack
-@test size(ls_result) == size(rast)
-@test keys(ls_result) == expected_layers
-
-@profview ConScape.init(linearsolve_problem, rast)
-@profview ConScape.solve(linearsolve_problem, rast)
-
+# ConScape.allocations(windowed_problem, rast) / 1e6
+@time ConScape.solve(windowed_problem, rast, verbose=true)
 # WindowedProblem returns a RasterStack
 windowed_problem = ConScape.WindowedProblem(problem; 
-    radius=40, overlap=10, threaded=true
+    buffer=10, centersize=5, threaded=false,
 )
-windowed_result = ConScape.solve(windowed_problem, rast, verbose=true)
+windowed_result = ConScape.solve(windowed_problem, rast; 
+    # test_windows=true,
+    verbose=false,
+    # mosaic_return=false
+)
+plot(rast)
 plot(windowed_result)
-
-using GLMakie
-Rasters.rplot(windowed_result)
+plot(windowed_result[7])
 @test windowed_result isa RasterStack
 @test size(windowed_result) == size(rast)
 @test keys(windowed_result) == expected_layers 
+plot(windowed_result)
 
-window_tiles = ConScape.solve(windowed_problem, rast; test_windows=true, verbose=true)
-plot(window_tiles)
-Rasters.rplot(window_tiles)
+@test collect(ConScape._get_window_ranges(windowed_problem, rast)) == [
+ (1:20, 1:20)   (1:20, 17:36)   (1:20, 33:52)   (1:20, 49:59)
+ (17:36, 1:20)  (17:36, 17:36)  (17:36, 33:52)  (17:36, 49:59)
+ (33:44, 1:20)  (33:44, 17:36)  (33:44, 33:52)  (33:44, 49:59)
+]
+test_results = ConScape.solve(windowed_problem, rast; verbose=true, test_windows=true)
+inner_targets = copy(rast.target_qualities)
+# Edge targets are lost with windowing
+inner_targets[1:2, :] .= NaN
+inner_targets[:, 1:2] .= NaN
+inner_targets[end-1:end, :] .= NaN
+inner_targets[:, end-1:end] .= NaN
+@test all(inner_targets .=== test_results.target_qualities)
 
-# StoredProblem writes files to disk and mosaics to RasterStack
+plot(test_results.target_qualities)
+plot(rast.target_qualities)
 
-stored_problem = ConScape.StoredProblem(problem; 
-    path=tempname(), radius=40, overlap=10, threaded=true
+windowed_problem_t1 = ConScape.WindowedProblem(problem; 
+    source_radius=10, target_radius=1, threaded=true
+)
+windowed_problem_t2 = ConScape.WindowedProblem(problem; 
+    source_radius=10, target_radius=2, threaded=true
+)
+windowed_problem_t4 = ConScape.WindowedProblem(problem; 
+    source_radius=10, target_radius=4, threaded=true
+)
+windowed_problem_t6 = ConScape.WindowedProblem(problem; 
+    source_radius=10, target_radius=6, threaded=true
+)
+length(ConScape._get_window_ranges(windowed_problem_t1, rast))
+length(ConScape._get_window_ranges(windowed_problem_t2, rast))
+length(ConScape._get_window_ranges(windowed_problem_t4, rast))
+length(ConScape._get_window_ranges(windowed_problem_t6, rast))
+using BenchmarkTools
+@btime ConScape.solve(windowed_problem_t1, rast, verbose=false);
+@btime ConScape.solve(windowed_problem_t2, rast, verbose=false);
+@btime ConScape.solve(windowed_problem_t4, rast, verbose=false);
+@btime ConScape.solve(windowed_problem_t6, rast, verbose=false);
+@profview_allocs ConScape.solve(windowed_problem_t1, rast, verbose=false) sampling=1.0
+@profview_allocs ConScape.solve(windowed_problem_t2, rast, verbose=false) sampling=1.0
+@profview_allocs ConScape.solve(windowed_problem_t4, rast, verbose=false) sampling=1.0
+@profview_allocs ConScape.solve(windowed_problem_t6, rast, verbose=false) sampling=1.0
+@profview 
+res = ConScape.solve(windowed_problem_t1, rast, verbose=false)
+@profview ConScape.solve(windowed_problem_t2, rast, verbose=false)
+@profview ConScape.solve(windowed_problem_t4, rast, verbose=false)
+@profview ConScape.solve(windowed_problem_t6, rast, verbose=false)
+res = ConScape.solve(windowed_problem_t4, rast, verbose=false)
+
+# BatchProblem writes files to disk and mosaics to RasterStack
+
+stored_problem = ConScape.BatchProblem(problem; 
+    path=tempname(), source_radius=20, target_radius=10, threaded=true
 )
 ConScape.solve(stored_problem, rast; verbose=true)
 stored_result = mosaic(stored_problem; to=rast)
 @test stored_result isa RasterStack
-@test size(stored_result) == size(rast)
+@test size(stored_result) == reverse(size(rast))
 # keys are sorted now from file-name order
 @test keys(stored_result) == Tuple(sort(collect(expected_layers)))
 # Check the answer matches the WindowedProblem
-@test all(stored_result.func_exp .=== windowed_result.func_exp)
+# Note: its been permuted back by GDAL
+@test all(permutedims(stored_result.ch_nodist) .=== windowed_result.ch_nodist)
 
-plot(stored_result)
-Rasters.rplot(stored_result.func_exp .- result.func_exp)
-sum(skipmissing(windowed_result.func_exp))
-sum(skipmissing(stored_result.func_exp))
-sum(skipmissing(rebuild(result.func_exp; missingval=NaN)))
-
-# StoredProblem can be run as batch jobs for clusters
+# BatchProblem can be run as batch jobs for clusters
 # We just need a new path to make sure the result is from a new run
-stored_problem2 = ConScape.StoredProblem(problem; 
-    path=tempname(), radius=40, overlap=10, threaded=true
+stored_problem2 = ConScape.BatchProblem(problem; 
+    path=tempname(), radius=20, overlap=10, threaded=true
 )
 njobs = ConScape.count_batches(stored_problem2, rast) 
-@test jobs isa Vector{Int}
+@test njobs == 4
 
 for job in 1:njobs
     ConScape.solve(stored_problem2, rast, job)
 end
 batch_result = mosaic(stored_problem2; to=rast)
 # Check the answer matches the non-batched run
-@test all(batch_result.func_exp .=== stored_result.func_exp)
+@test all(batch_result.ch_nodist .=== stored_result.ch_nodist)
 @test keys(batch_result) == Tuple(sort(collect(expected_layers)))
 
-# StoredProblem can be nested with WindowedProblem
+plot(batch_result.ch_nodist) 
+plot(stored_result.ch_nodist)
+
+# BatchProblem can be nested with WindowedProblem
 small_windowed_problem = ConScape.WindowedProblem(problem; 
     radius=25, overlap=10,
 )
-nested_problem = ConScape.StoredProblem(small_windowed_problem; 
-    path=tempname(), radius=40, overlap=10, threaded=false
+nested_problem = ConScape.BatchProblem(small_windowed_problem; 
+    path=tempname() * ".nc", radius=40, overlap=10, threaded=false
 )
 ConScape.solve(nested_problem, rast)
 nested_result = mosaic(nested_problem; to=rast)

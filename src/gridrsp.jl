@@ -81,52 +81,24 @@ end
         distance_transformation=inv(grsp.g.costfunction),
         diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
 
-Compute RSP betweenness of all nodes weighted with proximities computed with respect to the distance/proximity measure defined by `connectivity_function`. Optionally, an inverse cost function can be passed. The function will be applied elementwise to the matrix of distances to convert it to a matrix of proximities. If no inverse cost function is passed the the inverse of the cost function is used for the conversion of distances.
+Compute RSP betweenness of all nodes weighted with proximities computed with 
+respect to the distance/proximity measure defined by `connectivity_function`. 
+Optionally, an inverse cost function can be passed. The function will be applied 
+elementwise to the matrix of distances to convert it to a matrix of proximities. 
+If no inverse cost function is passed the the inverse of the cost function is 
+used for the conversion of distances.
 
-The optional `diagvalue` element specifies which value to use for the diagonal of the matrix of proximities, i.e. after applying the inverse cost function to the matrix of distances. When nothing is specified, the diagonal elements won't be adjusted.
+The optional `diagvalue` element specifies which value to use for the diagonal 
+of the matrix of proximities, i.e. after applying the inverse cost function to the 
+matrix of distances. When nothing is specified, the diagonal elements won't be adjusted.
 """
-function betweenness_kweighted(grsp::GridRSP;
-    connectivity_function=expected_cost,
-    distance_transformation=nothing,
-    diagvalue=nothing,
-    proximities=nothing,
-    expected_costs=nothing,
-    free_energy_distances=nothing,
-    workspaces=(similar(grsp.Z), similar(grsp.Z)),
-    kw...
-)
+function betweenness_kweighted(grsp::GridRSP; proximities=nothing, kw...)
     g = grsp.g
-    workspace1, workspaces... = workspaces
-
     if isnothing(proximities)
-        proximities = if connectivity_function == ConScape.expected_cost && !isnothing(expected_costs)
-            workspace1 .= expected_costs
-            workspace1
-        elseif connectivity_function == ConScape.free_energy_distance && !isnothing(free_energy_distances)
-            workspace1 .= free_energy_distances
-            workspace1
-        else
-            connectivity_function(grsp; kw...)
-        end
+        proximities = _computeproximities(grsp; kw...)
     end
 
-    # Check that distance_transformation function has been passed if no cost function is saved
-    if distance_transformation === nothing && connectivity_function <: DistanceFunction
-        if g.costfunction === nothing
-            throw(ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function."))
-        else
-            distance_transformation = inv(g.costfunction)
-        end
-    end
-
-    if connectivity_function <: DistanceFunction
-        map!(distance_transformation, proximities, proximities)
-    end
-    _maybe_set_diagonal!(proximities, g, diagvalue)
-
-    betvec = RSP_betweenness_kweighted(grsp.W, grsp.Z, g.qs, g.qt, proximities, g.targetnodes; 
-        workspaces, kw...
-    )
+    betvec = RSP_betweenness_kweighted(grsp.W, grsp.Z, g.qs, g.qt, proximities, g.targetnodes; kw...)
     bet = fill(NaN, g.nrows, g.ncols)
     for (i, v) in enumerate(betvec)
         bet[g.id_to_grid_coordinate_list[i]] = v
@@ -146,30 +118,28 @@ end
     When nothing is specified, the diagonal elements won't be adjusted.
 """
 function edge_betweenness_kweighted(grsp::GridRSP; 
-    distance_transformation=inv(grsp.g.costfunction), 
-    diagvalue=nothing,
-    expected_costs=nothing,
-    workspaces=[similar(grsp.Z), similar(grsp.Z), similar(grsp.Z)],
+    proximities=nothing, 
+    distance_transformation=nothing,
+    diagvalue=nothing, 
     kw...
 )
-    workspace1, workspaces... = workspaces
+    if isnothing(distance_transformation) 
+        distance_transformation = inv(grsp.g.costfunction)
+    end
+    # TODO why does this only use `expected_cost`?
     g = grsp.g
-    if isnothing(expected_costs)
-        expected_costs = ConScape.expected_cost(grsp; kw...)
-    end
-    proximities = map!(distance_transformation, workspace1, expected_costs)
-    _maybe_set_diagonal!(proximities, g, diagvalue)
+    # S = map(distance_transformation, expected_cost(grsp))
+    # _maybe_set_diagonal!(S, g.targetnodes, diagvalue)
+    proximities = map(distance_transformation, expected_cost(grsp))
 
-    return RSP_edge_betweenness_kweighted(grsp.W, grsp.Z, g.qs, g.qt, proximities, g.targetnodes; 
-        workspaces, kw...
-    )
-end
-
-_maybe_set_diagonal!(proximities, g, diagvalue::Nothing) = nothing
-function _maybe_set_diagonal!(proximities, g, diagvalue)
-    for (j, i) in enumerate(g.targetnodes)
-        proximities[i, j] = diagvalue
+    if diagvalue !== nothing
+        for (j, i) in enumerate(g.targetnodes)
+            proximities[i, j] = diagvalue
+        end
     end
+
+    betmatrix = RSP_edge_betweenness_kweighted(grsp.W, grsp.Z, g.qs, g.qt, proximities, g.targetnodes; kw...)
+    return betmatrix
 end
 
 """
@@ -341,56 +311,35 @@ requires it such as `expected_cost`. Also for `Grid` objects, the `approx` Boole
 argument can be set to `true` to switch to a cheaper approximate solution of the
 `connectivity_function`. The default value is `false`.
 """
-function connected_habitat(grsp::Union{Grid,GridRSP};
-    connectivity_function=ConScape.expected_cost,
+function connected_habitat(
+    grsp::Grid;
+    connectivity_function=expected_cost,
     distance_transformation=nothing,
     diagvalue=nothing,
     θ::Union{Nothing,Real}=nothing,
-    approx::Bool=false,
-    expected_cost=nothing,
-    free_energy_distance=nothing,
-    kw...
-)
+    approx::Bool=false)
+
     # Check that distance_transformation function has been passed if no cost function is saved
     if distance_transformation === nothing && connectivity_function <: DistanceFunction
-        if grsp isa Grid
-            throw(ArgumentError("distance_transformation function is required when passing a Grid together with a Distance function"))
-        elseif grsp.g.costfunction === nothing
-            throw(ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function."))
-        else
-            distance_transformation = inv(grsp.g.costfunction)
-        end
+        throw(ArgumentError("distance_transformation function is required when passing a Grid together with a Distance function"))
     end
 
-    S = if grsp isa Grid
-        if θ === nothing && connectivity_function !== least_cost_distance
-            throw(ArgumentError("θ must be a positive real number when passing a Grid"))
-        end
-        if connectivity_function == ConScape.expected_cost && !isnothing(expected_cost)
-            copy(expected_cost)
-        elseif connectivity_function == ConScape.free_energy_distance && !isnothing(free_energy_distance)
-            copy(free_energy_distance)
-        else
-            connectivity_function(grsp; θ=θ, approx=approx, kw...)
-        end
-    else
-        if θ !== nothing
-            throw(ArgumentError("θ must be unspecified when passing a GridRSP"))
-        end
-        if connectivity_function == ConScape.expected_cost && !isnothing(expected_cost)
-            copy(expected_cost)
-        elseif connectivity_function == ConScape.free_energy_distance && !isnothing(free_energy_distance)
-            copy(free_energy_distance)
-        else
-            connectivity_function(grsp; kw...)
-        end
+    if θ === nothing && connectivity_function !== least_cost_distance
+        throw(ArgumentError("θ must be a positive real number when passing a Grid"))
     end
-
+    S = connectivity_function(grsp; θ=θ, approx=approx)
     if connectivity_function <: DistanceFunction
         map!(distance_transformation, S, S)
     end
 
-    return connected_habitat(grsp, S; diagvalue, kw...)
+    return connected_habitat(grsp, S, diagvalue=diagvalue)
+end
+
+function connected_habitat(grsp::GridRSP; proximities=nothing, kw...)
+    if isnothing(proximities)
+        proximities = _computeproximities(grsp; kw...)
+    end
+    return connected_habitat(grsp, proximities; kw...)
 end
 function connected_habitat(grsp::Union{Grid,GridRSP}, S::Matrix;
     diagvalue::Union{Nothing,Real}=nothing,
@@ -645,4 +594,35 @@ function criticality(grsp::GridRSP;
     landscape[g.targetidx] = critvec
 
     return _maybe_raster(landscape, grsp)
+end
+
+function _computeproximities(grsp; 
+    connectivity_function=expected_cost,
+    distance_transformation=nothing,
+    diagvalue=nothing,
+    kw...
+)
+    g = grsp.g
+    proximities = connectivity_function(grsp; kw...)
+
+    # Check that distance_transformation function has been passed if no cost function is saved
+    if connectivity_function <: DistanceFunction
+        if distance_transformation === nothing
+            if g.costfunction === nothing
+                throw(ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function."))
+            else
+                distance_transformation = inv(g.costfunction)
+            end
+        end
+        map!(distance_transformation, proximities, proximities)
+    end
+    _maybe_set_diagonal!(proximities, g.targetnodes, diagvalue)
+    return proximities
+end
+
+_maybe_set_diagonal!(proximities, targetnodes, diagvalue::Nothing) = nothing
+function _maybe_set_diagonal!(proximities, targetnodes, diagvalue)
+    for (j, i) in enumerate(targetnodes)
+        proximities[i, j] = diagvalue
+    end
 end

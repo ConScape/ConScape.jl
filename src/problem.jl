@@ -62,13 +62,15 @@ to be run in the same job.
 - `connectivity_measure`: A [`ConnectivityMeasure`](@ref).
 - `solver`: A [`Solver`](@ref) specification.
 """
-@kwdef struct Problem{GM,CM<:ConnectivityMeasure,SM<:Solver} <: AbstractProblem
+@kwdef struct Problem{GM,CM<:ConnectivityMeasure,SM<:Solver,DV} <: AbstractProblem
     graph_measures::GM
     connectivity_measure::CM = LeastCostDistance()
     solver::SM = MatrixSolver()
+    diagvalue::DV=nothing
 end
 Problem(graph_measures::Union{Tuple,NamedTuple}; kw...) = Problem(; graph_measures, kw...)
 
+diagvalue(p::Problem) = p.diagvalue
 graph_measures(p::Problem) = p.graph_measures
 connectivity_measure(p::Problem) = p.connectivity_measure
 solver(p::Problem) = p.solver
@@ -81,9 +83,12 @@ function solve(p::Problem, rast::RasterStack; workspace=nothing)
 end
 solve(p::Problem, workspace::NamedTuple) = solve(p, workspace.grid; workspace)
 
-function init(p::Problem, rast::RasterStack; kw...)
-    grid = Grid(p, rast; kw...)
-    return (; grid, init(p, grid)...)
+init(args...; kw...) = init!((;), args...; kw...)
+
+function init!(workspace::NamedTuple, p::Problem, rast::RasterStack; kw...)
+    grid = Grid(p, rast; kw...) # TODO reuse the grid
+    return (; grid, init!(workspace, p, grid)...)
 end
 # Init is conditional on solver and connectivity measure
-init(p::AbstractProblem, g::Grid) = init(solver(p), connectivity_measure(p), p, g)
+init!(workspace::NamedTuple, p::AbstractProblem, g::Grid) = 
+    init!(workspace, solver(p), connectivity_measure(p), p, g)

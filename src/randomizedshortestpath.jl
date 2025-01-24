@@ -8,7 +8,8 @@ function sparse_rhs(targetnodes, n)
     )
 end
 
-function _inv(Z)
+_inv(Z) = _inv!(similar(Z), Z)
+function _inv!(Zⁱ, Z)
     Zⁱ = inv.(Z)
     Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
     return Zⁱ
@@ -42,6 +43,7 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
     kw...
 )
     workspace1, workspace2 = workspaces
+
     qˢZⁱqᵗ = workspace1
     qˢZⁱqᵗ .= qˢ .* Zⁱ .* qᵗ'
     sumqˢ = sum(qˢ)
@@ -64,7 +66,7 @@ function RSP_betweenness_kweighted(W::SparseMatrixCSC,
                                    S::AbstractMatrix,  # Matrix of proximities
                                    landmarks::AbstractVector;
     Zⁱ=_inv(Z),
-    workspaces=similar(Z),
+    workspaces=[similar(Z)],
     solver=nothing,
     Aadj=(I - W)',
     Aadj_init=init(solver, Aadj),
@@ -124,9 +126,9 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
     Aadj=(I - W)',
     Aadj_init=init(solver, Aadj),
     B_sparse=sparse_rhs(targetnodes, size(W, 1)),
-    edge_betweennesses=copy(W),
     kw...
 )
+    edge_betweennesses = copy(W)
     n = size(W, 1)
     workspace1, workspace2, workspace3 = workspaces
 
@@ -147,8 +149,7 @@ function RSP_edge_betweenness_qweighted(W::SparseMatrixCSC,
     # QZⁱᵀZ = qˢZⁱqᵗ' / A
     QZⁱᵀZ = ldiv!(solver, Aadj_init, qˢZⁱqᵗ; B_copy=copy!(workspace3, qˢZⁱqᵗ))'
 
-    Zrows .= QZⁱᵀZ .- Zrows
-    RHS = Zrows
+    RHS = workspace3 .= QZⁱᵀZ .- Zrows
 
     for i in axes(W, 1)
         # ZᵀZⁱ_minus_diag = Z[:,i]'*qˢZⁱqᵗ .- sumqˢ.* (Z[:,i].*diag(Zⁱ).*qᵗ)'
@@ -170,16 +171,15 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
                                         K::AbstractMatrix,  # Matrix of proximities
                                         targetnodes::AbstractVector;
     solver=nothing,
-    Zⁱ=_inv(Z),
     workspaces=[similar(Z), similar(Z)],
     permuted_workspaces=(similar(Z'),),
-    A=(I - W),
+    Zⁱ=_inv(Z),
     Aadj=(I - W)',
     Aadj_init=init(solver, Aadj),
     B_sparse=sparse_rhs(targetnodes, size(W, 1)),
-    edge_betweennesses=copy(W),
     kw...
 )
+    edge_betweennesses = copy(W)
     workspace1, workspace2 = workspaces
     permuted_workspace1 = permuted_workspaces[1]
 
@@ -190,11 +190,11 @@ function RSP_edge_betweenness_kweighted(W::SparseMatrixCSC,
     # K̂ᵀZ =  K̂' / A # is equivalent to the below
     K̂ᵀZ = ldiv!(solver, Aadj_init, K̂; B_copy=copy!(workspace2, K̂))'
 
-    k̂diagZⁱ = k̂.*[Zⁱ[targetnodes[t], t] for t in 1:length(targetnodes)]
+    k̂diagZⁱ = k̂ .* [Zⁱ[targetnodes[t], t] for t in 1:length(targetnodes)]
 
     B = workspace1 .= B_sparse
     Zrows = ldiv!(solver, Aadj_init, B; B_copy=copy!(workspace2, B))
-    k̂diagZⁱZ = permuted_workspace1 .= k̂diagZⁱ .* Zrows' # TODO we need a permuted workspace
+    k̂diagZⁱZ = permuted_workspace1 .= k̂diagZⁱ .* Zrows'
     K̂ᵀZ_minus_diag = k̂diagZⁱZ .= K̂ᵀZ .- k̂diagZⁱZ
 
     for i in axes(W, 1)
@@ -218,7 +218,7 @@ function RSP_expected_cost(W::SparseMatrixCSC,
     solver=nothing,
     A=(I - W),
     A_init=init(solver, A),
-    workspaces=(similar(Z), similar(Z)),
+    workspaces=[similar(Z), similar(Z)],
     CW=C .* W,
     kw...
 )
@@ -256,7 +256,7 @@ function RSP_expected_cost(W::SparseMatrixCSC,
         dˢ[j] = C̄[landmarks[j], j] 
     end
     C̄ .-= dˢ'
-    return C̄
+    return copy(C̄)
 end
 
 function RSP_free_energy_distance(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector; 
@@ -286,7 +286,7 @@ end
 function connected_habitat(qˢ::AbstractVector, # Source qualities
                            qᵗ::AbstractVector, # Target qualities
                            S::AbstractMatrix; # Matrix of proximities
-    workspaces=(similar(S, size(S, 1), 1),),
+    workspaces=[similar(S, size(S, 1), 1)],
     kw...
 )  
     mul!(view(workspaces[1], :, 1), S, qᵗ) .*= qˢ

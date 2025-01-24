@@ -1,24 +1,88 @@
 # Defined in ConScape.jl for load order
 # abstract type Solver end
-function init(s::Solver, 
+function init!(
+    ws::NamedTuple, 
+    s::Solver, 
     cm::FundamentalMeasure, 
     p::AbstractProblem, 
     g::Grid
 ) 
+    gms = graph_measures(p)
+    cf = connectivity_function(p)
     Pref = _Pref(g.affinities)
     W = _W(Pref, cm.θ, g.costmatrix)
     # Sparse lhs
     A = I - W
     # Sparse rhs
     B_sparse = sparse_rhs(g.targetnodes, size(g.costmatrix, 1))
+    # A_init = haskey(ws, :A_init) ? init(s, A) : init!(ws.A_init, s, A)
     A_init = init(s, A)
-    B_dense = Matrix(B_sparse)
-    workspace = copy(B_dense)
-    Z = ldiv!(s, A_init, B_dense; B_copy=workspace)
+    # B_dense becomes Z
+    B_dense = haskey(ws, :Z) ? copyto!(_resize(ws.Z, size(B_sparse)), B_sparse) : Matrix(B_sparse)
+    n_workspaces = count_workspaces(p)
+    n_permuted_workspaces = count_permuted_workspaces(p)
+    # @show haskey(ws, :workspaces) 
+    workspaces = if haskey(ws, :workspaces) 
+        [_reshape(w, size(B_dense)) for w in ws.workspaces]
+    else
+        [similar(B_dense) for _ in 1:n_workspaces]
+    end
+    permuted_workspaces = if haskey(ws, :workspaces) 
+        [_reshape(pw, size(B_dense')) for pw in ws.permuted_workspaces]
+    else
+        [similar(B_dense') for _ in 1:n_permuted_workspaces]
+    end
+    Z = ldiv!(s, A_init, B_dense; B_copy=copyto!(workspaces[1], B_dense))
     # Check that values in Z are not too small:
     _check_z(s, Z, W, g)
     grsp = GridRSP(g, cm.θ, Pref, W, Z)
-    return _measures_workspace(p, grsp; A, A_init, workspace, B_sparse)
+
+    Zⁱ = if hastrait(needs_inv, gms)
+        haskey(ws, :Zⁱ) ? _inv!(_reshape(ws.Zⁱ, size(Z)), Z) : _inv(Z)
+    else
+        nothing
+    end
+    Aadj_init, Aadj = if hastrait(needs_Aaj_init, gms)
+        # Just take the adjoint of the factorization of A
+        # where possible to save calculations and memory
+        Aadj_init, Aadj = if hasproperty(A_init, :F)
+            Aadj = A'
+            # Use adjoint factorization of A rather than recalculating for A'
+            Aadj_init = merge(A_init, (; F=A_init.F'))
+            Aadj_init, Aadj
+        else
+            # LinearSolve.jl cant handle the adjoint 
+            # so we duplicate work and allocations
+            Aadj = sparse(A')
+            Aadj_init = init(solver(p), Aadj)
+            Aadj_init, Aadj
+        end
+        Aadj_init, Aadj
+    else
+        nothing, nothing
+    end
+    # Create an intermediate workspace to use in computations
+    workspace_kw =  (; Zⁱ, workspaces, permuted_workspaces, Aadj_init, Aadj, A, A_init)
+    expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
+        ConScape.expected_cost(grsp; workspace_kw..., solver=solver(p))
+    else
+        nothing
+    end
+    free_energy_distances = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
+        ConScape.free_energy_distance(grsp; workspace_kw..., solver=solver(p))
+    else
+        nothing
+    end
+    proximities = if hastrait(needs_proximity, gms)
+        # We populate this during `solve`
+        haskey(ws, :proximities) ? _reshape(ws.proximities, size(Z)) : similar(Z)
+    else
+        nothing
+    end
+
+    # TODO make a trait
+    CW = grsp.g.costmatrix .* grsp.W
+    return (; grsp, workspace_kw..., CW, free_energy_distances, expected_costs, proximities)
 end
 
 # RSP is not used for ConnectivityMeasure, so the solver isn't used
@@ -29,23 +93,63 @@ function solve(s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid;
         compute(gm, p, g; solver=s, workspace...)
     end
 end
-function solve(s::Solver, cm::FundamentalMeasure, p::AbstractProblem, g::Grid; 
-    workspace=nothing,
+function solve(s::Solver, cm::FundamentalMeasure, p::Problem, g::Grid; 
+    workspace=init(s, cm, p, g)
 ) 
-    workspace = isnothing(workspace) ? init(s, cm, p, g) : workspace
-    # TODO remove use of GridRSP where possible
-    results = map(p.graph_measures) do gm
-        compute(gm, p, workspace.grsp; workspace...)
+    gms = graph_measures(p)
+    distance_transformation = cm.distance_transformation
+    results = if distance_transformation isa NamedTuple
+        # Map over both distance transformations and graph measures
+        nested = map(distance_transformation) do dt
+            cm1 = ConstructionBase.setproperties(cm, (; distance_transformation=dt))
+            hastrait(needs_proximity, gms) &&
+                _setproximities!(workspace.proximities, workspace.expected_costs, cm1, p, workspace.grsp)
+            # Rebuild the problem with a connectivity measure
+            # holding a single distance transformation, in case its used
+            p1 = ConstructionBase.setproperties(p, (; connectivity_measure=cm1))
+            map(gms) do gm
+                if needs_connectivity(gm)
+                    compute(gm, p1, workspace.grsp; workspace...)
+                else
+                    nothing
+                end
+            end
+        end
+        # Map over graph measures that don't need connectivity
+        flat = map(gms) do gm
+            if needs_connectivity(gm)
+                nothing
+            else
+                compute(gm, p, workspace.grsp; workspace...)
+            end
+        end
+        # Combine nested and flat results
+        map(keys(gms)) do k
+            f = flat[k]
+            if isnothing(f) 
+                map(n -> n[k], nested)
+            else
+                f
+            end
+        end |> NamedTuple{keys(gms)}
+    else
+        hastrait(needs_proximity, gms) &&
+            _setproximities!(workspace.proximities, workspace.expected_costs, cm, p, workspace.grsp)
+        # Map over graph measures
+        map(p.graph_measures) do gm
+            compute(gm, p, workspace.grsp; workspace...)
+        end
     end
     return _merge_to_stack(results)
 end
 
-function init(s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid) 
+function init!(workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid) 
     # TODO what is needed here?
     return (;)
 end
 
-LinearAlgebra.ldiv!(solver::Solver, A, B; kw...) = ldiv!(solver, init(solver, A), A, B; kw...)
+LinearAlgebra.ldiv!(solver::Solver, A::AbstractMatrix, B::AbstractMatrix; kw...) = 
+    ldiv!(solver, init(solver, A), B; kw...)
 
 """
    MatrixSolver(; check)
@@ -262,5 +366,39 @@ function _check_z(s, Z, W, g)
     # Check that values in Z are not too small:
     if hasproperty(s, :check) && s.check && minimum(Z) * minimum(nonzeros(g.costmatrix .* W)) == 0
         @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
+    end
+end
+
+# This duplicats some logic from gridrsp
+function _setproximities!(
+    proximities::AbstractMatrix, 
+    expected_costs::AbstractMatrix, 
+    cm::ConnectivityMeasure, 
+    p::Problem,
+    grsp::GridRSP
+)
+    g = grsp.g
+    dt = cm.distance_transformation
+    if isnothing(dt)
+        dt = inv(g.costfunction)
+    end
+    map!(dt, proximities, expected_costs)
+    _maybe_set_diagonal!(proximities, g, diagvalue(p))
+    return proximities
+end
+
+function _reshape(A::Array, dims::Tuple{Vararg{Int}})
+    len = prod(dims)
+    mem = getfield(A, :ref).mem
+    if size(A) == dims
+        A
+    elseif length(mem) >= len
+        v = vec(A)
+        # Hack to shrink the array
+        setfield!(v, :size, (len,))
+        reshape(v, dims)
+    else
+        v = resize!(vec(A), len)
+        reshape(v, dims)
     end
 end

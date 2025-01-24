@@ -8,7 +8,7 @@ using Rasters, ArchGDAL, Plots
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 _tempdir = mkdir(tempname())
 
-@testset "sno_2000 Rasters" begin
+#@testset "sno_2000 Rasters" begin
     landscape = "sno_2000"
     θ = 0.1
 
@@ -67,7 +67,7 @@ _tempdir = mkdir(tempname())
                         matrix_type=mt) isa ConScape.SparseMatrixCSC
     end
 
-    @testset "Test betweenness" begin
+    # @testset "Test betweenness" begin
         @testset "q-weighted" begin
             bet = ConScape.betweenness_qweighted(grsp)
             @test bet isa Raster
@@ -77,7 +77,7 @@ _tempdir = mkdir(tempname())
                 4641.815380725279  3365.3296878569213   477.1085971945757], atol=1e-3)
         end
 
-        @testset "k-weighted" begin
+        # @testset "k-weighted" begin
             bet = ConScape.betweenness_kweighted(grsp, diagvalue=1.)
             @test bet isa Raster
             @test isapprox(bet[21:23, 31:33], [

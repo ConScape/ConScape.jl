@@ -1,6 +1,7 @@
 module ConScape
 
 using ArnoldiMethod
+using ConstructionBase
 using Graphs
 using LinearAlgebra
 using LinearSolve

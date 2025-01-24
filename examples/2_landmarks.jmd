@@ -152,7 +152,7 @@ plot(result.func_exp)
 
 
 ```julia
-stored_problem = ConScape.StoredProblem(problem; 
+stored_problem = ConScape.BatchProblem(problem; 
     path=".", radius=20, overlap=30, threaded=true
 )
 ConScape.solve(stored_problem, rast)

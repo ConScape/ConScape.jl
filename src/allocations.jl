@@ -1,11 +1,13 @@
-function allocations(p::Problem, sze::Tuple{Int,Int};
-    nthreads=Threads.nthreads()
-)
+function allocations(p::Problem, rast::Raster; kw...)
+    allocations(p, Grid(rast; kw...))
+end
+function allocations(p::Problem, grid::Grid; kw...)
+    sze = size(grid)
     gms = graph_measures(p)
     dense_size = sizeofdense(p, sze)
     sparse_size = sizeofsparse(p, sze)
-    init_size = sizeofinits(p, sze)
-    grid_size = sizeofgrid(p, sze)
+    init_size = allocations(solver(p), sze; kw...)
+    grid_size = Base.summarysize(grid)
 
     return_size = sum(map(gm -> sizeofreturn(gm, sze), gms))
 
@@ -13,47 +15,18 @@ function allocations(p::Problem, sze::Tuple{Int,Int};
     (; total, sparse_size, dense_size, init_size, return_size, grid_size)
 end
 
-function allocations(p::AbstractWindowedProblem, sze::Tuple{Int,Int}; 
-    nthreads=Threads.nthreads()
-)
-    if p.threaded
-        allocations(p.problem, sze) * nthreads
-    else
-        allocations(p.problem, sze)
-    end
-end
-
 # This is approximate.
-# TODO test with different size inputs
-allocations(::MatrixSolver, sze) = sze[1] * 20 * sizeof(Float64)
-function allocations(::VectorSolver, sze; 
-    nthread=Threads.nthreads(),
+# Size of the solver initialisation / factorization
+# These are not accurate
+allocations(::MatrixSolver, sze; nthreads=nothing) = sze[1] * 20 * sizeof(Float64)
+function allocations(s::VectorSolver, sze; 
+    nthreads=Threads.nthreads(),
 ) 
     if s.threaded
-        # TODO add lu workspace size * nthreads
-        sze[1] * 20 * sizeof(Float64)
+        sze[1] * (20 + nthreads) * sizeof(Float64) 
     else
         sze[1] * 20 * sizeof(Float64)
     end
-end
-
-function sizeofgrid(p::Problem, (nsources, ntargets))
-    ntargetarrays = 9
-    targetallocssize = ntargets * ntargetarrays
-    # id lookups count for 2
-    nsourcearrays = 9
-    sourceallocssize = nsources * nsourcearrays
-    sourceidsize = nsources * 2 * sizeof(Int)
-    targetidsize = ntargets * 2 * sizeof(Int)
-
-    # Dense storage
-    sourcequalitysize = nsources * sizeof(Float64)
-    # Sparse storage needs indices as well as values
-    targetqualitysize = ntargets * sizeof(Float64) + ntargets * sizeof(Int)
-
-    return targetallocssize + sourceallocssize + 
-        sourceidsize + targetidsize + 
-        sourcequalitysize + targetqualitysize
 end
 
 # Slightly inaccurate as the band is not complete in corners
@@ -70,23 +43,20 @@ end
 sizeofdense(sze::Tuple{Int,Int}) = prod(sze) * sizeof(Float64)
 function sizeofdense(p::Problem, sze::Tuple{Int,Int}) 
     gms = graph_measures(p)
-    n_workspaces = mapreduce(needs_workspaces, max, gms)
-    n_permuted_workspaces = mapreduce(needs_permuted_workspaces, max, gms)
+    n_workspaces = count_workspaces(p)
+    n_permuted_workspaces = count_permuted_workspaces(p)
+    ec_ws = hastrait(needs_expected_cost, gms) || connectivity_measure(p) isa ConScape.ExpectedCost ? 1 : 0
 
     required_dense = 1 + 
         n_workspaces + 
         n_permuted_workspaces + 
+        ec_ws
         hastrait(needs_free_energy_distance, gms) + 
         hastrait(needs_expected_cost, gms) +
+        hastrait(needs_proximity, gms) +
         hastrait(needs_inv, gms)
 
     return sizeofdense(sze) * required_dense
-end
-
-function sizeofinits(p::Problem, sze::Tuple{Int,Int})
-    sum(graph_measures(p)) do gm
-        allocations(solver(p), sze)
-    end
 end
 
 sizeofreturn(gm::GraphMeasure, sze) = sizeofreturn(returntype(gm), sze)

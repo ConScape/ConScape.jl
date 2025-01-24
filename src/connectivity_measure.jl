@@ -27,6 +27,8 @@ end
 
 keywords(cm::ConnectivityMeasure) = _keywords(cm)
 
+distance_transformation(cm::FundamentalMeasure) = nothing
+distance_transformation(cm::DistanceMeasure) = cm.distance_transformation
 # TODO remove the complexity of the connectivity_function
 # These methods are mostly to avoid changing the original interface for now
 connectivity_function(::LeastCostDistance) = least_cost_distance
