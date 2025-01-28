@@ -5,8 +5,9 @@ function init!(
     s::Solver, 
     cm::FundamentalMeasure, 
     p::AbstractProblem, 
-    g::Grid
+    rast::RasterStack,
 ) 
+    grid = g = Grid(p, rast)
     gms = graph_measures(p)
     cf = connectivity_function(p)
     Pref = _Pref(g.affinities)
@@ -35,7 +36,7 @@ function init!(
     Z = ldiv!(s, A_init, B_dense; B_copy=copyto!(workspaces[1], B_dense))
     # Check that values in Z are not too small:
     _check_z(s, Z, W, g)
-    grsp = GridRSP(g, cm.θ, Pref, W, Z)
+    grsp = GridRSP(grid, cm.θ, Pref, W, Z)
 
     Zⁱ = if hastrait(needs_inv, gms)
         haskey(ws, :Zⁱ) ? _inv!(_reshape(ws.Zⁱ, size(Z)), Z) : _inv(Z)
@@ -62,7 +63,7 @@ function init!(
         nothing, nothing
     end
     # Create an intermediate workspace to use in computations
-    workspace_kw =  (; Zⁱ, workspaces, permuted_workspaces, Aadj_init, Aadj, A, A_init)
+    workspace_kw = (; Zⁱ, workspaces, permuted_workspaces, Aadj_init, Aadj, A, A_init)
     expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
         ConScape.expected_cost(grsp; workspace_kw..., solver=solver(p))
     else
@@ -82,20 +83,28 @@ function init!(
 
     # TODO make a trait
     CW = grsp.g.costmatrix .* grsp.W
-    return (; grsp, workspace_kw..., CW, free_energy_distances, expected_costs, proximities)
+    return (; grid, grsp, workspace_kw..., CW, free_energy_distances, expected_costs, proximities)
 end
 
 # RSP is not used for ConnectivityMeasure, so the solver isn't used
-function solve(s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid;
-    workspace=init(s, cm, p, g),
+function solve!(
+    workspace::NamedTuple, 
+    s::Solver, 
+    cm::ConnectivityMeasure, 
+    p::AbstractProblem,
 ) 
+    g = workspace.grid
     return map(p.graph_measures) do gm
-        compute(gm, p, g; solver=s, workspace...)
+        compute(gm, p, ; workspace...)
     end
 end
-function solve(s::Solver, cm::FundamentalMeasure, p::Problem, g::Grid; 
-    workspace=init(s, cm, p, g)
+function solve!(
+    workspace::NamedTuple,
+    s::Solver, 
+    cm::FundamentalMeasure, 
+    p::Problem,
 ) 
+    g = workspace.grid
     gms = graph_measures(p)
     distance_transformation = cm.distance_transformation
     results = if distance_transformation isa NamedTuple
@@ -143,9 +152,9 @@ function solve(s::Solver, cm::FundamentalMeasure, p::Problem, g::Grid;
     return _merge_to_stack(results)
 end
 
-function init!(workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, g::Grid) 
+function init!(workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, rast::RasterStack) 
     # TODO what is needed here?
-    return (;)
+    return (; grid=Grid(p, rast))
 end
 
 LinearAlgebra.ldiv!(solver::Solver, A::AbstractMatrix, B::AbstractMatrix; kw...) = 

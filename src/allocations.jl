@@ -1,5 +1,23 @@
-function allocations(p::Problem, rast::Raster; kw...)
-    allocations(p, Grid(rast; kw...))
+
+"""
+    allocations(p::AbstractProblem, size::Tuple{Int,Int})
+    allocations(p::AbstractProblem, rast::RasterStack)
+
+Calculate allocations in Bytes required to run the problem.
+The maximum dense target size will be used, so that `size`
+is symmetrical. You can pass e.g. `(1000, 200)`. where you 
+know the size of the largest sparse matrix generated from `rast`.
+
+`allocations` will likely underestimate as Julia may need to allocate
+for compilatation and other things outside of our control.
+
+A warning will be thrown for problem components whos allocations
+are not well known.
+"""
+function allocations end
+
+function allocations(p::Problem, rast::AbstractRasterStack; kw...)
+    allocations(p, Grid(rast); kw...)
 end
 function allocations(p::Problem, grid::Grid; kw...)
     sze = size(grid)
@@ -12,8 +30,25 @@ function allocations(p::Problem, grid::Grid; kw...)
     return_size = sum(map(gm -> sizeofreturn(gm, sze), gms))
 
     total = sparse_size + dense_size + init_size + return_size + grid_size
-    (; total, sparse_size, dense_size, init_size, return_size, grid_size)
+    # (; total, sparse_size, dense_size, init_size, return_size, grid_size)
+    return total
 end
+function allocations(p::AbstractWindowedProblem, rast::AbstractRasterStack; 
+    nthreads=Threads.nthreads(), kw...
+)
+    # largest_first = sort!(collect(zip(vec(problem_sizes), vec(range_tuples))); rev=true)
+    range_tuples = vec(_window_ranges(p, rast))
+    # Use the allocations for the largest windows
+    allocs = map(range_tuples) do rs
+        return allocations(p.problem, rast[rs...]; nthreads, kw...)
+    end
+    if p.threaded
+        sum(sort(allocs)[1:min(end, nthreads)])
+    else
+        maximum(allocs; init=0)
+    end
+end
+
 
 # This is approximate.
 # Size of the solver initialisation / factorization
