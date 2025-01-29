@@ -415,7 +415,7 @@ function assess(
 end
 
 # Mosaic the stored files to a RasterStack
-function Rasters.mosaic(p::BatchProblem; to, missingval=0.0, kw...)
+function Rasters.mosaic(p::BatchProblem; to, lazy=true, missingval=0.0, kw...)
     ranges = _window_ranges(p, to)
     paths = [_window_path(p, rs) for rs in ranges]
     stacks = [RasterStack(path; lazy) for path in paths if isdir(path)]
