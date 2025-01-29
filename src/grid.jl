@@ -137,13 +137,14 @@ function Grid(rast::RasterStack;
     end,
     source_qualities=get(rast, :source_qualities, qualities),
     target_qualities=get(rast, :target_qualities, qualities), 
-    costs=get(rast, :costs, MinusLog()),
+    costs=MinusLog(),
     kw...
 )
     Grid(size(rast)...; affinities, qualities, source_qualities, target_qualities, costs, kw...)  
 end
 # TODO move functions like MinusLog to problems and pass in here
-Grid(p::AbstractProblem, rast::RasterStack; kw...) = Grid(rast; kw...)
+Grid(p::AbstractProblem, rast::RasterStack; kw...) = 
+    Grid(rast; costs=costs(p), prune=prune(p), kw...)
 
 Base.size(g::Grid) = (g.nrows, g.ncols)
 DimensionalData.dims(g::Grid) = g.dims

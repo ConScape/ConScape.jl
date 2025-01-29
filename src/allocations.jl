@@ -32,21 +32,6 @@ function allocations(p::Problem, sze::Tuple{Int,Int}; kw...)
     # (; total, sparse_size, dense_size, init_size, return_size, grid_size)
     return total
 end
-function allocations(p::AbstractWindowedProblem, rast::AbstractRasterStack; 
-    nthreads=Threads.nthreads(), kw...
-)
-    window_sizes = _window_problem_sizes(p, rast)
-    # largest_first = sort!(collect(zip(vec(problem_sizes), vec(range_tuples))); rev=true)
-    # Use the allocations for the largest windows
-    allocs = map(window_sizes) do sz
-        return allocations(p.problem, sz; nthreads, kw...)
-    end
-    if p.threaded
-        sum(sort(allocs)[1:min(end, nthreads)])
-    else
-        maximum(allocs; init=0)
-    end
-end
 
 
 # This is approximate.
