@@ -1,11 +1,3 @@
-# Defined earlier in ConScape.jl for load order
-# abstract type AbstractProblem end
-@doc """
-    Problem
-
-Abstract supertype for ConScape problem specifications.
-""" Problem
-
 # Recusive getters for nested problems
 graph_measures(p::AbstractProblem) = graph_measures(p.problem)
 connectivity_measure(p::AbstractProblem) = connectivity_measure(p.problem)
