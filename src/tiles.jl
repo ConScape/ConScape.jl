@@ -31,9 +31,9 @@ end
 WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 
 function solve(p::WindowedProblem, rast::RasterStack; 
-    test_windows=false,
-    verbose=false,
-    mosaic_return=true
+    test_windows::Bool=false,
+    verbose::Bool=false,
+    mosaic_return::Bool=true
 )
     window_ranges = _window_ranges(p, rast)
     window_indices = _window_indices(p, rast; window_ranges)
@@ -92,23 +92,25 @@ end
 
 # sorted_ranges = collect(last.(sort!(map(rs -> prod(_size(p, rast, rs)) => rs, used_ranges))))
 
-function _max_window_problem_size(p::AbstractWindowedProblem, rast)
-    sizes = _window_problem_sizes(p::AbstractWindowedProblem, rast)
-    _, i = findmax(sizes)
+function _max_window_problem_size(p::AbstractWindowedProblem, rast; kw...)
+    sizes = _window_problem_sizes(p, rast; kw...)
+    _, i = findmax(prod, sizes)
     return sizes[i]
 end
 
 # Calculate the maximum number of source and target values in any window
-function _window_problem_sizes(p::AbstractWindowedProblem, rast)
-    rs = _window_ranges(p, rast)
+function _window_problem_sizes(p::AbstractWindowedProblem, rast;
+    window_ranges=_window_ranges(p, rast)
+)
     # Calculate the maximum number of source and target values in any window
-    return map(r -> _problem_size(p, rast, r), rs)
+    return map(r -> _problem_size(p, rast, r), window_ranges)
 end
 
+_problem_size(p::AbstractProblem, rast) = _problem_size(p, rast, axes(rast))
 function _problem_size(p::AbstractProblem, rast, ranges::Tuple)
     source_count = _valid_sources(count, p, rast, ranges)
     target_count = _valid_targets(count, p, rast, ranges)
-    return source_count * target_count
+    return source_count, target_count
 end
 
 """
@@ -164,12 +166,17 @@ function BatchProblem(problem::WindowedProblem;
             throw(ArgumentError("BatchProblem buffer must match WindowedProblem buffer. Got $buffer and $(problem.buffer)"))
         buffer
     end
-    centersize = centersize isa Tuple{Int,Int} ? centersize : (centersize, centersize)
-    map(centersize, ConScape.centersize(problem)) do bcs, wcs 
-        rem(bcs, wcs) == 0 ||
-            throw(ArgumentError("BatchProblem centersize must be a multiple of WindowedProblem centersize. Got $centersize and $(problem.centersize)"))
+    if isnothing(centersize)
+        x = problem.centersize * nwindows
+        centersize = x, x
+    else
+        centersize = centersize isa Tuple{Int,Int} ? centersize : (centersize, centersize)
+        map(centersize, ConScape.centersize(problem)) do bcs, wcs 
+            rem(bcs, wcs) == 0 ||
+                throw(ArgumentError("BatchProblem centersize must be a multiple of WindowedProblem centersize. Got $centersize and $(problem.centersize)"))
+        end
+        isnothing(nwindows) || throw(ArgumentError("Cannot specify both centersize and nwindows"))
     end
-    isnothing(nwindows) || throw(ArgumentError("Cannot specify both centersize and nwindows"))
     BatchProblem(; problem, buffer, centersize, kw...)
 end
 
@@ -190,7 +197,8 @@ function solve(p::BatchProblem, rast::RasterStack; kw...)
 end
 # Single batch job for running on clusters
 function solve(p::BatchProblem, rast::RasterStack, i::Int;
-    window_indices=nothing, verbose=false, kw...
+    window_indices::Bool=nothing, 
+    verbose::Bool=false, kw...
 )
     # Indices i are contiguous so we need to spread them accross the actual tiles
     # that need to be done by first calculating or retrieving `window_indices`.
@@ -247,21 +255,18 @@ function _write_joblist(p::BatchProblem; window_indices)
 end
 
 # Mosaic the stored files to a RasterStack
-function Rasters.mosaic(p::BatchProblem; 
-    to, lazy=false, filename=nothing, missingval=0.0, kw...
-)
+function Rasters.mosaic(p::BatchProblem; to, missingval=0.0, kw...)
     ranges = _window_ranges(p, to)
-    mask = _valid_window_mask(p, to, ranges)
-    paths = [_window_path(p, rs) for (rs, m) in zip(ranges, mask) if m]
-    stacks = [RasterStack(path; lazy, name) for path in paths if isdir(path)]
+    paths = [_window_path(p, rs) for rs in ranges]
+    stacks = [RasterStack(path; lazy) for path in paths if isdir(path)]
 
-    return Rasters.mosaic(sum, stacks; to, filename, missingval, kw...)
+    return Rasters.mosaic(sum, stacks; missingval, to, kw...)
 end
 
 function _store(p::BatchProblem, output::RasterStack{K}, ranges; kw...) where K
-    path = mkpath(_window_path(p, ranges))
-    return Rasters.write(joinpath(path, ""), output; 
-        ext=p.ext, force=true, kw...
+    dir = mkpath(_window_path(p, ranges))
+    return Rasters.write(joinpath(dir, ""), output; 
+        ext=p.ext, force=true, verbose=false, kw...
     )
 end
 

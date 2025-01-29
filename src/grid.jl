@@ -281,10 +281,10 @@ function largest_subgraph(g::Grid)
     # affinities = convert(SparseMatrixCSC{Float64,Int}, graph[scci])
 
     costmatrix = g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinities)
-    id_to_grid_coordinate_list = NoWriteArray(g.id_to_grid_coordinate_list[scci])
-    targetidx, targetnodes = map(NoWriteArray, _targetidx_and_nodes(g.target_qualities, id_to_grid_coordinate_list))
-    qs = NoWriteArray([g.source_qualities[i] for i in id_to_grid_coordinate_list])
-    qt = NoWriteArray([g.target_qualities[i] for i in id_to_grid_coordinate_list ∩ targetidx])
+    id_to_grid_coordinate_list = g.id_to_grid_coordinate_list[scci]
+    targetidx, targetnodes = _targetidx_and_nodes(g.target_qualities, id_to_grid_coordinate_list)
+    qs = [g.source_qualities[i] for i in id_to_grid_coordinate_list]
+    qt = [g.target_qualities[i] for i in id_to_grid_coordinate_list ∩ targetidx]
     return Grid(
         g.nrows,
         g.ncols,

@@ -16,31 +16,30 @@ are not well known.
 """
 function allocations end
 
-function allocations(p::Problem, rast::AbstractRasterStack; kw...)
-    allocations(p, Grid(rast); kw...)
-end
-function allocations(p::Problem, grid::Grid; kw...)
-    sze = size(grid)
+allocations(p::Problem, rast::AbstractRasterStack; kw...) =
+    allocations(p, _problem_size(p, rast); kw...)
+allocations(p::Problem, grid::Grid; kw...) =
+    allocations(p, size(grid); kw...)
+function allocations(p::Problem, sze::Tuple{Int,Int}; kw...)
     gms = graph_measures(p)
     dense_size = sizeofdense(p, sze)
     sparse_size = sizeofsparse(p, sze)
     init_size = allocations(solver(p), sze; kw...)
-    grid_size = Base.summarysize(grid)
 
     return_size = sum(map(gm -> sizeofreturn(gm, sze), gms))
 
-    total = sparse_size + dense_size + init_size + return_size + grid_size
+    total = sparse_size + dense_size + init_size + return_size
     # (; total, sparse_size, dense_size, init_size, return_size, grid_size)
     return total
 end
 function allocations(p::AbstractWindowedProblem, rast::AbstractRasterStack; 
     nthreads=Threads.nthreads(), kw...
 )
+    window_sizes = _window_problem_sizes(p, rast)
     # largest_first = sort!(collect(zip(vec(problem_sizes), vec(range_tuples))); rev=true)
-    range_tuples = vec(_window_ranges(p, rast))
     # Use the allocations for the largest windows
-    allocs = map(range_tuples) do rs
-        return allocations(p.problem, rast[rs...]; nthreads, kw...)
+    allocs = map(window_sizes) do sz
+        return allocations(p.problem, sz; nthreads, kw...)
     end
     if p.threaded
         sum(sort(allocs)[1:min(end, nthreads)])
@@ -99,4 +98,3 @@ sizeofreturn(::ReturnsDenseSpatial, (n, m)) = n * sizeof(Float64)
 sizeofreturn(::ReturnsSparse, (n, m)) = n * m * 8 # Roughly this for 8 neighbors
 sizeofreturn(::ReturnsScalar, (n, m)) = sizeof(Float64)
 sizeofreturn(r::ReturnsOther, (n, m)) = r.f(n, m)
-
