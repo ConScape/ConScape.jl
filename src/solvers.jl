@@ -367,7 +367,7 @@ function _mergename(::Val{K1}, gm::NamedTuple{K2}) where {K1, K2}
     # And rename the NamedTuple
     NamedTuple{joinedkeys}(map(_maybe_raster, values(gm)))
 end
-_mergename(::Val{K1}, gm) where {K1, K2} =
+_mergename(::Val{K1}, gm) where K1 =
     # We keep the name as is
     NamedTuple{(K1,)}((_maybe_raster(gm),))
 
