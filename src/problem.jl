@@ -29,7 +29,7 @@ to be run in the same job.
 @kwdef struct Problem{GM,CM<:ConnectivityMeasure,SM<:Solver,DV,CO} <: AbstractProblem
     graph_measures::GM
     connectivity_measure::CM = LeastCostDistance()
-    solver::SM = MatrixSolver()
+    solver::SM= MatrixSolver()
     diagvalue::DV=nothing
     costs::CO=MinusLog()
     prune::Bool=true
