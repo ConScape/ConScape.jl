@@ -39,10 +39,11 @@ function solve(p::WindowedProblem, rast::RasterStack; kw...)
 end
 function solve!(workspace, p::WindowedProblem, rast::RasterStack; 
     test_windows::Bool=false,
-    verbose::Bool=false,
+    verbose::Bool=true,
     mosaic_return::Bool=true,
     window_ranges=_window_ranges(p, rast),
     window_indices=_window_indices(p, rast; window_ranges),
+    window_sizes=_window_sizes(p, rast; window_ranges),
 )
     # Test outputs just return the inputs after window masking 
     if test_windows
@@ -58,31 +59,44 @@ function solve!(workspace, p::WindowedProblem, rast::RasterStack;
         end
     end
 
+    n = max(length(window_indices), p.threaded ? Threads.nthreads() : 1)
+    ch = Channel{NamedTuple}(n)
+    for _ in 1:n
+        put!(ch, (;))
+    end
+
+    sorted_indices = last.(sort!(prod.(window_sizes[window_indices]) .=> window_indices; rev=true))
+    verbose && @show sorted_indices
     # Set up channels for threading
-    ch = workspace.channel
+    # ch = workspace.channel
     # Define empty outputs
-    output_stacks = Vector{RasterStack}(undef, length(window_indices))
+    output_stacks = Vector{RasterStack}(undef, length(sorted_indices))
     # Define a runner for threaded/non-threaded operation
     function run(i, ir)
         # Get a window range
         rs = window_ranges[ir]
+        verbose && println("Running job $ir on ranges $rs and thread $(Threads.threadid())")
         # verbose && println("Solving window $i $rs ")
         rast_window = _get_window_with_zeroed_buffer(p, rast, rs)
         # Initialise the window using stored memory
-        workspace = init!(take!(ch), p.problem, rast_window) 
+        verbose && println("Getting workspace from channel...")
+        workspace = take!(ch)
+        verbose && println("Initialising window from size $(size(rast_window)), from ranges $rs...")
+        workspace = init!(workspace, p.problem, rast_window; verbose) 
         # Solve for the window
+        verbose && println("Solving window $rs...")
         output_stacks[i] = solve!(workspace, p.problem)
         # Return the workspace to the channel
         put!(ch, workspace)
     end
     # Run the window problems
     if p.threaded
-        Threads.@threads for (i, ir) in enumerate(window_indices)
-            run(i, ir)
+        Threads.@threads for i in eachindex(sorted_indices)
+            run(i, sorted_indices[i])
         end
     else
-        for (i, ir) in enumerate(window_indices)
-            run(i, ir)
+        for i in eachindex(sorted_indices)
+            run(i, sorted_indices[i])
         end
     end
     # Maybe mosaic the output
@@ -93,22 +107,21 @@ function solve!(workspace, p::WindowedProblem, rast::RasterStack;
     end
 end
 
-init(p::AbstractWindowedProblem, rast::RasterStack) = init!((;), p, rast)
-function init!(workspace::NamedTuple, p::AbstractWindowedProblem, rast::RasterStack)
+init(p::AbstractWindowedProblem, rast::RasterStack; kw...) = init!((;), p, rast; kw...)
+function init!(workspace::NamedTuple, p::AbstractWindowedProblem, rast::RasterStack; kw...) 
+    # TODO actually allocate 
     n = p.threaded ? Threads.nthreads() : 1
-    workspace = if haskey(workspace, :channel)
-        workspace
-    else
-        channel = Channel{NamedTuple}(n)
-        for _ in 1:n
-            put!(channel, (;))
-        end
-        (; channel)
-    end
+    # workspace = if haskey(workspace, :channel)
+    #     workspace
+    # else
+    #     channel = Channel{NamedTuple}(n)
+    #     for _ in 1:n
+    #         put!(channel, (;))
+    #     end
+    #     (; channel)
+    # end
     return workspace
 end
-
-# sorted_ranges = collect(last.(sort!(map(rs -> prod(_size(p, rast, rs)) => rs, used_ranges))))
 
 function _max_window_problem_size(p::AbstractWindowedProblem, rast; kw...)
     sizes = _window_problem_sizes(p, rast; kw...)
@@ -126,8 +139,8 @@ end
 
 _problem_size(p::AbstractProblem, rast) = _problem_size(p, rast, axes(rast))
 function _problem_size(p::AbstractProblem, rast, ranges::Tuple)
-    source_count = _valid_sources(count, p, rast, ranges)
-    target_count = _valid_targets(count, p, rast, ranges)
+    source_count = parent(_valid_sources(count, p, rast, ranges))
+    target_count = parent(_valid_targets(count, p, rast, ranges))
     return source_count, target_count
 end
 
@@ -280,7 +293,6 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
         njobs,
         max_allocations,
         window_allocations,
-        window_ranges,
         window_sizes,
         window_mask,
         window_indices,
@@ -291,11 +303,11 @@ function assess(
     rast::AbstractRasterStack; 
     nthreads=Threads.nthreads(),
     print=true,
+    verbose=false,
     kw...
 )
     # Calculate outer window ranges
     window_ranges = _window_ranges(p, rast)
-    @show length(window_ranges)
 
     # Define a channel to store window raster and reuse memory
     channel = Channel{Any}(Threads.nthreads())
@@ -309,7 +321,7 @@ function assess(
     # Run assessments threaded as they can take a long time for large rasters
     Threads.@threads for i in eachindex(vec(window_ranges))
         rs = window_ranges[i]
-        println("Assessing batch: $i, $rs")
+        verbose && println("Assessing batch: $i, $rs")
         window_rast = take!(channel)
         window_rast = if map(length, rs) == size(window_rast)
             _get_window_with_zeroed_buffer!(window_rast, p, rast, rs)
@@ -317,7 +329,7 @@ function assess(
             _get_window_with_zeroed_buffer(p, rast, rs)
         end
         # Skip NaN only rasters
-        nvalid = count(x -> !(isnan(x) || x == 0), window_rast.target_qualities)
+        nvalid = count(_isnvalid, window_rast.target_qualities)
         assessments[i] = if nvalid > 0
             assess(p.problem, window_rast; nthreads, print=false, kw...)
         else
@@ -327,7 +339,6 @@ function assess(
                 njobs=0,
                 max_allocations=0,
                 window_allocations=Int[],
-                window_ranges=Tuple{UnitRange,UnitRange}[],
                 window_sizes=Tuple{Int,Int}[],
                 window_mask=Bool[],
                 window_indices=Int[],
@@ -338,7 +349,6 @@ function assess(
 
     # Get vectors of vectors from inner problem
     inner_window_allocations = map(a -> a.window_allocations, assessments)
-    inner_window_ranges = map(a -> a.window_ranges, assessments)
     inner_window_sizes = map(a -> a.window_sizes, assessments)
     inner_window_masks = map(a -> a.window_mask, assessments)
     inner_window_indices = map(a -> a.window_indices, assessments)
@@ -364,13 +374,11 @@ function assess(
         njobs, 
         max_windows, 
         max_allocations, 
-        window_ranges,
         window_indices,
         window_mask,
         inner_window_jobs, 
         inner_window_allocations, 
         inner_window_counts, 
-        inner_window_ranges,
         inner_window_sizes,
         inner_window_indices,
         inner_window_masks,
@@ -416,6 +424,13 @@ function _window_indices(p, rast;
     return eachindex(mask)[vec(mask)]
 end
 
+function _window_sizes(p, rast::RasterStack; window_ranges=_window_ranges(p, rast))
+    map(window_ranges) do rs
+        window_rast = view(rast, rs...)
+        _problem_size(p, window_rast)
+    end
+end
+
 function _window_ranges(p::Union{BatchProblem,WindowedProblem}, rast::AbstractRasterStack)
     size = Base.size(rast)
     centersize = ConScape.centersize(p)
@@ -428,8 +443,8 @@ function _window_ranges(p::Union{BatchProblem,WindowedProblem}, rast::AbstractRa
     return [map((i, s, ws) -> i:min(s, i + ws-1), Tuple(c), size, windowsize) for c in corners]
 end
 
-# _get_window_with_zeroed_buffer!(dest, p::AbstractWindowedProblem, rast::RasterStack) = 
-    # _get_window_with_zeroed_buffer(dest, p, rast, axes(rast))
+# _get_window_with_zeroed_buffer(dest, p, rast, axes(rast))
+    
 function _get_window_with_zeroed_buffer!(dest, p::AbstractWindowedProblem, rast::RasterStack, rs)
     b = buffer(p)
     fill = zero(eltype(rast.target_qualities))
@@ -450,17 +465,16 @@ _get_window_with_zeroed_buffer(p::AbstractWindowedProblem, rast::RasterStack) =
     _get_window_with_zeroed_buffer(p, rast, axes(rast))
 function _get_window_with_zeroed_buffer(p::AbstractWindowedProblem, rast::RasterStack, rs)
     b = buffer(p)
-    fill = zero(eltype(rast.target_qualities))
-    dest = if isnothing(grain(p))
-        rast[rs...]
-    else
-        coarse_graining(view(rast, rs), grain(p))
+    dest = view(rast, rs...)
+    tq = dest.target_qualities
+    tq_sparse = spzeros(eltype(tq), size(tq))
+    center_ranges = map(s -> b:s-b, size(tq))
+    tq_sparse[center_ranges...] = tq[center_ranges...]
+    if !isnothing(grain(p))
+        tq_sparse = coarse_graining(tq_sparse, grain(p))
     end
-    dest.target_qualities[begin:min(begin+b-1, end), :] .= fill
-    dest.target_qualities[:, begin:min(begin+b-1, end)] .= fill
-    dest.target_qualities[max(end-b+1, begin):end, :] .= fill
-    dest.target_qualities[:, max(end-b+1, begin):end] .= fill
-    return dest
+
+    return merge(dest, (; target_qualities=rebuild(tq; data=tq_sparse)))
 end
 
 # Apply function `f` to the validity (Bool) of each window. Empty windows are false. 
@@ -472,7 +486,7 @@ function _valid_sources(f, p, rast::AbstractRasterStack, source_ranges::Tuple)
     window = view(rast.qualities, source_ranges...)
     # If there are non-NaN cells above zero, keep the window
     # TODO allow users to change this condition?
-    f(x -> !isnan(x) && x > zero(x), window)
+    return _isvalid.(window)
 end
 function _valid_targets(
     f, p, rast::AbstractRasterStack, source_ranges::Tuple
@@ -486,7 +500,9 @@ function _valid_targets(
     window = view(rast.target_qualities, target_ranges...)
     # If there are non-NaN cells above zero, keep the window
     # TODO allow users to change this condition?
-    f(x -> !isnan(x) && x > zero(x), window)
+    return _isvalid.(window)
 end
+
+_isvalid(x) = !isnan(x) && x > zero(x)
 
 _resolution(rast) = abs(step(lookup(rast, X)))

@@ -5,11 +5,16 @@ function init!(
     s::Solver, 
     cm::FundamentalMeasure, 
     p::AbstractProblem, 
-    rast::RasterStack,
+    rast::RasterStack;
+    verbose=true
 ) 
+    verbose = true
+    verbose && println("Defining grid for RasterStack size $(size(rast))...")
     grid = g = Grid(p, rast)
+    verbose && println("Retreiving measures...")
     gms = graph_measures(p)
     cf = connectivity_function(p)
+    verbose && println("Defining sparse arrays of size $(size(g.affinities))...")
     Pref = _Pref(g.affinities)
     W = _W(Pref, cm.θ, g.costmatrix)
     # Sparse lhs
@@ -17,8 +22,10 @@ function init!(
     # Sparse rhs
     B_sparse = sparse_rhs(g.targetnodes, size(g.costmatrix, 1))
     # A_init = haskey(ws, :A_init) ? init(s, A) : init!(ws.A_init, s, A)
+    verbose && println("Initialising factorizations...")
     A_init = init(s, A)
     # B_dense becomes Z
+    verbose && println("Allocating workspaces...")
     B_dense = haskey(ws, :Z) ? copyto!(_resize(ws.Z, size(B_sparse)), B_sparse) : Matrix(B_sparse)
     n_workspaces = count_workspaces(p)
     n_permuted_workspaces = count_permuted_workspaces(p)
@@ -33,11 +40,14 @@ function init!(
     else
         [similar(B_dense') for _ in 1:n_permuted_workspaces]
     end
+
+    verbose && println("Solving Z matrix...")
     Z = ldiv!(s, A_init, B_dense; B_copy=copyto!(workspaces[1], B_dense))
     # Check that values in Z are not too small:
     _check_z(s, Z, W, g)
     grsp = GridRSP(grid, cm.θ, Pref, W, Z)
 
+    verbose && println("Calculating inverses...")
     Zⁱ = if hastrait(needs_inv, gms)
         haskey(ws, :Zⁱ) ? _inv!(_reshape(ws.Zⁱ, size(Z)), Z) : _inv(Z)
     else
@@ -62,27 +72,32 @@ function init!(
     else
         nothing, nothing
     end
+
     # Create an intermediate workspace to use in computations
     workspace_kw = (; Zⁱ, workspaces, permuted_workspaces, Aadj_init, Aadj, A, A_init)
+
     expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
+        verbose && println("Calculating expected cost...")
         ConScape.expected_cost(grsp; workspace_kw..., solver=solver(p))
     else
         nothing
     end
     free_energy_distances = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
+        verbose && println("Calculating free energy distance...")
         ConScape.free_energy_distance(grsp; workspace_kw..., solver=solver(p))
     else
         nothing
     end
     proximities = if hastrait(needs_proximity, gms)
+        verbose && println("Calculating proximities...")
         # We populate this during `solve`
         haskey(ws, :proximities) ? _reshape(ws.proximities, size(Z)) : similar(Z)
     else
         nothing
     end
 
-    # TODO make a trait
     CW = grsp.g.costmatrix .* grsp.W
+    verbose && println("Finished workspace...")
     return (; grid, grsp, workspace_kw..., CW, free_energy_distances, expected_costs, proximities)
 end
 
@@ -91,7 +106,8 @@ function solve!(
     workspace::NamedTuple, 
     s::Solver, 
     cm::ConnectivityMeasure, 
-    p::AbstractProblem,
+    p::AbstractProblem;
+    verbose=false
 ) 
     g = workspace.grid
     return map(p.graph_measures) do gm
@@ -102,7 +118,8 @@ function solve!(
     workspace::NamedTuple,
     s::Solver, 
     cm::FundamentalMeasure, 
-    p::Problem,
+    p::Problem;
+    verbose=false
 ) 
     g = workspace.grid
     gms = graph_measures(p)
@@ -152,7 +169,11 @@ function solve!(
     return _merge_to_stack(results)
 end
 
-function init!(workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, rast::RasterStack) 
+
+function _init!(
+    workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, rast::RasterStack;
+    verbose=false,
+) 
     # TODO what is needed here?
     return (; grid=Grid(p, rast))
 end

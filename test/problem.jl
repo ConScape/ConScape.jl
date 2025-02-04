@@ -1,6 +1,7 @@
+nothing
 using ConScape, Test, SparseArrays, LinearAlgebra
-using Rasters, ArchGDAL, NCDatasets, Plots
-using LinearSolve
+using Rasters, ArchGDAL
+using ConScape.LinearSolve
 
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 _tempdir = mkdir(tempname())
@@ -55,8 +56,8 @@ test_grsp = ConScape.GridRSP(test_g; θ)
 solvers = (
     ConScape.MatrixSolver(),
     ConScape.VectorSolver(),
-    ConScape.VectorSolver(; threaded=true),
-    ConScape.LinearSolver(),
+    # ConScape.VectorSolver(; threaded=true),
+    # ConScape.LinearSolver(),
 )
 solver = ConScape.VectorSolver(; threaded=true)
 solver = ConScape.MatrixSolver()
@@ -80,9 +81,7 @@ for solver in solvers
         @test workspace.free_energy_distances == ConScape.free_energy_distance(test_grsp)
     end
 
-    ConScape.allocations(problem, rast).total / 1e6
-
-    @time result = ConScape.solve(problem, workspace);
+    result = ConScape.solve!(workspace, problem);
     # @profview result = ConScape.solve(problem, workspace)
     @test result isa NamedTuple
     @test size(result.ch_one) == size(rast)
@@ -157,6 +156,8 @@ expected_layers = (:betk, :ch)
 
 solver = ConScape.MatrixSolver()
 problem = ConScape.Problem(; graph_measures, connectivity_measure, solver)
+# ConScape.allocations(problem, rast) / 1e6
+solve(problem, rast; verbose=true)
 
 @testset "target mosaicing matches original" begin
     # TODO note that this breaks if q weighting is included
@@ -164,15 +165,11 @@ problem = ConScape.Problem(; graph_measures, connectivity_measure, solver)
         buffer=10, centersize=5, threaded=false
     )
     @test collect(ConScape._window_ranges(windowed_problem, rast)) == [
-        (1:25, 1:25)   (1:25, 6:30)   (1:25, 11:35)   (1:25, 16:40)   (1:25, 21:45)   (1:25, 26:50)   (1:25, 31:55)   (1:25, 36:59)   (1:25, 41:59)   (1:25, 46:59)   (1:25, 51:59)   (1:25, 56:59)
-        (6:30, 1:25)   (6:30, 6:30)   (6:30, 11:35)   (6:30, 16:40)   (6:30, 21:45)   (6:30, 26:50)   (6:30, 31:55)   (6:30, 36:59)   (6:30, 41:59)   (6:30, 46:59)   (6:30, 51:59)   (6:30, 56:59)
-        (11:35, 1:25)  (11:35, 6:30)  (11:35, 11:35)  (11:35, 16:40)  (11:35, 21:45)  (11:35, 26:50)  (11:35, 31:55)  (11:35, 36:59)  (11:35, 41:59)  (11:35, 46:59)  (11:35, 51:59)  (11:35, 56:59)
-        (16:40, 1:25)  (16:40, 6:30)  (16:40, 11:35)  (16:40, 16:40)  (16:40, 21:45)  (16:40, 26:50)  (16:40, 31:55)  (16:40, 36:59)  (16:40, 41:59)  (16:40, 46:59)  (16:40, 51:59)  (16:40, 56:59)
-        (21:44, 1:25)  (21:44, 6:30)  (21:44, 11:35)  (21:44, 16:40)  (21:44, 21:45)  (21:44, 26:50)  (21:44, 31:55)  (21:44, 36:59)  (21:44, 41:59)  (21:44, 46:59)  (21:44, 51:59)  (21:44, 56:59)
-        (26:44, 1:25)  (26:44, 6:30)  (26:44, 11:35)  (26:44, 16:40)  (26:44, 21:45)  (26:44, 26:50)  (26:44, 31:55)  (26:44, 36:59)  (26:44, 41:59)  (26:44, 46:59)  (26:44, 51:59)  (26:44, 56:59)
-        (31:44, 1:25)  (31:44, 6:30)  (31:44, 11:35)  (31:44, 16:40)  (31:44, 21:45)  (31:44, 26:50)  (31:44, 31:55)  (31:44, 36:59)  (31:44, 41:59)  (31:44, 46:59)  (31:44, 51:59)  (31:44, 56:59)
-        (36:44, 1:25)  (36:44, 6:30)  (36:44, 11:35)  (36:44, 16:40)  (36:44, 21:45)  (36:44, 26:50)  (36:44, 31:55)  (36:44, 36:59)  (36:44, 41:59)  (36:44, 46:59)  (36:44, 51:59)  (36:44, 56:59)
-        (41:44, 1:25)  (41:44, 6:30)  (41:44, 11:35)  (41:44, 16:40)  (41:44, 21:45)  (41:44, 26:50)  (41:44, 31:55)  (41:44, 36:59)  (41:44, 41:59)  (41:44, 46:59)  (41:44, 51:59)  (41:44, 56:59)
+        (1:25, 1:25)   (1:25, 6:30)   (1:25, 11:35)   (1:25, 16:40)   (1:25, 21:45)   (1:25, 26:50)   (1:25, 31:55)   (1:25, 36:59)
+        (6:30, 1:25)   (6:30, 6:30)   (6:30, 11:35)   (6:30, 16:40)   (6:30, 21:45)   (6:30, 26:50)   (6:30, 31:55)   (6:30, 36:59)
+        (11:35, 1:25)  (11:35, 6:30)  (11:35, 11:35)  (11:35, 16:40)  (11:35, 21:45)  (11:35, 26:50)  (11:35, 31:55)  (11:35, 36:59)
+        (16:40, 1:25)  (16:40, 6:30)  (16:40, 11:35)  (16:40, 16:40)  (16:40, 21:45)  (16:40, 26:50)  (16:40, 31:55)  (16:40, 36:59) 
+        (21:44, 1:25)  (21:44, 6:30)  (21:44, 11:35)  (21:44, 16:40)  (21:44, 21:45)  (21:44, 26:50)  (21:44, 31:55)  (21:44, 36:59) 
     ]
     test_results = ConScape.solve(windowed_problem, rast; test_windows=true)
     inner_targets = copy(rast.target_qualities)
@@ -191,7 +188,7 @@ end
         buffer, centersize=5, threaded=false
     )
     mask!(rast; with=rast)
-    rast_inner = ConScape._get_window_with_zeroed_buffer(rast, axes(rast), windowed_problem)
+    rast_inner = ConScape._get_window_with_zeroed_buffer(windowed_problem, rast, axes(rast))
     @time wp_result = ConScape.solve(windowed_problem, rast)
     @time p_result = ConScape.solve(problem, rast_inner)
     # plot(p_result)

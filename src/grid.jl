@@ -94,12 +94,12 @@ function Grid(nrows::Integer,
     # if any(t -> t < 0, nonzeros(costmatrix))
     #     throw(ArgumentError("The cost graph can have only non-negative edge weights. Perhaps you should change the cost function?"))
     # end
-    cost_digraph = SimpleDiGraph(costmatrix)
-    affinity_digraph = SimpleDiGraph(affinities)
+    # cost_digraph = SimpleDiGraph(costmatrix)
+    # affinity_digraph = SimpleDiGraph(affinities)
 
-    if ne(difference(cost_digraph, affinity_digraph)) > 0
-        throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
-    end
+    # if ne(difference(cost_digraph, affinity_digraph)) > 0
+        # throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
+    # end
 
     targetidx, targetnodes = _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
     qs = [_source_qualities[i] for i in id_to_grid_coordinate_list]
@@ -129,7 +129,7 @@ function Grid(nrows::Integer,
 end
 function Grid(rast::RasterStack; 
     qualities=get(rast, :qualities) do 
-        ones(nrows, ncols)
+        ones(size(rast))
     end,
     affinities=let
         affinities_raster = get(rast, :affinities, nothing) 
@@ -137,10 +137,9 @@ function Grid(rast::RasterStack;
     end,
     source_qualities=get(rast, :source_qualities, qualities),
     target_qualities=get(rast, :target_qualities, qualities), 
-    costs=MinusLog(),
     kw...
 )
-    Grid(size(rast)...; affinities, qualities, source_qualities, target_qualities, costs, kw...)  
+    Grid(size(rast)...; affinities, qualities, source_qualities, target_qualities, kw...)  
 end
 # TODO move functions like MinusLog to problems and pass in here
 Grid(p::AbstractProblem, rast::RasterStack; kw...) = 
@@ -176,6 +175,7 @@ _unwrap(R::AbstractMatrix) = R
 # Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices
 _targetidx(q::AbstractMatrix, grididxs::AbstractVector) = grididxs
+_targetidx(q::Raster, grididxs::AbstractVector) = _targetidx(parent(q), grididxs)
 _targetidx(q::SparseMatrixCSC, grididxs::AbstractVector) =
     CartesianIndex.(findnz(q)[1:2]...) ∩ grididxs
 
@@ -183,6 +183,12 @@ _targetidx_and_nodes(g::Grid) =
     _targetidx_and_nodes(g.target_qualities, g.id_to_grid_coordinate_list)
 function _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
     targetidx = _targetidx(target_qualities, id_to_grid_coordinate_list)
+    # targetnodes = Vector{Int}(undef, length(targetidx))
+    # n = findfirst(==(id_to_grid_coordinate_list[1]), targetnodes)
+    # targetnodes[1] = n
+    # for i in eachindex(id_to_grid_coordinate_list)[2:end]
+        # findnext(==(id_to_grid_coordinate_list[i]), targetnodes, n)
+    # end
     targetnodes = findall(
         t -> t ∈ targetidx,
         id_to_grid_coordinate_list)

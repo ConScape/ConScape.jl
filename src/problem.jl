@@ -44,12 +44,14 @@ costs(p::Problem) = p.costs
 prune(p::Problem) = p.prune
 
 
-solve(p::Problem, rast::RasterStack) = solve!(init(p, rast), p)
-solve!(workspace::NamedTuple, p::Problem) = 
-    solve!(workspace, solver(p), connectivity_measure(p), p)
+solve(p::Problem, rast::RasterStack; kw...) = solve!(init(p, rast; kw...), p; kw...)
+solve!(workspace::NamedTuple, p::Problem; kw...) = 
+    solve!(workspace, solver(p), connectivity_measure(p), p; kw...)
 
 # Init is conditional on solver and connectivity measure
-init!(workspace::NamedTuple, p::Problem, rast::RasterStack) = 
-    init!(workspace, solver(p), connectivity_measure(p), p, rast)
+function init!(workspace::NamedTuple, p::Problem, rast::RasterStack; kw...)
+    println("Initialising for $(solver(p))")
+    init!(workspace, solver(p), connectivity_measure(p), p, rast; kw...)
+end
 
 init(p::AbstractProblem, args...; kw...) = init!((;), p, args...; kw...)
