@@ -44,7 +44,7 @@ function init!(
     verbose && println("Solving Z matrix...")
     Z = ldiv!(s, A_init, B_dense; B_copy=copyto!(workspaces[1], B_dense))
     # Check that values in Z are not too small:
-    _check_z(s, Z, W, g)
+    # verbose && _check_z(s, Z, W, g)
     grsp = GridRSP(grid, cm.θ, Pref, W, Z)
 
     verbose && println("Calculating inverses...")

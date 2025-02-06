@@ -12,10 +12,11 @@ end
 
 Construct a GridRSP from a `g::Grid` based on the inverse temperature parameter `θ::Real`.
 """
-function GridRSP(g::Grid; θ=nothing)
+function GridRSP(g::Grid; θ=nothing, verbose=true)
     Pref = _Pref(g.affinities)
     W    = _W(Pref, θ, g.costmatrix)
 
+        error()
     @debug("Computing fundamental matrix of non-absorbing paths (Z). Please be patient...")
     Z    = (I - W)\Matrix(sparse(g.targetnodes,
                                  1:length(g.targetnodes),
@@ -23,7 +24,7 @@ function GridRSP(g::Grid; θ=nothing)
                                  size(g.costmatrix, 1),
                                  length(g.targetnodes)))
     # Check that values in Z are not too small:
-    if minimum(Z)*minimum(nonzeros(g.costmatrix .* W)) == 0
+    verbose && if minimum(Z)*minimum(nonzeros(g.costmatrix .* W)) == 0
         @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
     end
 
