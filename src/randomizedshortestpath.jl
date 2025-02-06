@@ -219,9 +219,10 @@ function RSP_expected_cost(W::SparseMatrixCSC,
     A=(I - W),
     A_init=init(solver, A),
     workspaces=[similar(Z), similar(Z)],
-    CW=C .* W,
+    expected_costs,
     kw...
 )
+    CW = C .* W
     workspace1, workspace2 = workspaces
     if axes(W) != axes(C)
         throw(DimensionMismatch(""))
@@ -256,7 +257,7 @@ function RSP_expected_cost(W::SparseMatrixCSC,
         dˢ[j] = C̄[landmarks[j], j] 
     end
     C̄ .-= dˢ'
-    return copy(C̄)
+    return copyto!(expected_costs, C̄)
 end
 
 function RSP_free_energy_distance(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector; 

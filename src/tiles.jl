@@ -39,7 +39,7 @@ function solve(p::WindowedProblem, rast::RasterStack; kw...)
 end
 function solve!(workspace, p::WindowedProblem, rast::RasterStack; 
     test_windows::Bool=false,
-    verbose::Bool=true,
+    verbose::Bool=false,
     mosaic_return::Bool=true,
     window_ranges=_window_ranges(p, rast),
     window_sizes=_window_sizes(p, rast; window_ranges),
@@ -326,7 +326,7 @@ function assess(
 )
     # Calculate outer window ranges
     window_ranges = _window_ranges(p, rast)
-    println("Assessing $(length(window_ranges)) jobs")
+    verbose && println("Assessing $(length(window_ranges)) jobs")
 
     # Define a channel to store window raster and reuse memory
     channel = Channel{Any}(Threads.nthreads())
@@ -341,7 +341,7 @@ function assess(
     # Run assessments threaded as they can take a long time for large rasters
     Threads.@threads for i in eachindex(vec(window_ranges))
         rs = window_ranges[i]
-        println("Assessing batch: $i, $rs")
+        verbose && println("Assessing batch: $i, $rs")
         verbose && println("Retrieving raster from channel...")
         window_rast = take!(channel)
         verbose && println("Copy raster data")

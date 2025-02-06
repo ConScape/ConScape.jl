@@ -264,34 +264,34 @@ end
 
 # Scale Benchmarking...
 
-# windowed_problem_t1 = ConScape.WindowedProblem(problem; 
-#     source_radius=10, target_radius=1, threaded=true
-# )
-# windowed_problem_t2 = ConScape.WindowedProblem(problem; 
-#     source_radius=10, target_radius=2, threaded=true
-# )
-# windowed_problem_t4 = ConScape.WindowedProblem(problem; 
-#     source_radius=10, target_radius=4, threaded=true
-# )
-# windowed_problem_t6 = ConScape.WindowedProblem(problem; 
-#     source_radius=10, target_radius=6, threaded=true
-# )
-# length(ConScape._get_window_ranges(windowed_problem_t1, rast))
-# length(ConScape._get_window_ranges(windowed_problem_t2, rast))
-# length(ConScape._get_window_ranges(windowed_problem_t4, rast))
-# length(ConScape._get_window_ranges(windowed_problem_t6, rast))
-# using BenchmarkTools
-# @btime ConScape.solve(windowed_problem_t1, rast, verbose=false);
-# @btime ConScape.solve(windowed_problem_t2, rast, verbose=false);
-# @btime ConScape.solve(windowed_problem_t4, rast, verbose=false);
-# @btime ConScape.solve(windowed_problem_t6, rast, verbose=false);
-# @profview_allocs ConScape.solve(windowed_problem_t1, rast, verbose=false) sampling=1.0
-# @profview_allocs ConScape.solve(windowed_problem_t2, rast, verbose=false) sampling=1.0
-# @profview_allocs ConScape.solve(windowed_problem_t4, rast, verbose=false) sampling=1.0
-# @profview_allocs ConScape.solve(windowed_problem_t6, rast, verbose=false) sampling=1.0
-# @profview 
-# res = ConScape.solve(windowed_problem_t1, rast, verbose=false)
-# @profview ConScape.solve(windowed_problem_t2, rast, verbose=false)
-# @profview ConScape.solve(windowed_problem_t4, rast, verbose=false)
-# @profview ConScape.solve(windowed_problem_t6, rast, verbose=false)
-# res = ConScape.solve(windowed_problem_t4, rast, verbose=false)
+windowed_problem_t1 = ConScape.WindowedProblem(problem; 
+    buffer=10, centersize=1, threaded=true
+)
+windowed_problem_t2 = ConScape.WindowedProblem(problem; 
+    buffer=10, centersize=2, threaded=true
+)
+windowed_problem_t4 = ConScape.WindowedProblem(problem; 
+    buffer=10, centersize=4, threaded=true
+)
+windowed_problem_t6 = ConScape.WindowedProblem(problem; 
+    buffer=10, centersize=6, threaded=true
+)
+length(ConScape._window_ranges(windowed_problem_t1, rast))
+length(ConScape._window_ranges(windowed_problem_t2, rast))
+length(ConScape._window_ranges(windowed_problem_t4, rast))
+length(ConScape._window_ranges(windowed_problem_t6, rast))
+using BenchmarkTools
+ConScape.solve(windowed_problem_t1, rast, verbose=false);
+@btime ConScape.solve(windowed_problem_t2, rast, verbose=false);
+@btime ConScape.solve(windowed_problem_t4, rast, verbose=false);
+@btime ConScape.solve(windowed_problem_t6, rast, verbose=false);
+@profview_allocs ConScape.solve(windowed_problem_t1, rast, verbose=false) sampling=1.0
+@profview_allocs ConScape.solve(windowed_problem_t2, rast, verbose=false) sampling=1.0
+@profview_allocs ConScape.solve(windowed_problem_t4, rast, verbose=false) sampling=1.0
+@profview_allocs ConScape.solve(windowed_problem_t6, rast, verbose=false) sampling=1.0
+@profview 
+res = ConScape.solve(windowed_problem_t1, rast, verbose=false)
+@profview ConScape.solve(windowed_problem_t2, rast, verbose=false)
+@profview ConScape.solve(windowed_problem_t4, rast, verbose=false)
+@profview ConScape.solve(windowed_problem_t6, rast, verbose=false)
+res = ConScape.solve(windowed_problem_t4, rast, verbose=false)

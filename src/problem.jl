@@ -49,8 +49,8 @@ solve!(workspace::NamedTuple, p::Problem; kw...) =
     solve!(workspace, solver(p), connectivity_measure(p), p; kw...)
 
 # Init is conditional on solver and connectivity measure
-function init!(workspace::NamedTuple, p::Problem, rast::RasterStack; kw...)
-    println("Initialising for $(solver(p))")
+function init!(workspace::NamedTuple, p::Problem, rast::RasterStack; verbose=false, kw...)
+    verbose && println("Initialising for $(solver(p))")
     init!(workspace, solver(p), connectivity_measure(p), p, rast; kw...)
 end
 

@@ -6,53 +6,94 @@ function init!(
     cm::FundamentalMeasure, 
     p::AbstractProblem, 
     rast::RasterStack;
-    verbose=true
+    verbose=false,
 ) 
-    verbose = true
     verbose && println("Defining grid for RasterStack size $(size(rast))...")
     grid = g = Grid(p, rast)
     verbose && println("Retreiving measures...")
     gms = graph_measures(p)
     cf = connectivity_function(p)
     verbose && println("Defining sparse arrays of size $(size(g.affinities))...")
-    Pref = _Pref(g.affinities)
-    W = _W(Pref, cm.θ, g.costmatrix)
     # Sparse lhs
-    A = I - W
     # Sparse rhs
     B_sparse = sparse_rhs(g.targetnodes, size(g.costmatrix, 1))
     # A_init = haskey(ws, :A_init) ? init(s, A) : init!(ws.A_init, s, A)
     verbose && println("Initialising factorizations...")
-    A_init = init(s, A)
     # B_dense becomes Z
     verbose && println("Allocating workspaces...")
-    B_dense = haskey(ws, :Z) ? copyto!(_resize(ws.Z, size(B_sparse)), B_sparse) : Matrix(B_sparse)
-    n_workspaces = count_workspaces(p)
-    n_permuted_workspaces = count_permuted_workspaces(p)
-    # @show haskey(ws, :workspaces) 
-    workspaces = if haskey(ws, :workspaces) 
-        [_reshape(w, size(B_dense)) for w in ws.workspaces]
-    else
-        [similar(B_dense) for _ in 1:n_workspaces]
-    end
-    permuted_workspaces = if haskey(ws, :workspaces) 
-        [_reshape(pw, size(B_dense')) for pw in ws.permuted_workspaces]
-    else
-        [similar(B_dense') for _ in 1:n_permuted_workspaces]
-    end
-
-    verbose && println("Solving Z matrix...")
-    Z = ldiv!(s, A_init, B_dense; B_copy=copyto!(workspaces[1], B_dense))
-    # Check that values in Z are not too small:
-    # verbose && _check_z(s, Z, W, g)
-    grsp = GridRSP(grid, cm.θ, Pref, W, Z)
-
-    verbose && println("Calculating inverses...")
-    Zⁱ = if hastrait(needs_inv, gms)
-        haskey(ws, :Zⁱ) ? _inv!(_reshape(ws.Zⁱ, size(Z)), Z) : _inv(Z)
+    Z = if hastrait(needs_inv, gms) 
+        if haskey(ws, :Z) 
+            copyto!(_resize(ws.Z, size(B_sparse)), B_sparse)
+        else
+            Matrix{eltype(B_sparse)}(undef, size(B_sparse))
+        end
     else
         nothing
     end
+    Zⁱ = if hastrait(needs_inv, gms) 
+        haskey(ws, :Zⁱ) ? _resize(ws.Zⁱ, size(Z)) : similar(Z) 
+    else
+        nothing
+    end
+    n_workspaces = count_workspaces(p)
+    n_permuted_workspaces = count_permuted_workspaces(p)
+    workspaces = if haskey(ws, :workspaces) 
+        [_reshape(w, size(Z)) for w in ws.workspaces]
+    else
+        [similar(Z) for _ in 1:n_workspaces]
+    end
+    permuted_workspaces = if haskey(ws, :workspaces) 
+        [_reshape(pw, size(Z')) for pw in ws.permuted_workspaces]
+    else
+        [similar(Z') for _ in 1:n_permuted_workspaces]
+    end
+    expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
+        haskey(ws, :expected_costs) ? _reshape(ws.expected_costs, size(Z)) : similar(Z)
+    else
+        nothing
+    end
+    free_energy_distances = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
+        haskey(ws, :free_energy_distances) ? _reshape(ws.free_energy_distances, size(Z)) : similar(Z)
+    else
+        nothing
+    end
+    proximities = if hastrait(needs_proximity, gms)
+        haskey(ws, :proximities) ? _reshape(ws.proximities, size(Z)) : similar(Z)
+    else
+        nothing
+    end
+    
+    verbose && println("Finished allocating...")
+
+    return (; Z, Zⁱ, workspaces, permuted_workspaces, grid, free_energy_distances, expected_costs, proximities)
+end
+
+# RSP is not used for ConnectivityMeasure, so the solver isn't used
+function solve!(
+    workspace::NamedTuple, 
+    s::Solver, 
+    cm::ConnectivityMeasure, 
+    p::AbstractProblem;
+    verbose=false
+) 
+    g = workspace.grid
+    return map(p.graph_measures) do gm
+        compute(gm, p, ; workspace...)
+    end
+end
+
+# Do all the work shared accross outputs
+function _shared_solves!(ws::NamedTuple, solver::Solver, cm, p::Problem; 
+    verbose=false
+)
+    (; grid, Z) = ws
+    gms = graph_measures(p)
+    cf = connectivity_function(p)
+
+    Pref = _Pref(grid.affinities)
+    W = _W(Pref, cm.θ, grid.costmatrix)
+    A = I - W
+    A_init = init(solver, A)
     Aadj_init, Aadj = if hastrait(needs_Aaj_init, gms)
         # Just take the adjoint of the factorization of A
         # where possible to save calculations and memory
@@ -73,56 +114,43 @@ function init!(
         nothing, nothing
     end
 
-    # Create an intermediate workspace to use in computations
-    workspace_kw = (; Zⁱ, workspaces, permuted_workspaces, Aadj_init, Aadj, A, A_init)
+    if hastrait(needs_Z, gms)
+        verbose && println("Solving Z matrix...")
+        ldiv!(solver, A_init, Z; B_copy=copyto!(ws.workspaces[1], Z))
+        # Check that values in Z are not too small:
+        # verbose && _check_z(s, Z, W, g)
+    end
+    if hastrait(needs_inv, gms)
+        verbose && println("Inverting Z...")
+        _inv!(_reshape(ws.Zⁱ, size(Z)), Z)
+    end
 
-    expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
+    grsp = GridRSP(grid, cm.θ, Pref, W, Z)
+    workspace = (; Aadj_init, Aadj, A, A_init, ws...)
+    if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
         verbose && println("Calculating expected cost...")
-        ConScape.expected_cost(grsp; workspace_kw..., solver=solver(p))
-    else
-        nothing
+        ConScape.expected_cost(grsp; workspace..., solver)
     end
-    free_energy_distances = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
+    if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
         verbose && println("Calculating free energy distance...")
-        ConScape.free_energy_distance(grsp; workspace_kw..., solver=solver(p))
-    else
-        nothing
-    end
-    proximities = if hastrait(needs_proximity, gms)
-        verbose && println("Calculating proximities...")
-        # We populate this during `solve`
-        haskey(ws, :proximities) ? _reshape(ws.proximities, size(Z)) : similar(Z)
-    else
-        nothing
+        ConScape.free_energy_distance(grsp; workspace..., solver)
     end
 
-    CW = grsp.g.costmatrix .* grsp.W
-    verbose && println("Finished workspace...")
-    return (; grid, grsp, workspace_kw..., CW, free_energy_distances, expected_costs, proximities)
+    return workspace
 end
 
-# RSP is not used for ConnectivityMeasure, so the solver isn't used
 function solve!(
-    workspace::NamedTuple, 
-    s::Solver, 
-    cm::ConnectivityMeasure, 
-    p::AbstractProblem;
-    verbose=false
-) 
-    g = workspace.grid
-    return map(p.graph_measures) do gm
-        compute(gm, p, ; workspace...)
-    end
-end
-function solve!(
-    workspace::NamedTuple,
-    s::Solver, 
+    ws::NamedTuple,
+    solver::Solver, 
     cm::FundamentalMeasure, 
     p::Problem;
-    verbose=false
+    verbose=false,
 ) 
-    g = workspace.grid
+    workspace = _shared_solves!(ws, solver, cm, p; verbose)
     gms = graph_measures(p)
+    (; grid, Pref, W, Z) = workspace
+    # GridRSP is just a wrapper now, we can remove it later
+    grsp = GridRSP(grid, cm.θ, Pref, W, Z)
     distance_transformation = cm.distance_transformation
     results = if distance_transformation isa NamedTuple
         # Map over both distance transformations and graph measures
@@ -135,7 +163,7 @@ function solve!(
             p1 = ConstructionBase.setproperties(p, (; connectivity_measure=cm1))
             map(gms) do gm
                 if needs_connectivity(gm)
-                    compute(gm, p1, workspace.grsp; workspace...)
+                    compute(gm, p1, grsp; workspace...)
                 else
                     nothing
                 end
@@ -146,7 +174,7 @@ function solve!(
             if needs_connectivity(gm)
                 nothing
             else
-                compute(gm, p, workspace.grsp; workspace...)
+                compute(gm, p, grsp; workspace...)
             end
         end
         # Combine nested and flat results
@@ -163,7 +191,7 @@ function solve!(
             _setproximities!(workspace.proximities, workspace.expected_costs, cm, p, workspace.grsp)
         # Map over graph measures
         map(p.graph_measures) do gm
-            compute(gm, p, workspace.grsp; workspace...)
+            compute(gm, p, grsp; workspace...)
         end
     end
     return _merge_to_stack(results)
@@ -214,10 +242,9 @@ function init(s::VectorSolver, A::AbstractMatrix)
     F = lu(A)
     Tb = Vector{eltype(A)}
     if s.threaded
-        nbuffers = Threads.nthreads()
-        # channel = Channel{Tuple{typeof(F),Vector{Float64}}}(nbuffers)
         # Create one init per thread
         # UMFPACK `copy` shares memory but avoids workspace race conditions
+        nbuffers = Threads.nthreads()
         [
             (; 
                 F=(i == 1 ? F : copy(F)), 
@@ -232,8 +259,8 @@ function init(s::VectorSolver, A::AbstractMatrix)
 end
 
 function LinearAlgebra.ldiv!(s::VectorSolver, init, B; B_copy=nothing)
-    transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
     # for SparseArrays.UMFPACK._AqldivB_kernel!(Z, F, B, transposeoptype)
+    transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
 
     # This is basically SparseArrays.UMFPACK._AqldivB_kernel!
     # But we unroll it to avoid copies or allocation of B

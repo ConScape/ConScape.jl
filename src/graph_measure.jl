@@ -106,6 +106,7 @@ needs_connectivity(::Criticality) = true
 return_type(::GraphMeasure) = false
 needs_inv(::GraphMeasure) = false
 needs_inv(::BetweennessMeasure) = true
+needs_Z(::GraphMeasure) = true
 needs_workspaces(::GraphMeasure) = 0
 needs_workspaces(::BetweennessMeasure) = 1
 needs_workspaces(::EdgeBetweennessKweighted) = 2
