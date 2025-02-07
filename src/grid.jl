@@ -273,7 +273,7 @@ function largest_subgraph(g::Grid)
     # @info "cost graph contains $(length(scc)) strongly connected subgraphs"
 
     # Find the largest subgraph
-    i = argmax(length.(scc))
+    _, i = findmax(length, scc)
 
     # extract node list and sort it
     scci = sort(scc[i])

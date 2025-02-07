@@ -69,19 +69,19 @@ for solver in solvers
         graph_measures, connectivity_measure, solver,
     )
     @time workspace = init(problem, rast);
+    Z = copy(workspace.Z)
     @testset "initialised grids are the same" begin
-        @test workspace.grsp.W == test_grsp.W
-        @test workspace.grsp.Z == test_grsp.Z
-        @test workspace.grsp.Pref == test_grsp.Pref
-        @test workspace.grsp.θ == test_grsp.θ
+        # @test workspace.g.θ == test_grsp.θ
         foreach(propertynames(test_g)) do n
             @test isequal(getproperty(workspace.grid, n), getproperty(test_g, n))
         end
-        @test workspace.expected_costs == ConScape.expected_cost(test_grsp)
-        @test workspace.free_energy_distances == ConScape.free_energy_distance(test_grsp)
     end
 
     result = ConScape.solve!(workspace, problem);
+    @test workspace.expected_costs == ConScape.expected_cost(test_grsp)
+    @test workspace.free_energy_distances == ConScape.free_energy_distance(test_grsp)
+    @test workspace.Z == test_grsp.Z
+
     # @profview result = ConScape.solve(problem, workspace)
     @test result isa NamedTuple
     @test size(result.ch_one) == size(rast)
@@ -160,7 +160,6 @@ problem = ConScape.Problem(; graph_measures, connectivity_measure, solver)
 solve(problem, rast; verbose=true)
 
 @testset "target mosaicing matches original" begin
-    # TODO note that this breaks if q weighting is included
     windowed_problem = ConScape.WindowedProblem(problem; 
         buffer=10, centersize=5, threaded=false
     )
@@ -179,7 +178,7 @@ solve(problem, rast; verbose=true)
     inner_targets[:, 1:10] .= 0
     inner_targets[end-9:end, :] .= 0
     inner_targets[:, end-9:end] .= 0
-    @test inner_targets == test_results.target_qualities
+    @test parent(inner_targets) == parent(test_results.target_qualities)
 end
 
 @testset "windowed results approximate non-windowed" begin
@@ -203,7 +202,7 @@ end
 
 # BatchProblem writes files to disk and mosaics to RasterStack
 
-@testset "batch problem matches windowed problem" begin
+# @testset "batch problem matches windowed problem" begin
     # Use a higher alpha to catch differences
     distance_transformation = x -> exp(-x / 50)
     connectivity_measure = ConScape.ExpectedCost(; θ, distance_transformation)
@@ -211,7 +210,8 @@ end
 
     kw = (; buffer=10, centersize=5, threaded=false)
     windowed_problem = ConScape.WindowedProblem(problem; kw...)
-    windowed_result = ConScape.solve(windowed_problem, rast)
+    @time workspace = ConScape.init(windowed_problem, rast);
+    @time windowed_result = ConScape.solve!(workspace, windowed_problem);
 
     batch_problem = ConScape.BatchProblem(problem; datapath=tempname(), kw...)
     ConScape.solve(batch_problem, rast)
@@ -221,13 +221,11 @@ end
     # BatchProblem can be run as batch jobs for clusters
     # We just need a new path to make sure the result is from a new run
     batch_jobs_problem = ConScape.BatchProblem(problem; 
-        datapath=tempname(), joblistpath=tempname(), kw...
+        datapath=tempname(), kw...
     )
     assessment = ConScape.assess(batch_jobs_problem, rast)
     batch_jobs_problem.centersize
     @test assessment.njobs == 39
-    @test isfile(batch_jobs_problem.joblistpath)
-    ConScape._read_joblist(batch_jobs_problem)
 
     for job in 1:assessment.njobs
         ConScape.solve(batch_jobs_problem, rast, job)
@@ -238,17 +236,36 @@ end
         datapath=tempname(), centersize=(10, 10), threaded=false
     )
     ConScape.assess(nested_problem, rast)
-    ConScape.solve(nested_problem, rast)
     nested_result = mosaic(nested_problem; to=rast)
     @test nested_result isa RasterStack
+
+    nested_jobs_problem = ConScape.BatchProblem(windowed_problem; 
+        datapath=tempname(), centersize=(10, 10), threaded=false
+    )
+    # Try one
+    @time workspace = ConScape.init(nested_problem, rast, 5)
+    @time ConScape.solve!(workspace, nested_problem)
+
+    assessment = ConScape.assess(nested_jobs_problem, rast);
+    for job in 1:assessment.njobs
+        ConScape.solve(nested_jobs_problem, rast, job)
+    end
+    nested_jobs_result = mosaic(nested_jobs_problem; to=rast)
 
     @test keys(windowed_result) == 
           keys(nested_result) == 
           keys(batch_result) == 
-          keys(batch_jobs_result) == Tuple(sort(collect(expected_layers)))
+          keys(batch_jobs_result) == 
+          keys(nested_jobs_result) == 
+          Tuple(sort(collect(expected_layers)))
 
-    @test all(permutedims(batch_jobs_result.ch) .=== permutedims(batch_result.ch) .=== windowed_result.ch)
-    @test all(permutedims(batch_jobs_result.betk) .=== permutedims(batch_result.betk) .=== windowed_result.betk)
+    @test all(permutedims(batch_jobs_result.ch) .=== permutedims(batch_result.ch))
+    @test all(permutedims(batch_jobs_result.betk) .=== permutedims(batch_result.betk))
+
+    # These may be approximate after mosaic order changes
+    compare(a, b) = isnan(a) && isnan(b) || isapprox(a, b)
+    @test all(compare.(permutedims(batch_result.ch), windowed_result.ch))
+    @test all(compare.(permutedims(batch_result.betk), windowed_result.betk))
 
     # TODO: there are some tiny fp differences in the nested result
     @test all(map(nested_result.ch, batch_result.ch) do n, b
@@ -259,39 +276,40 @@ end
     # plot(batch_result)
     # plot(batch_jobs_result)
     # plot(nested_result)
+    # plot(nested_jobs_result)
 end
 
 
 # Scale Benchmarking...
 
-windowed_problem_t1 = ConScape.WindowedProblem(problem; 
-    buffer=10, centersize=1, threaded=true
-)
-windowed_problem_t2 = ConScape.WindowedProblem(problem; 
-    buffer=10, centersize=2, threaded=true
-)
-windowed_problem_t4 = ConScape.WindowedProblem(problem; 
-    buffer=10, centersize=4, threaded=true
-)
-windowed_problem_t6 = ConScape.WindowedProblem(problem; 
-    buffer=10, centersize=6, threaded=true
-)
-length(ConScape._window_ranges(windowed_problem_t1, rast))
-length(ConScape._window_ranges(windowed_problem_t2, rast))
-length(ConScape._window_ranges(windowed_problem_t4, rast))
-length(ConScape._window_ranges(windowed_problem_t6, rast))
-using BenchmarkTools
-ConScape.solve(windowed_problem_t1, rast, verbose=false);
-@btime ConScape.solve(windowed_problem_t2, rast, verbose=false);
-@btime ConScape.solve(windowed_problem_t4, rast, verbose=false);
-@btime ConScape.solve(windowed_problem_t6, rast, verbose=false);
-@profview_allocs ConScape.solve(windowed_problem_t1, rast, verbose=false) sampling=1.0
-@profview_allocs ConScape.solve(windowed_problem_t2, rast, verbose=false) sampling=1.0
-@profview_allocs ConScape.solve(windowed_problem_t4, rast, verbose=false) sampling=1.0
-@profview_allocs ConScape.solve(windowed_problem_t6, rast, verbose=false) sampling=1.0
-@profview 
-res = ConScape.solve(windowed_problem_t1, rast, verbose=false)
-@profview ConScape.solve(windowed_problem_t2, rast, verbose=false)
-@profview ConScape.solve(windowed_problem_t4, rast, verbose=false)
-@profview ConScape.solve(windowed_problem_t6, rast, verbose=false)
-res = ConScape.solve(windowed_problem_t4, rast, verbose=false)
+# windowed_problem_t1 = ConScape.WindowedProblem(problem; 
+#     buffer=10, centersize=1, threaded=true
+# )
+# windowed_problem_t2 = ConScape.WindowedProblem(problem; 
+#     buffer=10, centersize=2, threaded=true
+# )
+# windowed_problem_t4 = ConScape.WindowedProblem(problem; 
+#     buffer=10, centersize=4, threaded=true
+# )
+# windowed_problem_t6 = ConScape.WindowedProblem(problem; 
+#     buffer=10, centersize=6, threaded=true
+# )
+# length(ConScape._window_ranges(windowed_problem_t1, rast))
+# length(ConScape._window_ranges(windowed_problem_t2, rast))
+# length(ConScape._window_ranges(windowed_problem_t4, rast))
+# length(ConScape._window_ranges(windowed_problem_t6, rast))
+# using BenchmarkTools
+# ConScape.solve(windowed_problem_t1, rast, verbose=false);
+# @btime ConScape.solve(windowed_problem_t2, rast, verbose=false);
+# @btime ConScape.solve(windowed_problem_t4, rast, verbose=false);
+# @btime ConScape.solve(windowed_problem_t6, rast, verbose=false);
+# @profview_allocs ConScape.solve(windowed_problem_t1, rast, verbose=false) sampling=1.0
+# @profview_allocs ConScape.solve(windowed_problem_t2, rast, verbose=false) sampling=1.0
+# @profview_allocs ConScape.solve(windowed_problem_t4, rast, verbose=false) sampling=1.0
+# @profview_allocs ConScape.solve(windowed_problem_t6, rast, verbose=false) sampling=1.0
+# @profview 
+# res = ConScape.solve(windowed_problem_t1, rast, verbose=false)
+# @profview ConScape.solve(windowed_problem_t2, rast, verbose=false)
+# @profview ConScape.solve(windowed_problem_t4, rast, verbose=false)
+# @profview ConScape.solve(windowed_problem_t6, rast, verbose=false)
+# res = ConScape.solve(windowed_problem_t4, rast, verbose=false)

@@ -10,9 +10,10 @@ end
 
 _inv(Z) = _inv!(similar(Z), Z)
 function _inv!(Zⁱ, Z)
-    Zⁱ = inv.(Z)
-    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
-    return Zⁱ
+    broadcast(Z) do x
+        x = inv(x)
+        isfinite(x) ? x : floatmax(eltype(Z))
+    end
 end
 
 _Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
@@ -219,7 +220,7 @@ function RSP_expected_cost(W::SparseMatrixCSC,
     A=(I - W),
     A_init=init(solver, A),
     workspaces=[similar(Z), similar(Z)],
-    expected_costs,
+    expected_costs=similar(Z),
     kw...
 )
     CW = C .* W
@@ -261,12 +262,16 @@ function RSP_expected_cost(W::SparseMatrixCSC,
 end
 
 function RSP_free_energy_distance(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector; 
-    survival_probability=nothing, kw...
+    survival_probability=nothing, 
+    free_energy_distances=similar(Z),
+    kw...
 )
     if isnothing(survival_probability)
         survival_probability = RSP_survival_probability(Z, θ, landmarks; kw...)
     end
-    return -log.(max.(zero(eltype(Z)), survival_probability)) ./ θ
+    free_energy_distances .= -log.(max.(zero(eltype(Z)), survival_probability)) ./ θ
+
+    return free_energy_distances
 end
 
 function RSP_survival_probability(Z::AbstractMatrix, θ::Real, landmarks::AbstractVector; kw...)

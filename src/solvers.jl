@@ -13,25 +13,21 @@ function init!(
     verbose && println("Retreiving measures...")
     gms = graph_measures(p)
     cf = connectivity_function(p)
-    verbose && println("Defining sparse arrays of size $(size(g.affinities))...")
-    # Sparse lhs
-    # Sparse rhs
-    B_sparse = sparse_rhs(g.targetnodes, size(g.costmatrix, 1))
-    # A_init = haskey(ws, :A_init) ? init(s, A) : init!(ws.A_init, s, A)
-    verbose && println("Initialising factorizations...")
+    verbose && println("Defining sparse arrays...")
     # B_dense becomes Z
     verbose && println("Allocating workspaces...")
+    sze = (size(g.costmatrix, 1), length(g.targetnodes))
     Z = if hastrait(needs_inv, gms) 
-        if haskey(ws, :Z) 
-            copyto!(_resize(ws.Z, size(B_sparse)), B_sparse)
+        if haskey(ws, :Z)
+            _reshape(ws.Z, sze)
         else
-            Matrix{eltype(B_sparse)}(undef, size(B_sparse))
+            Matrix{eltype(g.affinities)}(undef, sze)
         end
     else
         nothing
     end
     Zⁱ = if hastrait(needs_inv, gms) 
-        haskey(ws, :Zⁱ) ? _resize(ws.Zⁱ, size(Z)) : similar(Z) 
+        haskey(ws, :Zⁱ) ? _reshape(ws.Zⁱ, sze) : similar(Z) 
     else
         nothing
     end
@@ -86,12 +82,16 @@ end
 function _shared_solves!(ws::NamedTuple, solver::Solver, cm, p::Problem; 
     verbose=false
 )
-    (; grid, Z) = ws
+    (; grid) = ws
     gms = graph_measures(p)
     cf = connectivity_function(p)
 
+    verbose && println("Initialising factorizations...")
     Pref = _Pref(grid.affinities)
     W = _W(Pref, cm.θ, grid.costmatrix)
+    # Sparse rhs
+    B_sparse = sparse_rhs(grid.targetnodes, size(grid.costmatrix, 1))
+    # Sparse lfs
     A = I - W
     A_init = init(solver, A)
     Aadj_init, Aadj = if hastrait(needs_Aaj_init, gms)
@@ -106,7 +106,7 @@ function _shared_solves!(ws::NamedTuple, solver::Solver, cm, p::Problem;
             # LinearSolve.jl cant handle the adjoint 
             # so we duplicate work and allocations
             Aadj = sparse(A')
-            Aadj_init = init(solver(p), Aadj)
+            Aadj_init = init(solver, Aadj)
             Aadj_init, Aadj
         end
         Aadj_init, Aadj
@@ -114,29 +114,36 @@ function _shared_solves!(ws::NamedTuple, solver::Solver, cm, p::Problem;
         nothing, nothing
     end
 
-    if hastrait(needs_Z, gms)
+    Z = if hastrait(needs_Z, gms)
+        # verbose && 
+        B = _reshape(ws.Z, size(B_sparse))
+        copyto!(B, B_sparse)
         verbose && println("Solving Z matrix...")
-        ldiv!(solver, A_init, Z; B_copy=copyto!(ws.workspaces[1], Z))
         # Check that values in Z are not too small:
+        Z = ldiv!(solver, A_init, B; B_copy=copyto!(ws.workspaces[1], B))
         # verbose && _check_z(s, Z, W, g)
+        Z
     end
-    if hastrait(needs_inv, gms)
+    Zⁱ = if hastrait(needs_inv, gms)
         verbose && println("Inverting Z...")
         _inv!(_reshape(ws.Zⁱ, size(Z)), Z)
     end
 
     grsp = GridRSP(grid, cm.θ, Pref, W, Z)
-    workspace = (; Aadj_init, Aadj, A, A_init, ws...)
-    if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
+    workspace = (; ws..., Pref, W, A, A_init, Aadj, Aadj_init, Z, Zⁱ) 
+
+    expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
         verbose && println("Calculating expected cost...")
-        ConScape.expected_cost(grsp; workspace..., solver)
+        expected_costs = _reshape(ws.expected_costs, size(Z))
+        ConScape.expected_cost(grsp; workspace..., expected_costs, solver)
     end
-    if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
+    free_energy_distances = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
         verbose && println("Calculating free energy distance...")
-        ConScape.free_energy_distance(grsp; workspace..., solver)
+        free_energy_distances = _reshape(ws.free_energy_distances, size(Z))
+        ConScape.free_energy_distance(grsp; workspace..., free_energy_distances, solver)
     end
 
-    return workspace
+    return (; ws..., Pref, W, A, A_init, Aadj, Aadj_init, Z, Zⁱ, expected_costs, free_energy_distances) 
 end
 
 function solve!(
@@ -157,7 +164,7 @@ function solve!(
         nested = map(distance_transformation) do dt
             cm1 = ConstructionBase.setproperties(cm, (; distance_transformation=dt))
             hastrait(needs_proximity, gms) &&
-                _setproximities!(workspace.proximities, workspace.expected_costs, cm1, p, workspace.grsp)
+                _setproximities!(workspace.proximities, workspace.expected_costs, cm1, p, grsp)
             # Rebuild the problem with a connectivity measure
             # holding a single distance transformation, in case its used
             p1 = ConstructionBase.setproperties(p, (; connectivity_measure=cm1))
@@ -188,7 +195,7 @@ function solve!(
         end |> NamedTuple{keys(gms)}
     else
         hastrait(needs_proximity, gms) &&
-            _setproximities!(workspace.proximities, workspace.expected_costs, cm, p, workspace.grsp)
+            _setproximities!(workspace.proximities, workspace.expected_costs, cm, p, grsp)
         # Map over graph measures
         map(p.graph_measures) do gm
             compute(gm, p, grsp; workspace...)
@@ -444,6 +451,7 @@ function _setproximities!(
     return proximities
 end
 
+# This only makes sense if arrays are sorted large to small
 function _reshape(A::Array, dims::Tuple{Vararg{Int}})
     len = prod(dims)
     mem = getfield(A, :ref).mem
@@ -455,6 +463,7 @@ function _reshape(A::Array, dims::Tuple{Vararg{Int}})
         setfield!(v, :size, (len,))
         reshape(v, dims)
     else
+        error("Arrays were not sorted")
         v = resize!(vec(A), len)
         reshape(v, dims)
     end

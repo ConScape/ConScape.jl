@@ -16,7 +16,6 @@ function GridRSP(g::Grid; θ=nothing, verbose=true)
     Pref = _Pref(g.affinities)
     W    = _W(Pref, θ, g.costmatrix)
 
-        error()
     @debug("Computing fundamental matrix of non-absorbing paths (Z). Please be patient...")
     Z    = (I - W)\Matrix(sparse(g.targetnodes,
                                  1:length(g.targetnodes),
@@ -111,10 +110,8 @@ end
 """
     edge_betweenness_kweighted(grsp::GridRSP; [distance_transformation=inv(grsp.g.costfunction), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
 
-    Compute RSP betweenness of all edges weighted by qualities of source s and target t and the proximity between s and t. Returns a
-    sparse matrix where element (i,j) is the betweenness of edge (i,j).
+    Compute RSP betweenness of all edges weighted by qualities of source s and target t and the proximity between s and t. Returns a sparse matrix where element (i,j) is the betweenness of edge (i,j).
 
-    The optional `diagvalue` element specifies which value to use for the diagonal of the matrix
     of proximities, i.e. after applying the inverse cost function to the matrix of expected costs.
     When nothing is specified, the diagonal elements won't be adjusted.
 """
