@@ -4,6 +4,7 @@ connectivity_measure(p::AbstractProblem) = connectivity_measure(p.problem)
 connectivity_function(p::AbstractProblem) =
     connectivity_function(connectivity_measure(p))
 solver(p::AbstractProblem) = solver(p.problem)
+isthreaded(p::AbstractProblem) = false
 
 """
     assess(p::AbstractProblem, g)
@@ -36,12 +37,23 @@ to be run in the same job.
 end
 Problem(graph_measures::Union{Tuple,NamedTuple}; kw...) = Problem(; graph_measures, kw...)
 
+function Base.show(io, mime, p::Problem; indent="")
+    println(io, typeof(p).name.wrapper)
+    # println(io, indent, "graph_measures:       ", p.graph_measures)
+    # println(io, indent, "connectivity_measure: ", p.connectivity_measure)
+    # println(io, indent, "costs:                ", p.costs)
+    # println(io, indent, "solver:               ", p.solver)
+    # println(io, indent, "diagvalue:            ", typeof(p.diagvalue))
+    # println(io, indent, "prune:                ", p.prune)
+end
+
 diagvalue(p::Problem) = p.diagvalue
 graph_measures(p::Problem) = p.graph_measures
 connectivity_measure(p::Problem) = p.connectivity_measure
 solver(p::Problem) = p.solver
 costs(p::Problem) = p.costs
 prune(p::Problem) = p.prune
+isthreaded(p::Problem) = p.threaded
 
 
 solve(p::Problem, rast::RasterStack; kw...) = solve!(init(p, rast; kw...), p; kw...)

@@ -245,10 +245,12 @@ less memory use and the capacity for threading
     threaded::Bool = false
 end
 
+isthreaded(s::VectorSolver) = s.threaded
+
 function init(s::VectorSolver, A::AbstractMatrix)
     F = lu(A)
     Tb = Vector{eltype(A)}
-    if s.threaded
+    if isthreaded(s)
         # Create one init per thread
         # UMFPACK `copy` shares memory but avoids workspace race conditions
         nbuffers = Threads.nthreads()
@@ -271,7 +273,7 @@ function LinearAlgebra.ldiv!(s::VectorSolver, init, B; B_copy=nothing)
 
     # This is basically SparseArrays.UMFPACK._AqldivB_kernel!
     # But we unroll it to avoid copies or allocation of B
-    if s.threaded
+    if isthreaded(s)
         channel = Channel{typeof(init[1])}(length(init))
         for x in init
             put!(channel, x)
@@ -338,10 +340,12 @@ struct LinearSolver <: Solver
 end
 LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
 
+isthreaded(s::LinearSolver) = s.threaded
+
 function LinearAlgebra.ldiv!(s::LinearSolver, (; linsolve, channel, b), B)
     # TODO: for now we define a Z matrix, but later modify ops 
     # to run column by column without materialising Z
-    if s.threaded
+    if isthreaded(s)
         Threads.@threads for i in 1:size(B, 2)
             # Get column memory from the channel
             linsolve_t, b_t = take!(channel)
@@ -454,17 +458,13 @@ end
 # This only makes sense if arrays are sorted large to small
 function _reshape(A::Array, dims::Tuple{Vararg{Int}})
     len = prod(dims)
-    mem = getfield(A, :ref).mem
     if size(A) == dims
         A
-    elseif length(mem) >= len
+    elseif length(A) >= len
         v = vec(A)
-        # Hack to shrink the array
-        setfield!(v, :size, (len,))
+        resize!(v, len)
         reshape(v, dims)
     else
-        error("Arrays were not sorted")
-        v = resize!(vec(A), len)
-        reshape(v, dims)
+        error("Arrays were not sorted. Current len: $(length(A)), needed len: $len")
     end
 end
