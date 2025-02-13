@@ -103,7 +103,6 @@ function _init!(
     verbose=false,
     grid=Grid(p, rast)
 ) 
-    verbose && println("Defining grid for RasterStack size $(size(rast))...")
     verbose && println("Retreiving measures...")
     g = grid
     gms = graph_measures(p)
