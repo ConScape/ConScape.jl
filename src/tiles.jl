@@ -141,10 +141,7 @@ function init!(workspace::NamedTuple, p::WindowedProblem, rast::RasterStack;
     # VERY important to use _get_window_with_zeroed_buffer here not just index the raster
     # Otherwise memory use will be TB
     largest_rast = _get_window_with_zeroed_buffer(view, p, rast, window_ranges[first(sorted_indices)])
-    @show size(rast)
-    @show size(largest_rast)
     window_workspaces = if haskey(workspace, :window_workspaces)
-        @show length(workspace.window_workspaces)
         [init!(ws, p.problem, largest_rast; verbose) for ws in window_workspaces]
     else
         [init(p.problem, largest_rast; verbose) for _ in 1:n]
@@ -279,7 +276,6 @@ function init!(workspace, p::BatchProblem, i::Int;
     verbose=true,
 )
     (; window_indices, window_ranges, rast) = workspace
-    @show length(window_ranges)
     # Get the raster data for job i
     window = window_ranges[window_indices[i]]
     verbose && @show window

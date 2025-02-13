@@ -33,12 +33,6 @@ end
 _get_grid(grsp::GridRSP) = grsp.g
 _get_grid(g::Grid)       = g
 
-_maybe_raster(mat::Raster, g) = mat
-_maybe_raster(mat::AbstractMatrix, g::Union{Grid,GridRSP}) = 
-    _maybe_raster(mat, dims(g))
-_maybe_raster(mat::AbstractMatrix, ::Nothing) = mat
-_maybe_raster(mat::AbstractMatrix, dims::Tuple) = Raster(mat, dims)
-
 function Base.show(io::IO, ::MIME"text/plain", grsp::GridRSP)
     print(io, summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)
 end
@@ -54,14 +48,17 @@ DimensionalData.dims(grsp::GridRSP) = dims(grsp.g)
 
 Compute RSP betweenness of all nodes weighted by source and target qualities.
 """
-function betweenness_qweighted(grsp::GridRSP; kw...)
+function betweenness_qweighted(grsp::Union{GridRSP,NamedTuple}; 
+    output=fill(NaN, g.nrows, g.ncols),
+    kw...
+)
     g = grsp.g
     betvec = RSP_betweenness_qweighted(grsp.W, grsp.Z, g.qs, g.qt, g.targetnodes; kw...)
-    bet = fill(NaN, g.nrows, g.ncols)
+    coordinate_list = g.id_to_grid_coordinate_list
     for (i, v) in enumerate(betvec)
-        bet[g.id_to_grid_coordinate_list[i]] = v
+        output[coordinate_list[i]] = v
     end
-    return _maybe_raster(bet, grsp)
+    return _maybe_raster(output, grsp)
 end
 
 """
@@ -70,7 +67,7 @@ end
 Compute RSP betweenness of all edges weighted by source and target qualities. Returns a
 sparse matrix where element (i,j) is the betweenness of edge (i,j).
 """
-function edge_betweenness_qweighted(grsp::GridRSP; kw...)
+function edge_betweenness_qweighted(grsp::Union{GridRSP,NamedTuple}; kw...)
     g = grsp.g
     return RSP_edge_betweenness_qweighted(grsp.W, grsp.Z, g.qs, g.qt, g.targetnodes; kw...)
 end
@@ -92,19 +89,23 @@ The optional `diagvalue` element specifies which value to use for the diagonal
 of the matrix of proximities, i.e. after applying the inverse cost function to the 
 matrix of distances. When nothing is specified, the diagonal elements won't be adjusted.
 """
-function betweenness_kweighted(grsp::GridRSP; proximities=nothing, kw...)
+function betweenness_kweighted(grsp::Union{GridRSP,NamedTuple}; 
+    output=fill(NaN, g.nrows, g.ncols),
+    proximities=nothing,
+    kw...
+)
     g = grsp.g
     if isnothing(proximities)
         proximities = _computeproximities(grsp; kw...)
     end
 
     betvec = RSP_betweenness_kweighted(grsp.W, grsp.Z, g.qs, g.qt, proximities, g.targetnodes; kw...)
-    bet = fill(NaN, g.nrows, g.ncols)
+    coordinate_list = g.id_to_grid_coordinate_list
     for (i, v) in enumerate(betvec)
-        bet[g.id_to_grid_coordinate_list[i]] = v
+        output[coordinate_list[i]] = v
     end
 
-    return _maybe_raster(bet, grsp)
+    return _maybe_raster(output, grsp)
 end
 
 """
@@ -115,7 +116,7 @@ end
     of proximities, i.e. after applying the inverse cost function to the matrix of expected costs.
     When nothing is specified, the diagonal elements won't be adjusted.
 """
-function edge_betweenness_kweighted(grsp::GridRSP; 
+function edge_betweenness_kweighted(grsp::Union{GridRSP,NamedTuple}; 
     proximities=nothing, 
     distance_transformation=nothing,
     diagvalue=nothing, 
@@ -145,26 +146,26 @@ end
 
 Compute RSP expected costs from all nodes.
 """
-expected_cost(grsp::GridRSP; kw...) =
+expected_cost(grsp::Union{GridRSP,NamedTuple}; kw...) =
     RSP_expected_cost(grsp.W, grsp.g.costmatrix, grsp.Z, grsp.g.targetnodes; kw...)
 
-free_energy_distance(grsp::GridRSP; kw...) =
+free_energy_distance(grsp::Union{GridRSP,NamedTuple}; kw...) =
     RSP_free_energy_distance(grsp.Z, grsp.θ, grsp.g.targetnodes; kw...)
 
-survival_probability(grsp::GridRSP; kw...) =
+survival_probability(grsp::Union{GridRSP,NamedTuple}; kw...) =
     RSP_survival_probability(grsp.Z, grsp.θ, grsp.g.targetnodes; kw...)
 
-power_mean_proximity(grsp::GridRSP; kw...) =
+power_mean_proximity(grsp::Union{GridRSP,NamedTuple}; kw...) =
     RSP_power_mean_proximity(grsp.Z, grsp.θ, grsp.g.targetnodes; kw...)
 
-least_cost_distance(grsp::GridRSP; kw...) = least_cost_distance(grsp.g; kw...)
+least_cost_distance(grsp::Union{GridRSP,NamedTuple}; kw...) = least_cost_distance(grsp.g; kw...)
 
 """
     mean_kl_divergence(grsp::GridRSP)::Float64
 
 Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP expected costs for `grsp::GridRSP`.
 """
-function mean_kl_divergence(grsp::GridRSP; 
+function mean_kl_divergence(grsp::Union{GridRSP,NamedTuple}; 
     free_energy_distances=nothing,
     expected_costs=nothing,
     kw...
@@ -180,10 +181,10 @@ function mean_kl_divergence(grsp::GridRSP;
     else
         expected_costs
     end
-    return mean_kl_divergence(grsp::GridRSP, free_energy_distances, expected_costs; kw...)
+    return mean_kl_divergence(grsp::Union{GridRSP,NamedTuple}, free_energy_distances, expected_costs; kw...)
 end
 
-function mean_kl_divergence(grsp::GridRSP, free_energy_distances, expected_costs; 
+function mean_kl_divergence(grsp::Union{GridRSP,NamedTuple}, free_energy_distances, expected_costs; 
     workspaces=(similar(grsp.Z),), kw...
 )
     g = grsp.g
@@ -197,7 +198,7 @@ end
 
 Compute the mean Kullback–Leibler divergence between the least-cost path and the random path distribution for `grsp::GridRSP`, weighted by the qualities of the source and target node.
 """
-function mean_lc_kl_divergence(grsp::GridRSP; 
+function mean_lc_kl_divergence(grsp::Union{GridRSP,NamedTuple}; 
     workspaces=[similar(grsp.Z)],
     kw...
 )
@@ -269,7 +270,7 @@ end
 Compute the least cost Kullback-Leibler divergence from each cell in the g in
 `h` to the `target` cell.
 """
-function least_cost_kl_divergence(grsp::GridRSP, target::Tuple{Int,Int}; kw...)
+function least_cost_kl_divergence(grsp::Union{GridRSP,NamedTuple}, target::Tuple{Int,Int}; kw...)
     g = grsp.g
     targetnode = findfirst(isequal(CartesianIndex(target)), g.id_to_grid_coordinate_list)
     if targetnode === nothing
@@ -333,14 +334,15 @@ function connected_habitat(
     return connected_habitat(grsp, S, diagvalue=diagvalue)
 end
 
-function connected_habitat(grsp::GridRSP; proximities=nothing, kw...)
+function connected_habitat(grsp::Union{GridRSP,NamedTuple}; proximities=nothing, kw...)
     if isnothing(proximities)
         proximities = _computeproximities(grsp; kw...)
     end
     return connected_habitat(grsp, proximities; kw...)
 end
-function connected_habitat(grsp::Union{Grid,GridRSP}, S::Matrix;
+function connected_habitat(grsp::Union{Grid,GridRSP,NamedTuple}, S::Matrix;
     diagvalue::Union{Nothing,Real}=nothing,
+    output=fill(NaN, g.nrows, g.ncols),
     kw...
 )
     g = _get_grid(grsp)
@@ -353,14 +355,13 @@ function connected_habitat(grsp::Union{Grid,GridRSP}, S::Matrix;
 
     funvec = connected_habitat(g.qs, g.qt, S; kw...)
 
-    func = fill(NaN, g.nrows, g.ncols)
     for (ij, x) in zip(g.id_to_grid_coordinate_list, funvec)
-        func[ij] = x
+        output[ij] = x
     end
 
-    return _maybe_raster(func, grsp)
+    return _maybe_raster(output, grsp)
 end
-function connected_habitat(grsp::GridRSP,
+function connected_habitat(grsp::Union{GridRSP,NamedTuple},
                            cell::CartesianIndex{2};
                            distance_transformation=nothing,
                            diagvalue=nothing,
@@ -431,7 +432,7 @@ to proximities by `distance_transformation` which defaults to the inverse of the
 in the underlying `Grid` (if defined). Optionally, the diagonal values of the proximity matrix may 
 be set to `diagvalue`. The `tol` argument specifies the convergence tolerance in the Arnoldi based eigensolver.
 """
-function LinearAlgebra.eigmax(grsp::GridRSP;
+function LinearAlgebra.eigmax(grsp::Union{GridRSP,NamedTuple};
     connectivity_function=expected_cost,
     distance_transformation=nothing,
     diagvalue=nothing,
@@ -567,10 +568,11 @@ for the cell to `avalue` as well as the source and target qualities associated w
 the cell to `qˢvalue` and `qᵗvalue` respectively. It is required that `avalue` is
 positive to avoid that the graph becomes disconnected.
 """
-function criticality(grsp::GridRSP;
+function criticality(grsp::Union{GridRSP,NamedTuple};
     distance_transformation=nothing,
     diagvalue=nothing,
     avalue=floatmin(),
+    output=fill(NaN, size(grsp.g)),
     qˢvalue=0.0,
     qᵗvalue=0.0,
     kw...
@@ -588,10 +590,9 @@ function criticality(grsp::GridRSP;
         ))
     end
 
-    landscape = fill(NaN, size(grsp.g))
-    landscape[g.targetidx] = critvec
+    output[g.targetidx] = critvec
 
-    return _maybe_raster(landscape, grsp)
+    return _maybe_raster(output, grsp)
 end
 
 function _computeproximities(grsp; 

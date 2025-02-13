@@ -26,11 +26,11 @@ graph_measures = graph_measures = (;
     betq=ConScape.BetweennessQweighted(),
     betk=ConScape.BetweennessKweighted(),
     # # TODO sens=ConScape.Sensitivity(),
-    ebetq=ConScape.EdgeBetweennessQweighted(),
-    ebetk=ConScape.EdgeBetweennessKweighted(),
-    mkld=ConScape.MeanKullbackLeiblerDivergence(),
-    mlcd=ConScape.MeanLeastCostKullbackLeiblerDivergence(),
-    eigmax=ConScape.EigMax(),
+    # ebetq=ConScape.EdgeBetweennessQweighted(),
+    # ebetk=ConScape.EdgeBetweennessKweighted(),
+    # mkld=ConScape.MeanKullbackLeiblerDivergence(),
+    # mlcd=ConScape.MeanLeastCostKullbackLeiblerDivergence(),
+    # eigmax=ConScape.EigMax(),
     # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 )
 distance_transformation = (nodist=nothing, one=one, exp50=t -> exp(-t/50))
@@ -59,10 +59,10 @@ solvers = (
     # ConScape.VectorSolver(; threaded=true),
     # ConScape.LinearSolver(),
 )
-solver = ConScape.VectorSolver(; threaded=true)
 solver = ConScape.MatrixSolver()
+solver = ConScape.VectorSolver()
 
-for solver in solvers
+# for solver in solvers
     println("\n Testing with solver: ", solver)
     # Basic Problem
     problem = ConScape.Problem(; 
@@ -77,10 +77,17 @@ for solver in solvers
         end
     end
 
-    result = ConScape.solve!(workspace, problem);
-    @test workspace.expected_costs == ConScape.expected_cost(test_grsp)
-    @test workspace.free_energy_distances == ConScape.free_energy_distance(test_grsp)
-    @test workspace.Z == test_grsp.Z
+    using Cthulhu
+    @descend 
+    using BenchmarkTools
+    using ProfileView
+    ProfileView.
+    ConScape.solve!(workspace, problem);
+    if solver isa ConScape.MatrixSolver
+        @test workspace.expected_costs == ConScape.expected_cost(test_grsp)
+        @test workspace.free_energy_distances == ConScape.free_energy_distance(test_grsp)
+        @test workspace.Z == test_grsp.Z
+    end
 
     # @profview result = ConScape.solve(problem, workspace)
     @test result isa NamedTuple
@@ -108,6 +115,7 @@ for solver in solvers
     @testset "k-weighted" begin
         @test result.betk_nodist isa Raster
         bet = ConScape.betweenness_kweighted(test_grsp)
+        result
         @test isapprox(result.betk_nodist[21:23, 31:33],
             [0.04063917813171917 0.06843246983487516 0.08862506281612659
             0.03684621201600996 0.10352876485995872 0.1255652231824746

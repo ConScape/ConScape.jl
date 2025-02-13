@@ -17,20 +17,20 @@ Base.inv(::Inv)          = Inv()
 Base.inv(::OddsAgainst)  = OddsFor()
 Base.inv(::OddsFor)      = OddsAgainst()
 
-struct Grid
+struct Grid{D<:Union{Tuple,Nothing},SQ,TQ}
     nrows::Int
     ncols::Int
     affinities::SparseMatrixCSC{Float64,Int}
     costfunction::Union{Nothing,Transformation}
     costmatrix::SparseMatrixCSC{Float64,Int}
     id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
-    source_qualities::AbstractMatrix{Float64}
-    target_qualities::AbstractMatrix{Float64}
+    source_qualities::SQ
+    target_qualities::TQ
     targetidx::Vector{CartesianIndex{2}}
     targetnodes::Vector{Int}
     qs::Vector{Float64}
     qt::Vector{Float64}
-    dims::Union{Tuple,Nothing}
+    dims::D
 end
 
 """

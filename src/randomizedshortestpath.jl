@@ -10,7 +10,7 @@ end
 
 _inv(Z) = _inv!(similar(Z), Z)
 function _inv!(Zⁱ, Z)
-    broadcast(Z) do x
+    broadcast!(Zⁱ, Z) do x
         x = inv(x)
         isfinite(x) ? x : floatmax(eltype(Z))
     end
@@ -56,7 +56,8 @@ function RSP_betweenness_qweighted(W::SparseMatrixCSC,
     ZqˢZⁱqᵗZt = ldiv!(solver, Aadj_init, qˢZⁱqᵗ; B_copy=copy!(workspace2, qˢZⁱqᵗ))
     ZqˢZⁱqᵗZt .*= Z
 
-    return sum(ZqˢZⁱqᵗZt, dims=2) # diag(Z * ZqˢZⁱqᵗ')
+    # TODO remove this allocation
+    return sum.(eachslice(ZqˢZⁱqᵗZt, dims=1)) # diag(Z * ZqˢZⁱqᵗ')
 end
 
 
@@ -221,9 +222,9 @@ function RSP_expected_cost(W::SparseMatrixCSC,
     A_init=init(solver, A),
     workspaces=[similar(Z), similar(Z)],
     expected_costs=similar(Z),
+    CW=C .* W,
     kw...
 )
-    CW = C .* W
     workspace1, workspace2 = workspaces
     if axes(W) != axes(C)
         throw(DimensionMismatch(""))
