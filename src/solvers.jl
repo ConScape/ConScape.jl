@@ -53,9 +53,9 @@ problem = ConScape.Problem(;
 )
 ````
 """
-struct LinearSolver <: Solver 
-    args
-    keywords
+struct LinearSolver{A,K} <: Solver 
+    args::A
+    keywords::K
     threaded::Bool
 end
 LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
@@ -63,15 +63,49 @@ LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
 # In `init!` we allocate all large dense arrays 
 function init!(
     ws::NamedTuple, 
-    solver::Solver, 
+    solver::MatrixSolver, 
     cm::FundamentalMeasure, 
     p::AbstractProblem,
     rast::RasterStack;
     verbose=false,
 ) 
+    _init!(ws, solver, cm, p, rast; verbose) 
+end
+function init!(
+    ws::NamedTuple, 
+    solver::Union{VectorSolver,LinearSolver}, 
+    cm::FundamentalMeasure, 
+    p::AbstractProblem,
+    rast::RasterStack;
+    verbose=false,
+) 
+    grid = Grid(p, rast)
+    workspace = _init!(ws, solver, cm, p, rast; verbose) 
+    if isthreaded(solver)
+        nbuffers = Thread.nthreads()
+        channel = Channel{typeof(workspace)}(nbuffers)
+        put!(channel, workspace)
+        for n in 2:nbuffers
+            workspace_n = _init!(ws, solver, cm, p, rast; verbose, grid) 
+            put!(channel, workspace_N)
+        end
+        return (; channel)
+    else
+        return workspace
+    end
+end
+function _init!(
+    ws::NamedTuple, 
+    solver::Solver, 
+    cm::FundamentalMeasure, 
+    p::AbstractProblem,
+    rast::RasterStack;
+    verbose=false,
+    grid=Grid(p, rast)
+) 
     verbose && println("Defining grid for RasterStack size $(size(rast))...")
-    grid = g = Grid(p, rast)
     verbose && println("Retreiving measures...")
+    g = grid
     gms = graph_measures(p)
     cf = connectivity_function(p)
     verbose && println("Defining sparse arrays...")
@@ -119,20 +153,29 @@ function init!(
     else
         nothing
     end
-    # TODO handle mixed distance functions
-    outputs = if cm.distance_transformation isa NamedTuple
+    function matrix_or_nothing(gm) 
+        if returntype(gm) isa ReturnsDenseSpatial 
+            A = fill(NaN, size(rast)) 
+            A[grid.id_to_grid_coordinate_list] .= 0.0
+            A
+        else
+            nothing
+        end
+    end
+    # We don't re-use outputs
+    outputs = if distance_transformation(cm) isa NamedTuple
         map(gms) do gm
             if needs_connectivity(gm)
-                map(cm.distance_transformation) do dt
-                    returntype(gm) isa ReturnsDenseSpatial ? fill(0.0, size(rast)) : nothing
+                map(distance_transformation(cm)) do dt
+                    matrix_or_nothing(gm)
                 end
             else
-                fill(0.0, size(rast))
+                matrix_or_nothing(gm)
             end
         end
     else
         map(gms) do gm
-            returntype(gm) isa ReturnsDenseSpatial ? fill(0.0, size(rast)) : nothing
+            matrix_or_nothing(gm)
         end
     end
     
@@ -143,70 +186,28 @@ end
 function init!(
     workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, rast::RasterStack;
     verbose=false,
+    grid=Grid(p, rast),
 ) 
     # TODO what is needed here?
-    return (; grid=Grid(p, rast))
-end
-
-# Solver init
-init(::Union{Nothing,Solver}, A::AbstractMatrix) = (; F=lu(A))
-# function init(s::VectorSolver, A::AbstractMatrix)
-#     F = lu(A)
-#     Tb = Vector{eltype(A)}
-#     # if isthreaded(s)
-#     #     # Create one init per thread
-#     #     # UMFPACK `copy` shares memory but avoids workspace race conditions
-#     #     nbuffers = Threads.nthreads()
-#     #     [
-#     #         (; 
-#     #             F=(i == 1 ? F : copy(F)), 
-#     #             b=Tb(undef, size(A, 2))
-#     #         )
-#     #         for i in 1:nbuffers
-#     #     ]
-#     # else
-#         b = Tb(undef, size(A, 2))
-#         return (; F, b)
-#     # end
-# end
-function init(s::LinearSolver, A)
-    b = zeros(eltype(A), size(A, 2))
-    # Define and initialise the linear problem
-    linprob = LinearProblem(A, b)
-    linsolve = init(linprob, s.args...; s.keywords...)
-    # TODO what is needed here?
-    nbuffers = Threads.nthreads()
-    # Create a channel to store problem b vectors for threads
-    # see https://juliafolds2.github.io/OhMyThreads.jl/stable/literate/tls/tls/
-    channel = Channel{Tuple{typeof(linsolve),Vector{Float64}}}(nbuffers)
-    for i in 1:nbuffers
-        # TODO fix this in LinearSolve.jl with batching
-        # We should not need to `deepcopy` the whole problem we 
-        # just need to replicate the specific workspace arrays 
-        # that will cause race conditions.
-        # But currently there is no parallel mode for LinearSolve.jl
-        # See https://github.com/SciML/LinearSolve.jl/issues/552
-        put!(channel, (deepcopy(linsolve), Vector{eltype(A)}(undef, size(A, 2))))
-    end
-    return (; linsolve, channel, b)
+    return (; grid)
 end
 
 # RSP is not used for ConnectivityMeasure, so the solver isn't used
 function solve!(
     workspace::NamedTuple, 
-    s::Union{MatrixSolver,LinearSolver}, 
+    s::MatrixSolver, 
     cm::ConnectivityMeasure, 
     p::AbstractProblem;
     verbose=false
 ) 
     g = workspace.g
-    return map(p.graph_measures, workspace.outputs) do gm, output
-        compute(gm, p, ; workspace..., output)
+    return map(graph_measures(p), workspace.outputs) do gm, output
+        compute(gm, p; workspace..., output)
     end
 end
 function solve!(
     ws::NamedTuple,
-    solver::Union{MatrixSolver,LinearSolver}, 
+    solver::MatrixSolver, 
     cm::FundamentalMeasure, 
     p::Problem;
     verbose=false,
@@ -219,7 +220,7 @@ function solve!(
 end
 function solve!(
     ws::NamedTuple,
-    solver::VectorSolver, 
+    solver::Union{VectorSolver,LinearSolver},
     cm, 
     p::Problem;
     verbose=false,
@@ -236,16 +237,16 @@ function solve!(
     _update_targets!(target_allocs, g, 1)
     target_properties = (; targetidx, targetnodes, qt)
     target_grid = ConstructionBase.setproperties(g, target_properties)
-    first = true
     ws1 =_init_sparse(ws, solver, cm, p, target_grid; verbose)
     ws2 = merge(ws1, (; grid=target_grid, g=target_grid))
     target_ws = ConstructionBase.setproperties(ws2, (; g=target_grid, grid=target_grid))
     target_ws1 = _solve_dense!(target_ws, solver, cm, p; verbose)
     result1 = _solve!(target_ws1, solver, cm, cm.distance_transformation, gms, p; verbose)
     target_results = Vector{typeof(result1)}(undef, length(g.targetnodes))
+
     target_results[1] = result1
-    # solve one target at a time
-    for i in eachindex(g.targetnodes)[2:end]
+
+    function run(i) 
         target_qualities = g.target_qualities[g.targetidx[i]]
         _update_targets!(target_allocs, g, i)
         first = false
@@ -255,6 +256,17 @@ function solve!(
         target_ws1 = _solve_dense!(target_ws, solver, cm, p; verbose)
         result = _solve!(target_ws1, solver, cm, cm.distance_transformation, gms, p; verbose)
         target_results[i] = result
+    end
+    # solve one target at a time
+    if isthreaded(solver)
+        isthreaded(p) && error("threading at solver level not properly implemented")
+        # Threads.@threads for i in eachindex(g.targetnodes)[2:end]
+            # run(i)
+        # end
+    else
+        for i in eachindex(g.targetnodes)[2:end]
+            run(i)
+        end
     end
     return _merge_to_stack(_maybe_raster(ws.outputs, g))
 end
@@ -287,13 +299,8 @@ function _solve!(workspace, solver, cm, dt::NamedTuple{DT}, gms::NamedTuple{GMS}
             compute(gm, p, grsp; workspace..., output)
         end
     end
-    return _combine_nested_flat(gms, nested, flat)
-end
-Base.@assume_effects :foldable function _combine_nested_flat(
-    gms::NamedTuple{GMS}, nested, flat
-) where GMS
     # Combine nested and flat results
-    map(GMS) do k
+    return map(GMS) do k
         f = flat[k]
         if isnothing(f) 
             map(n -> n[k], nested)
@@ -398,82 +405,100 @@ function _init_sparse(ws::NamedTuple, solver, cm, p::Problem, grid::Grid; verbos
     return merge(ws, (; W, Pref, A, A_init, Aadj_init, Aadj, CW))
 end
 
-_workspace_size(::Solver, g) = size(g.costmatrix, 1), length(g.targetnodes)
-# Vector solver is one target at a time
-_workspace_size(::VectorSolver, g) = size(g.costmatrix, 1), 1
+# All targets at once
+_workspace_size(::MatrixSolver, g) = size(g.costmatrix, 1), length(g.targetnodes)
+# One target at a time
+_workspace_size(::Union{VectorSolver,LinearSolver}, g) = size(g.costmatrix, 1), 1
 
 isthreaded(s::Solver) = false
 isthreaded(s::LinearSolver) = s.threaded
 isthreaded(s::VectorSolver) = s.threaded
 
-function LinearAlgebra.ldiv!(s::LinearSolver, (; linsolve, channel, b), B)
+# Solver init
+init(::Union{Nothing,MatrixSolver,VectorSolver}, A::AbstractMatrix) = (; F=lu(A))
+function init(solver::VectorSolver, A::AbstractMatrix) 
+    F = lu(A)
+    if isthreaded(solver)
+        nbuffers = Threads.nthreads()
+        channel = Channel{typeof(F)}(nbuffers)
+        for _ in 1:nbuffers
+            put!(channel, copy(F))
+        end
+        return channel
+    else
+        return F
+    end
+end
+function init(solver::LinearSolver, A::AbstractMatrix)
+    b = zeros(eltype(A), size(A, 2))
+    # Define and initialise the linear problem
+    linprob = LinearProblem(A, b)
+    linsolve = init(linprob, solver.args...; solver.keywords...)
+    # TODO what is needed here?
+    # Create a channel to store problem b vectors for threads
+    # see https://juliafolds2.github.io/OhMyThreads.jl/stable/literate/tls/tls/
+    if isthreaded(solver)
+        nbuffers = Threads.nthreads()
+        channel = Channel{Tuple{typeof(linsolve),Vector{Float64}}}(nbuffers)
+        for i in 1:nbuffers
+            # TODO fix this in LinearSolve.jl with batching
+            # We should not need to `deepcopy` the whole problem we 
+            # just need to replicate the specific workspace arrays 
+            # that will cause race conditions.
+            # But currently there is no parallel mode for LinearSolve.jl
+            # See https://github.com/SciML/LinearSolve.jl/issues/552
+            put!(channel, (deepcopy(linsolve), Vector{eltype(A)}(undef, size(A, 2))))
+        end
+        return channel
+    else
+        return linsolve
+    end
+end
+
+
+function LinearAlgebra.ldiv!(s::LinearSolver, init, B; B_copy)
     # TODO: for now we define a Z matrix, but later modify ops 
     # to run column by column without materialising Z
     if isthreaded(s)
-        Threads.@threads for i in 1:size(B, 2)
-            # Get column memory from the channel
-            linsolve_t, b_t = take!(channel)
-            # Update it
-            b_t .= view(B, :, i)
-            # Update solver with new b values
-            reinit!(linsolve_t; b=b_t, reuse_precs=false)
-            sol = LinearSolve.solve(linsolve_t, s.args...; s.keywords...)
-            # Aim for something like this ?
-            # res = map(connectivity_measures(p)) do cm
-            #     compute(cm, g, sol.u, i)
-            # end
-            # For now just use Z
-            B[:, i] .= sol.u
-            put!(channel, (linsolve_t, b_t))
-        end
+        channel = init
+        # Get column memory from the channel
+        linsolve = take!(channel)
+        # Update solver with new b values
+        reinit!(linsolve; b=vec(B_copy), reuse_precs=true)
+        sol = LinearSolve.solve!(vec(B), linsolve, s.args...; s.keywords...)
+        vec(B) .= sol.u
+        put!(channel, linsolve)
     else
-        for i in 1:size(B, 2)
-            b .= view(B, :, i)
-            reinit!(linsolve; b, reuse_precs=true)
-            sol = LinearSolve.solve(linsolve, s.args...; s.keywords...)
-            # Udate the column
-            B[:, i] .= sol.u
-        end
+        linsolve = init
+        reinit!(linsolve; b=vec(B_copy), reuse_precs=true)
+        sol = LinearSolve.solve(linsolve, s.args...; s.keywords...)
+        vec(B) .= sol.u
     end
     return B
 end
-LinearAlgebra.ldiv!(::Union{MatrixSolver,VectorSolver,Nothing}, (; F), B; B_copy=copy(B)) = 
+LinearAlgebra.ldiv!(::Union{MatrixSolver,Nothing}, (; F), B; B_copy=copy(B)) = 
     ldiv!(B, F, B_copy)
 # LinearAlgebra.ldiv!(solver::Solver, A::AbstractMatrix, B::AbstractMatrix; kw...) = 
     # ldiv!(solver, init(solver, A), B; kw...)
-# function LinearAlgebra.ldiv!(s::VectorSolver, init, B; B_copy=nothing)
-#     # for SparseArrays.UMFPACK._AqldivB_kernel!(Z, F, B, transposeoptype)
-#     transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
+function LinearAlgebra.ldiv!(s::VectorSolver, init, B; B_copy)
+    # for SparseArrays.UMFPACK._AqldivB_kernel!(Z, F, B, transposeoptype)
+    transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
 
-#     # This is basically SparseArrays.UMFPACK._AqldivB_kernel!
-#     # But we unroll it to avoid copies or allocation of B
-#     if isthreaded(s)
-#         channel = Channel{typeof(init[1])}(length(init))
-#         for x in init
-#             put!(channel, x)
-#         end
-#         # Create a channel to store problem b vectors for threads
-#         # see https://juliafolds2.github.io/OhMyThreads.jl/stable/literate/tls/tls/
-#         Threads.@threads for col in 1:size(B, 2)
-#             # Get a workspace from the channel
-#             F_t, b_t = take!(channel)
-#             # Copy a column from B
-#             b_t .= view(B, :, col)
-#             # Solve for the column
-#             SparseArrays.UMFPACK.solve!(view(B, :, col), F_t, b_t, transposeoptype)
-#             # Reuse the workspace 
-#             put!(channel, (F_t, b_t))
-#         end
-#     else
-#         (; F, b) = init[1]
-#         for col in 1:size(B, 2)
-#             b .= view(B, :, col)
-#             SparseArrays.UMFPACK.solve!(view(B, :, col), F, b, transposeoptype)
-#         end
-#     end
-
-#     return B
-# end
+    # This is basically SparseArrays.UMFPACK._AqldivB_kernel!
+    # But we unroll it to avoid copies or allocation of B
+    if isthreaded(s)
+        channel = init
+        F = take!(channel)
+        # Solve for the column
+        SparseArrays.UMFPACK.solve!(vec(B), F, vec(B_copy), transposeoptype)
+        # Reuse the workspace 
+        put!(channel, F)
+    else
+        F = init
+        SparseArrays.UMFPACK.solve!(vec(B), F, vec(B_copy), transposeoptype)
+    end
+    return B
+end
 # Utils
 
 # We may have multiple distance_measures per

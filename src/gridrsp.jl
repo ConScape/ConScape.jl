@@ -55,8 +55,9 @@ function betweenness_qweighted(grsp::Union{GridRSP,NamedTuple};
     g = grsp.g
     betvec = RSP_betweenness_qweighted(grsp.W, grsp.Z, g.qs, g.qt, g.targetnodes; kw...)
     coordinate_list = g.id_to_grid_coordinate_list
+
     for (i, v) in enumerate(betvec)
-        output[coordinate_list[i]] = v
+        output[coordinate_list[i]] += v
     end
     return _maybe_raster(output, grsp)
 end
@@ -90,7 +91,7 @@ of the matrix of proximities, i.e. after applying the inverse cost function to t
 matrix of distances. When nothing is specified, the diagonal elements won't be adjusted.
 """
 function betweenness_kweighted(grsp::Union{GridRSP,NamedTuple}; 
-    output=fill(NaN, g.nrows, g.ncols),
+    output=fill(NaN, size(grsp.g)),
     proximities=nothing,
     kw...
 )
@@ -101,10 +102,9 @@ function betweenness_kweighted(grsp::Union{GridRSP,NamedTuple};
 
     betvec = RSP_betweenness_kweighted(grsp.W, grsp.Z, g.qs, g.qt, proximities, g.targetnodes; kw...)
     coordinate_list = g.id_to_grid_coordinate_list
-    for (i, v) in enumerate(betvec)
-        output[coordinate_list[i]] = v
-    end
+    output[coordinate_list] .+= betvec
 
+    # display(heatmap(output))
     return _maybe_raster(output, grsp)
 end
 
@@ -342,7 +342,7 @@ function connected_habitat(grsp::Union{GridRSP,NamedTuple}; proximities=nothing,
 end
 function connected_habitat(grsp::Union{Grid,GridRSP,NamedTuple}, S::Matrix;
     diagvalue::Union{Nothing,Real}=nothing,
-    output=fill(NaN, g.nrows, g.ncols),
+    output=fill(NaN, size(grsp.g)),
     kw...
 )
     g = _get_grid(grsp)

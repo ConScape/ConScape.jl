@@ -43,7 +43,7 @@ centersize(p::WindowedProblem) = p.centersize, p.centersize
 isthreaded(p::WindowedProblem) = p.threaded
 
 function solve(p::WindowedProblem, rast::RasterStack; 
-    verbose=false, test_windows=false, mosaic_return=true, timed=true, kw...
+    verbose=false, test_windows=false, mosaic_return=true, timed=false, kw...
 )
     solve!(init(p, rast; verbose, kw...), p; 
         verbose, test_windows, mosaic_return, timed
@@ -122,7 +122,7 @@ function solve!(workspace, p::WindowedProblem;
         end
     else
         if timed
-            return (; result=output_stacks)
+            return (; result=output_stacks, window_elapsed)
         else
             return output_stacks
         end
