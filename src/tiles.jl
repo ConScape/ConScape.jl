@@ -344,19 +344,7 @@ function assess(
         verbose && println("Retrieving raster from channel...")
         window_rast = take!(channel)
         verbose && println("Copy raster data")
-        window_rast = open(rast) do o
-            if map(length, rs) == size(window_rast)
-                _get_window_with_zeroed_buffer!(window_rast, p, o, rs)
-            else
-                _get_window_with_zeroed_buffer(getindex, p, o, rs)
-            end
-        end
-        verbose && println("Skipping NaN only rasters...")
-        nvalid = count(_isvalid, window_rast.target_qualities)
-        assessments[i] = if nvalid > 0
-            verbose && println("  nvalid: $nvalid")
-            assess(p.problem, window_rast; nthreads, kw...)
-        else
+        function empty_assesment()
             verbose && println("  No targets found")
             WindowAssessment(; 
                 shape=(0, 0),
@@ -365,6 +353,29 @@ function assess(
                 mask=Bool[],
                 indices=Int[],
             )
+        end
+        # Just load the target window quickly first to avoid loading large rasters
+        window_view = view(rast, rs)
+        quick_targets = window_view.target_qualities[_target_ranges(p, window_view)...]
+        assessments[i] = if count(_isvalid, quick_targets) > 0
+            # TODO 
+            window_rast = open(rast) do o
+                if map(length, rs) == size(window_rast)
+                    _get_window_with_zeroed_buffer!(window_rast, p, o, rs)
+                else
+                    _get_window_with_zeroed_buffer(getindex, p, o, rs)
+                end
+            end
+            verbose && println("Skipping NaN only rasters...")
+            nvalid = count(_isvalid, window_rast.target_qualities)
+            if nvalid > 0
+                verbose && println("  nvalid: $nvalid")
+                assess(p.problem, window_rast; nthreads, kw...)
+            else
+                empty_assesment()
+            end
+        else
+            empty_assesment()
         end
         put!(channel, window_rast)
     end
@@ -461,12 +472,13 @@ function _get_window_with_zeroed_buffer(f::Function, p::AbstractWindowedProblem,
     return _with_sparse_targets(p, source, source)
 end
 
+_target_ranges(p, source) = map(s -> buffer(p) + 1:s - buffer(p), size(source))
+
 function _with_sparse_targets(p, source, dest)
-    b = buffer(p)
     tq = source.target_qualities
     tq_sparse = spzeros(eltype(tq), size(tq))
-    center_ranges = map(s -> b+1:s-b, size(tq))
-    tq_sparse[center_ranges...] = tq[center_ranges...]
+    target_ranges = _target_ranges(p, source)
+    tq_sparse[target_ranges...] = tq[target_ranges...]
     if !isnothing(grain(p))
         tq_sparse = coarse_graining(tq_sparse, grain(p))
     end
