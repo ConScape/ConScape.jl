@@ -341,9 +341,7 @@ function assess(
     Threads.@threads for i in eachindex(vec(window_ranges))
         rs = window_ranges[i]
         verbose && println("Assessing batch: $i, $rs")
-        verbose && println("Retrieving raster from channel...")
         window_rast = take!(channel)
-        verbose && println("Copy raster data")
         function empty_assesment()
             verbose && println("  No targets found")
             WindowAssessment(; 
@@ -355,7 +353,7 @@ function assess(
             )
         end
         # Just load the target window quickly first to avoid loading large rasters
-        window_view = view(rast, rs)
+        window_view = view(rast, rs...)
         quick_targets = window_view.target_qualities[_target_ranges(p, window_view)...]
         assessments[i] = if count(_isvalid, quick_targets) > 0
             # TODO 
@@ -366,7 +364,6 @@ function assess(
                     _get_window_with_zeroed_buffer(getindex, p, o, rs)
                 end
             end
-            verbose && println("Skipping NaN only rasters...")
             nvalid = count(_isvalid, window_rast.target_qualities)
             if nvalid > 0
                 verbose && println("  nvalid: $nvalid")
