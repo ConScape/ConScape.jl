@@ -140,10 +140,10 @@ function init!(workspace::NamedTuple, p::WindowedProblem, rast::RasterStack;
     n = min(length(window_indices), p.threaded ? Threads.nthreads() : 1)
     # VERY important to use _get_window_with_zeroed_buffer here not just index the raster
     # Otherwise memory use will be TB
-    largest_rast = _get_window_with_zeroed_buffer(view, p, rast, window_ranges[first(sorted_indices)])
     window_workspaces = if haskey(workspace, :window_workspaces)
-        [init!(ws, p.problem, largest_rast; verbose) for ws in window_workspaces]
+        [init!(ws, p.problem; verbose) for ws in window_workspaces]
     else
+        largest_rast = _get_window_with_zeroed_buffer(view, p, rast, window_ranges[first(sorted_indices)])
         [init(p.problem, largest_rast; verbose) for _ in 1:n]
     end
     return (; rast, window_workspaces, window_sizes, window_ranges, window_indices, sorted_indices)
@@ -255,10 +255,11 @@ function solve(p::BatchProblem, rast::RasterStack;
         solve(p, rast, i; window_indices, kw...)
     end
 end
-solve(p::BatchProblem, rast::RasterStack, i; kw...) =
-    solve!(init(p, rast, i), p; kw...)
+function solve(p::BatchProblem, rast::RasterStack, i; verbose=false, kw...)
+    solve!(init(p, rast, i; verbose, kw...), p; verbose, kw...)
+end
 # Single batch job for running on clusters
-function solve!(ws, p::BatchProblem; verbose=false, kw...)
+function solve!(ws::NamedTuple, p::BatchProblem; verbose=false, kw...)
     # Solve for this window
     output = solve!(ws.workspace, p.problem; verbose)
     # Store the output rasters for this job to disk and return the file path
@@ -267,14 +268,12 @@ end
 
 function init(p::BatchProblem, rast::RasterStack, i::Int; 
     window_ranges=_window_ranges(p, rast),
-    window_indices=_window_indices(p, rast; window_ranges),
+    window_indices=(println("Calculating window indices, pass `window_indices` to skip... "); _window_indices(p, rast; window_ranges)),
     kw...
 )
     init!((; rast, window_ranges, window_indices), p, i; kw...)
 end
-function init!(workspace, p::BatchProblem, i::Int; 
-    verbose=true,
-)
+function init!(workspace::NamedTuple, p::BatchProblem, i::Int; verbose=true)
     (; window_indices, window_ranges, rast) = workspace
     # Get the raster data for job i
     window = window_ranges[window_indices[i]]
@@ -291,9 +290,7 @@ function init!(workspace, p::BatchProblem, i::Int;
     return (; rast=batch_rast, workspace=init(p.problem, batch_rast; verbose), batch=1, window)
 end
 
-function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack; 
-    nthreads=Threads.nthreads(), kw...
-)
+function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack; kw...)
     # Define the ranges of each window
     window_ranges = _window_ranges(p, rast)
 
