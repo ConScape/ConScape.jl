@@ -36,11 +36,11 @@ _get_grid(g::Grid)       = g
 function Base.show(io::IO, ::MIME"text/plain", grsp::GridRSP)
     print(io, summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)
 end
-function Base.show(io::IO, ::MIME"text/html", grsp::GridRSP)
-    t = string(summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)
-    write(io, "<h4>$t</h4>")
-    show(io, MIME"text/html"(), plot_outdegrees(grsp.g))
-end
+# function Base.show(io::IO, ::MIME"text/html", grsp::GridRSP)
+    # t = string(summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)
+    # write(io, "<h4>$t</h4>")
+    # show(io, MIME"text/html"(), grsp.g))
+# end
 DimensionalData.dims(grsp::GridRSP) = dims(grsp.g)
 
 """
@@ -104,7 +104,6 @@ function betweenness_kweighted(grsp::Union{GridRSP,NamedTuple};
     coordinate_list = g.id_to_grid_coordinate_list
     output[coordinate_list] .+= betvec
 
-    # display(heatmap(output))
     return _maybe_raster(output, grsp)
 end
 

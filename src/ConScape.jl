@@ -5,13 +5,11 @@ using ConstructionBase
 using Graphs
 using LinearAlgebra
 using LinearSolve
-using Plots
 using ProgressLogging
 using Rasters
 using SimpleWeightedGraphs
 using SparseArrays
 using Rasters.DimensionalData
-using BandedMatrices
 
 import CommonSolve
 import CommonSolve: solve, init

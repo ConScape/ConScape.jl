@@ -151,23 +151,23 @@ DimensionalData.dims(g::Grid) = g.dims
 function Base.show(io::IO, ::MIME"text/plain", g::Grid)
     print(io, summary(g), " of size ", g.nrows, "x", g.ncols)
 end
-function Base.show(io::IO, ::MIME"text/html", g::Grid)
-    t = string(summary(g), " of size ", g.nrows, "x", g.ncols)
-    write(io, "<h4>$t</h4>")
-    write(io, "<table><tr><td>Affinities</br>")
-    show(io, MIME"text/html"(), plot_outdegrees(g))
-    write(io, "</td></tr></table>")
-    if g.source_qualities === g.target_qualities
-        write(io, "<table><tr><td>Qualities</td></tr></table>")
-        show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
-    else
-        write(io, "<table><tr><td>Source qualities")
-        show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
-        write(io, "</td><td>Target qualities")
-        show(io, MIME"text/html"(), heatmap(Matrix(g.target_qualities), yflip=true))
-        write(io, "</td></tr></table>")
-    end
-end
+# function Base.show(io::IO, ::MIME"text/html", g::Grid)
+#     t = string(summary(g), " of size ", g.nrows, "x", g.ncols)
+#     write(io, "<h4>$t</h4>")
+#     write(io, "<table><tr><td>Affinities</br>")
+#     show(io, MIME"text/html"(), plot_outdegrees(g))
+#     write(io, "</td></tr></table>")
+#     if g.source_qualities === g.target_qualities
+#         write(io, "<table><tr><td>Qualities</td></tr></table>")
+#         show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
+#     else
+#         write(io, "<table><tr><td>Source qualities")
+#         show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
+#         write(io, "</td><td>Target qualities")
+#         show(io, MIME"text/html"(), heatmap(Matrix(g.target_qualities), yflip=true))
+#         write(io, "</td></tr></table>")
+#     end
+# end
 
 _id_gc_list(nrows, ncols) = vec(collect(CartesianIndices((nrows, ncols))))
 _unwrap(R::Raster) = parent(R)
@@ -216,22 +216,6 @@ end
 function indegrees(g::Grid; kwargs...)
     values = sum(g.affinities, dims=1)
     _maybe_raster(_fill_matrix(values, g), g)
-end
-
-plot_values(g::Grid, values::Vector; kwargs...) =
-    _heatmap(_fill_matrix(values, g), g; kwargs...)
-plot_outdegrees(g::Grid; kwargs...) = _heatmap(outdegrees(g), g; kwargs...)
-plot_indegrees(g::Grid; kwargs...) = _heatmap(indegrees(g), g; kwargs...)
-
-
-# If the grid has raster dimensions, 
-# plot as a raster on a spatial grid
-function _heatmap(canvas, g; kwargs...)
-    if isnothing(dims(g))
-        heatmap(canvas; yflip=true, axis=nothing, border=:none, aspect_ratio=:equal, kwargs...)
-    else
-        heatmap(Raster(canvas, dims(g)); kwargs...)
-    end
 end
 
 """
