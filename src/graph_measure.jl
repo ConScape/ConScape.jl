@@ -6,33 +6,12 @@ These are lazy definitions of conscape functions.
 """
 abstract type GraphMeasure end
 
-abstract type ReturnType end
-struct ReturnsDenseSpatial <: ReturnType end
-struct ReturnsSparse <: ReturnType end
-struct ReturnsScalar <: ReturnType end
-struct ReturnsOther{F} <: ReturnType
-    f::F
-end
-
-"""
-    NoWriteArray
-
-A Julia AbstractArray wrapper that errors on `setindex!`, for testing.
-"""
-mutable struct NoWriteArray{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
-    __data::A
-end
-
-Base.size(A::NoWriteArray) = size(A.__data)
-Base.copy(A::NoWriteArray) = copy(A.__data)
-Base.getindex(A::NoWriteArray, i...) = A.__data[i...]
-Base.setindex!(A::NoWriteArray, v, i...) = error("Cannot write to NoWriteArray")
-Base.:(==)(A::NoWriteArray, B::NoWriteArray) = A.__data == B.__data
-
 abstract type TopologicalMeasure <: GraphMeasure end
 abstract type BetweennessMeasure <: GraphMeasure end
 abstract type PerturbationMeasure <: GraphMeasure end
 abstract type PathDistributionMeasure <: GraphMeasure end
+
+# Concrete GraphMeasure structs
 
 struct BetweennessQweighted <: BetweennessMeasure end
 @kwdef struct BetweennessKweighted <: BetweennessMeasure end
@@ -54,18 +33,8 @@ end
 struct MeanLeastCostKullbackLeiblerDivergence <: PathDistributionMeasure end
 struct MeanKullbackLeiblerDivergence <: PathDistributionMeasure end
 
-# These allow calculation of return allocations
-returntype(::EdgeBetweennessQweighted) = ReturnsSparse()
-returntype(::EdgeBetweennessKweighted) = ReturnsSparse()
-returntype(::BetweennessQweighted) = ReturnsDenseSpatial()
-returntype(::BetweennessKweighted) = ReturnsDenseSpatial()
-returntype(::ConnectedHabitat) = ReturnsDenseSpatial()
-returntype(::Criticality) = ReturnsDenseSpatial()
-returntype(::EigMax) = ReturnsOther((n, m) -> n + m)
-returntype(::MeanLeastCostKullbackLeiblerDivergence) = ReturnsScalar()
-returntype(::MeanKullbackLeiblerDivergence) = ReturnsScalar()
-
 # Map structs to function calls
+
 graph_function(m::BetweennessKweighted) = betweenness_kweighted
 graph_function(m::BetweennessQweighted) = betweenness_qweighted
 graph_function(m::ConnectedHabitat) = connected_habitat
@@ -76,7 +45,8 @@ graph_function(m::EdgeBetweennessKweighted) = edge_betweenness_kweighted
 graph_function(m::EdgeBetweennessQweighted) = edge_betweenness_qweighted
 graph_function(m::EigMax) = eigmax
 
-# Get function keywords
+# Function keywords
+
 keywords(gm::GraphMeasure, p::AbstractProblem) =
     (; _keywords(gm)..., solver=solver(p), _connectivity_keywords(gm, p)...)
 keywords(gm::ConnectedHabitat, p::AbstractProblem) =
@@ -93,6 +63,27 @@ function _connectivity_keywords(gm::GraphMeasure, p::AbstractProblem)
         _keywords(gm)
     end
 end
+
+# Traits
+
+abstract type ReturnType end
+struct ReturnsDenseSpatial <: ReturnType end
+struct ReturnsSparse <: ReturnType end
+struct ReturnsScalar <: ReturnType end
+struct ReturnsOther{F} <: ReturnType
+    f::F
+end
+
+# These allow calculation of return allocations
+returntype(::EdgeBetweennessQweighted) = ReturnsSparse()
+returntype(::EdgeBetweennessKweighted) = ReturnsSparse()
+returntype(::BetweennessQweighted) = ReturnsDenseSpatial()
+returntype(::BetweennessKweighted) = ReturnsDenseSpatial()
+returntype(::ConnectedHabitat) = ReturnsDenseSpatial()
+returntype(::Criticality) = ReturnsDenseSpatial()
+returntype(::EigMax) = ReturnsOther((n, m) -> n + m)
+returntype(::MeanLeastCostKullbackLeiblerDivergence) = ReturnsScalar()
+returntype(::MeanKullbackLeiblerDivergence) = ReturnsScalar()
 
 # A trait for connectivity requirement
 needs_connectivity(::GraphMeasure) = false
@@ -122,13 +113,7 @@ needs_free_energy_distance(::GraphMeasure) = false
 needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
 needs_Aaj_init(::GraphMeasure) = true # TODO which dont?
 
-# Trait aggregator
-hastrait(t, gms) = mapreduce(t, |, gms; init=false)
-
-# compute: run the function
-compute(gm::GraphMeasure, p::AbstractProblem, g::Union{Grid,GridRSP}; kw...) =
-    graph_function(gm)(g; keywords(gm, p)..., kw...)
-
+# Trait helpers
 
 function count_workspaces(p::AbstractProblem)
     gms = graph_measures(p)
@@ -139,3 +124,11 @@ function count_workspaces(p::AbstractProblem)
 end
 count_permuted_workspaces(p::AbstractProblem) =
     mapreduce(needs_permuted_workspaces, max, graph_measures(p))
+
+# Trait aggregator
+hastrait(t, gms) = reduce(|, map(t, gms); init=false)
+
+
+# compute: run a graph function with the appropriate keywords
+compute(gm::GraphMeasure, p::AbstractProblem, g::Union{Grid,GridRSP}; kw...) =
+    graph_function(gm)(g; keywords(gm, p)..., kw...)

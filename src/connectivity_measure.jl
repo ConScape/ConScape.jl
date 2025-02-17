@@ -1,5 +1,12 @@
-# New type-based interface
-# Easier to add parameters to these
+"""
+    GraphMeasure 
+
+Abstract supertype for connectivity measures.
+
+These are lazy definitions of conscape functions,
+with required parameters attached rather than passed 
+in through keywords.
+"""
 abstract type ConnectivityMeasure end
 
 abstract type FundamentalMeasure <: ConnectivityMeasure end
@@ -29,8 +36,11 @@ keywords(cm::ConnectivityMeasure) = _keywords(cm)
 
 distance_transformation(cm::FundamentalMeasure) = nothing
 distance_transformation(cm::DistanceMeasure) = cm.distance_transformation
+
 # TODO remove the complexity of the connectivity_function
 # These methods are mostly to avoid changing the original interface for now
+# Its a quirk of how MeanKullbackLeiblerDivergence is implemented
+# that these can be calculated separately from the main grid
 connectivity_function(::LeastCostDistance) = least_cost_distance
 connectivity_function(::ExpectedCost) = expected_cost
 connectivity_function(::FreeEnergyDistance) = free_energy_distance

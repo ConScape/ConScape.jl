@@ -162,7 +162,8 @@ least_cost_distance(grsp::Union{GridRSP,NamedTuple}; kw...) = least_cost_distanc
 """
     mean_kl_divergence(grsp::GridRSP)::Float64
 
-Compute the mean Kullback–Leibler divergence between the free energy distances and the RSP expected costs for `grsp::GridRSP`.
+Compute the mean Kullback–Leibler divergence between the free 
+energy distances and the RSP expected costs for `grsp::GridRSP`.
 """
 function mean_kl_divergence(grsp::Union{GridRSP,NamedTuple};
     free_energy_distances=nothing,
@@ -195,7 +196,8 @@ end
 """
     mean_lc_kl_divergence(grsp::GridRSP)::Float64
 
-Compute the mean Kullback–Leibler divergence between the least-cost path and the random path distribution for `grsp::GridRSP`, weighted by the qualities of the source and target node.
+Compute the mean Kullback–Leibler divergence between the least-cost path and the random path
+distribution for `grsp::GridRSP`, weighted by the qualities of the source and target node.
 """
 function mean_lc_kl_divergence(grsp::Union{GridRSP,NamedTuple};
     workspaces=[similar(grsp.Z)],
@@ -266,8 +268,8 @@ end
 """
     least_cost_kl_divergence(grsp::GridRSP, target::Tuple{Int,Int})
 
-Compute the least cost Kullback-Leibler divergence from each cell in the g in
-`h` to the `target` cell.
+Compute the least cost Kullback-Leibler divergence from each
+cell in the g in `h` to the `target` cell.
 """
 function least_cost_kl_divergence(grsp::Union{GridRSP,NamedTuple}, target::Tuple{Int,Int}; kw...)
     g = grsp.g

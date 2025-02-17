@@ -407,7 +407,7 @@ function _bellman_ford_update_transposed!(c̄::Vector, φ::Vector, trPref::Spars
 end
 
 # Helper function required for good performance until https://github.com/JuliaLang/julia/pull/42647 has been released
-function mygetindex(A::SparseMatrixCSC{Tv,Ti}, I::AbstractVector, J::Integer) where {Tv,Ti}
+function fast_getindex(A::SparseMatrixCSC{Tv,Ti}, I::AbstractVector, J::Integer) where {Tv,Ti}
     if !issorted(I)
         throw(ArgumentError("only sorted indices are currectly supported"))
     end
@@ -449,7 +449,7 @@ function _bellman_ford_update_node_transposed(c̄::Vector, φ::Vector, trPref::S
     idx = Prefindex.nzind # Get the list of successors
     # computation of θ(cᵢⱼ+φ(j,t))-log([Pʳᵉᶠ]ᵢⱼ)
     # ect = (Array(trC[idx, index]) + φ[idx]) .* θ .- log.(Prefindex.nzval)
-    ect = (Array(mygetindex(trC, idx, index)) .+ φ[idx]) .* θ .- log.(Prefindex.nzval)
+    ect = (Array(fast_getindex(trC, idx, index)) .+ φ[idx]) .* θ .- log.(Prefindex.nzval)
     finiteidx = isfinite.(ect)
     idx = idx[finiteidx]
     ect = ect[finiteidx]

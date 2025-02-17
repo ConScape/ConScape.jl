@@ -24,11 +24,13 @@ end
               costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
               prune=true)::Grid
 
-Construct a `Grid` from an `affinities` matrix of type `SparseMatrixCSC`. It is possible
-to also supply matrices of `source_qualities` and `target_qualities` as well as
-a `costs` function that maps the `affinities` matrix to a `costs` matrix. Alternatively,
-it is possible to supply a matrix to `costs` directly. If `prune=true` (the default), the
-affinity and cost matrices will be pruned to exclude unreachable nodes.
+Construct a `Grid` from an `affinities` matrix of type `SparseMatrixCSC`. 
+
+It is possible to also supply matrices of `source_qualities` and `target_qualities` as well as
+a `costs` function that maps the `affinities` matrix to a `costs` matrix. 
+
+Alternatively, it is possible to supply a matrix to `costs` directly. If `prune=true` (the default), 
+the affinity and cost matrices will be pruned to exclude unreachable nodes.
 """
 function Grid(nrows::Integer,
     ncols::Integer;
@@ -403,10 +405,11 @@ end
         approx::Bool=false
     )
 
-Compute the randomized shorted path based expected costs from all source nodes to
-all target nodes in the graph defined by `g` using the inverse temperature parameter
-`θ`. The computation can either continue until convergence when setting `approx=false`
-(the default) or return an approximate result based on just a single iteration of the Bellman-Ford
+Compute the randomized shorted path based expected costs from all source nodes to all 
+target nodes in the graph defined by `g` using the inverse temperature parameter `θ`. 
+
+The computation can either continue until convergence when setting `approx=false` (the default) 
+or return an approximate result based on just a single iteration of the Bellman-Ford
 algorithm when `approx=true`.
 """
 function expected_cost(
@@ -448,10 +451,11 @@ end
         approx::Bool=false
     )
 
-Compute the directed free energy distance from all source nodes to
-all target nodes in the graph defined by `g` using the inverse temperature parameter
-`θ`. The computation can either continue until convergence when setting `approx=false`
-(the default) or return an approximate result based on just a single iteration of the Bellman-Ford
+Compute the directed free energy distance from all source nodes to all target 
+nodes in the graph defined by `g` using the inverse temperature parameter `θ`. 
+
+The computation can either continue until convergence when setting `approx=false` (the default), 
+or return an approximate result based on just a single iteration of the Bellman-Ford
 algorithm when `approx=true`.
 """
 function free_energy_distance(
@@ -459,10 +463,8 @@ function free_energy_distance(
     θ::Union{Real,Nothing}=nothing,
     approx::Bool=false
 )
-    # FIXME! This should be multithreaded. However, ProgressLogging currently
-    # does not support multithreading
     targets = ConScape._targetidx_and_nodes(g)[1]
-    @progress vec_of_vecs = [_free_energy_distance(g, target, θ, approx) for target in targets]
+    vec_of_vecs = [_free_energy_distance(g, target, θ, approx) for target in targets]
 
     return reduce(hcat, vec_of_vecs)
 end

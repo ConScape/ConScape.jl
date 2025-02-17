@@ -137,6 +137,8 @@ function _init!(
     else
         [similar(Z') for _ in 1:n_permuted_workspaces]
     end
+    # TODO these shouldn't have traits, it 
+    # should be baked into the problem.
     expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
         haskey(ws, :expected_costs) ? _reshape(ws.expected_costs, size(Z)) : similar(Z)
     else
