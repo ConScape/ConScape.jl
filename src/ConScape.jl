@@ -39,6 +39,8 @@ abstract type Solver end
 # Randomized shortest path algorithms
 include("randomizedshortestpath.jl")
 # Grid struct and methods
+include("transformations.jl")
+# Grid struct and methods
 include("grid.jl")
 # GridRSP (randomized shortest path) struct and methods
 include("gridrsp.jl")

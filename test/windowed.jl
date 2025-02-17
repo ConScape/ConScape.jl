@@ -1,5 +1,5 @@
 using ConScape, Test, SparseArrays, LinearAlgebra
-using Rasters, ArchGDAL
+using Rasters, ArchGDAL, Plots
 using ConScape.LinearSolve
 
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
@@ -66,8 +66,8 @@ end
     @time wp_result = ConScape.solve(windowed_problem, rast)
     @time p_result = ConScape.solve(problem, rast_inner)
     p_result
-    plot(p_result)
-    plot(wp_result)
+    # plot(p_result)
+    # plot(wp_result)
     @test maplayers(p_result, wp_result) do P, WP
         broadcast(P, WP) do p, wp
             isnan(p) && isnan(wp) || isapprox(p, wp; atol=1e-4)
@@ -77,7 +77,7 @@ end
 
 
 # BatchProblem writes files to disk and mosaics to RasterStack
-@testset "batch problem matches windowed problem" begin
+# @testset "batch problem matches windowed problem" begin
     solver = ConScape.VectorSolver()
     # Use a higher alpha to catch differences
     distance_transformation = x -> exp(-x / 50)
@@ -104,7 +104,7 @@ end
     @test assessment.njobs == 39
 
     for job in 1:assessment.njobs
-        ConScape.solve(batch_jobs_problem, rast, job)
+        ConScape.solve(batch_jobs_problem, rast, job; window_indices=assessment.indices)
     end
     batch_jobs_result = mosaic(batch_jobs_problem; to=rast)
 
