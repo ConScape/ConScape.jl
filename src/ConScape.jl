@@ -52,6 +52,6 @@ include("graph_measure.jl")
 include("connectivity_measure.jl")
 include("problem.jl")
 include("solvers.jl")
-include("tiles.jl")
+include("windows.jl")
 
 end
