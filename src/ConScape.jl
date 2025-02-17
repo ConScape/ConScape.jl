@@ -19,12 +19,12 @@ abstract type ConnectivityFunction <: Function end
 abstract type DistanceFunction <: ConnectivityFunction end
 abstract type ProximityFunction <: ConnectivityFunction end
 
-struct least_cost_distance   <: DistanceFunction end
-struct expected_cost         <: DistanceFunction end
-struct free_energy_distance  <: DistanceFunction end
+struct least_cost_distance <: DistanceFunction end
+struct expected_cost <: DistanceFunction end
+struct free_energy_distance <: DistanceFunction end
 
-struct survival_probability  <: ProximityFunction end
-struct power_mean_proximity  <: ProximityFunction end
+struct survival_probability <: ProximityFunction end
+struct power_mean_proximity <: ProximityFunction end
 
 # Need to define before loading files
 
@@ -48,6 +48,7 @@ include("gridrsp.jl")
 include("io.jl")
 # Utilities
 include("utils.jl")
+# Problems
 include("graph_measure.jl")
 include("connectivity_measure.jl")
 include("problem.jl")

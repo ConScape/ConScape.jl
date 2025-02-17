@@ -10,7 +10,7 @@ abstract type ReturnType end
 struct ReturnsDenseSpatial <: ReturnType end
 struct ReturnsSparse <: ReturnType end
 struct ReturnsScalar <: ReturnType end
-struct ReturnsOther{F} <: ReturnType 
+struct ReturnsOther{F} <: ReturnType
     f::F
 end
 
@@ -41,14 +41,14 @@ struct EdgeBetweennessQweighted <: BetweennessMeasure end
 
 @kwdef struct ConnectedHabitat <: GraphMeasure end
 
-@kwdef struct Criticality{AV,QT,QS} <: PerturbationMeasure 
-    avalue::AV=floatmin()
-    qˢvalue::QS=0.0
-    qᵗvalue::QT=0.0
+@kwdef struct Criticality{AV,QT,QS} <: PerturbationMeasure
+    avalue::AV = floatmin()
+    qˢvalue::QS = 0.0
+    qᵗvalue::QT = 0.0
 end
 
 @kwdef struct EigMax{T} <: TopologicalMeasure
-    tol::T=1e-14
+    tol::T = 1e-14
 end
 
 struct MeanLeastCostKullbackLeiblerDivergence <: PathDistributionMeasure end
@@ -77,14 +77,14 @@ graph_function(m::EdgeBetweennessQweighted) = edge_betweenness_qweighted
 graph_function(m::EigMax) = eigmax
 
 # Get function keywords
-keywords(gm::GraphMeasure, p::AbstractProblem) = 
+keywords(gm::GraphMeasure, p::AbstractProblem) =
     (; _keywords(gm)..., solver=solver(p), _connectivity_keywords(gm, p)...)
-keywords(gm::ConnectedHabitat, p::AbstractProblem) = 
+keywords(gm::ConnectedHabitat, p::AbstractProblem) =
     (; _keywords(gm)..., approx=connectivity_measure(p).approx, solver=solver(p), _connectivity_keywords(gm, p)...)
 function _connectivity_keywords(gm::GraphMeasure, p::AbstractProblem)
     cm = connectivity_measure(p)
     if needs_connectivity(gm)
-        (; 
+        (;
             _keywords(gm)...,
             distance_transformation=distance_transformation(cm),
             connectivity_function=connectivity_function(cm)
@@ -126,7 +126,7 @@ needs_Aaj_init(::GraphMeasure) = true # TODO which dont?
 hastrait(t, gms) = mapreduce(t, |, gms; init=false)
 
 # compute: run the function
-compute(gm::GraphMeasure, p::AbstractProblem, g::Union{Grid,GridRSP}; kw...) = 
+compute(gm::GraphMeasure, p::AbstractProblem, g::Union{Grid,GridRSP}; kw...) =
     graph_function(gm)(g; keywords(gm, p)..., kw...)
 
 
@@ -137,5 +137,5 @@ function count_workspaces(p::AbstractProblem)
         max(n, 2)
     end
 end
-count_permuted_workspaces(p::AbstractProblem) = 
+count_permuted_workspaces(p::AbstractProblem) =
     mapreduce(needs_permuted_workspaces, max, graph_measures(p))

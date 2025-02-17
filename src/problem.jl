@@ -30,10 +30,10 @@ to be run in the same job.
 @kwdef struct Problem{GM,CM<:ConnectivityMeasure,SM<:Solver,DV,CO} <: AbstractProblem
     graph_measures::GM
     connectivity_measure::CM = LeastCostDistance()
-    solver::SM= MatrixSolver()
-    diagvalue::DV=nothing
-    costs::CO=MinusLog()
-    prune::Bool=true
+    solver::SM = MatrixSolver()
+    diagvalue::DV = nothing
+    costs::CO = MinusLog()
+    prune::Bool = true
 end
 Problem(graph_measures::Union{Tuple,NamedTuple}; kw...) = Problem(; graph_measures, kw...)
 
@@ -57,7 +57,7 @@ isthreaded(p::Problem) = p.threaded
 
 
 solve(p::Problem, rast::RasterStack; kw...) = solve!(init(p, rast; kw...), p; kw...)
-solve!(workspace::NamedTuple, p::Problem; kw...) = 
+solve!(workspace::NamedTuple, p::Problem; kw...) =
     solve!(workspace, solver(p), connectivity_measure(p), p; kw...)
 
 # Init is conditional on solver and connectivity measure

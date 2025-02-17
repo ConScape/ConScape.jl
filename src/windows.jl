@@ -42,10 +42,10 @@ WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 centersize(p::WindowedProblem) = p.centersize, p.centersize
 isthreaded(p::WindowedProblem) = p.threaded
 
-function solve(p::WindowedProblem, rast::RasterStack; 
+function solve(p::WindowedProblem, rast::RasterStack;
     verbose=false, test_windows=false, mosaic_return=true, timed=false, kw...
 )
-    solve!(init(p, rast; verbose, kw...), p; 
+    solve!(init(p, rast; verbose, kw...), p;
         verbose, test_windows, mosaic_return, timed
     )
 end
@@ -62,7 +62,7 @@ function solve!(workspace, p::WindowedProblem;
             _get_window_with_zeroed_buffer(view, p, rast, window_ranges[i])
         end
         return if mosaic_return
-            Rasters.mosaic(sum, collect(skipmissing(output_stacks)); 
+            Rasters.mosaic(sum, collect(skipmissing(output_stacks));
                 to=rast, missingval=0.0, verbose
             )
         else
@@ -88,14 +88,14 @@ function solve!(workspace, p::WindowedProblem;
         verbose && println("Getting workspace from channel...")
         workspace = take!(ch)
         verbose && println("Initialising window from size $(size(window_rast)), from ranges $window...")
-        workspace_initialised = init!(workspace, p.problem, window_rast; verbose) 
+        workspace_initialised = init!(workspace, p.problem, window_rast; verbose)
         # Solve for the window
         verbose && println("Solving window $window...")
         output_stacks[i] = solve!(workspace_initialised, p.problem)
         # Return the workspace to the channel
         put!(ch, workspace)
     end
-    window_elapsed = Vector{Pair{Float64,Int64}}(undef, length(sorted_indices)) 
+    window_elapsed = Vector{Pair{Float64,Int64}}(undef, length(sorted_indices))
     # Run the window problems
     if p.threaded
         Threads.@threads for i in eachindex(sorted_indices)
@@ -130,11 +130,11 @@ function solve!(workspace, p::WindowedProblem;
 end
 
 init(p::WindowedProblem, rast::RasterStack; kw...) = init!((;), p, rast; kw...)
-function init!(workspace::NamedTuple, p::WindowedProblem, rast::RasterStack; 
+function init!(workspace::NamedTuple, p::WindowedProblem, rast::RasterStack;
     window_ranges=_window_ranges(p, rast),
     window_sizes=_window_sizes(p, rast; window_ranges),
     window_indices=_window_indices(p, rast; window_ranges),
-    sorted_indices=last.(sort!(prod.(window_sizes[window_indices]) .=> window_indices; rev=true)), 
+    sorted_indices=last.(sort!(prod.(window_sizes[window_indices]) .=> window_indices; rev=true)),
     verbose=true,
 )
     n = min(length(window_indices), p.threaded ? Threads.nthreads() : 1)
@@ -202,22 +202,22 @@ for nested operations.
     grain::Union{Nothing,Int} = nothing
     ext::String = ".tif"
 end
-function BatchProblem(problem::Problem; 
+function BatchProblem(problem::Problem;
     centersize::Union{Int,Tuple{Int,Int}}, kw...
-) 
+)
     centersize = centersize isa Tuple{Int,Int} ? centersize : (centersize, centersize)
     BatchProblem(; problem, centersize, kw...)
 end
-function BatchProblem(problem::WindowedProblem; 
+function BatchProblem(problem::WindowedProblem;
     nwindows=nothing,
-    centersize::Union{Nothing,Int,Tuple{Int,Int}}=nothing, 
+    centersize::Union{Nothing,Int,Tuple{Int,Int}}=nothing,
     buffer::Union{Nothing,Int}=nothing,
     kw...
 )
-    buffer = if isnothing(buffer) 
+    buffer = if isnothing(buffer)
         problem.buffer
     else
-        buffer == problem.buffer || 
+        buffer == problem.buffer ||
             throw(ArgumentError("BatchProblem buffer must match WindowedProblem buffer. Got $buffer and $(problem.buffer)"))
         buffer
     end
@@ -226,7 +226,7 @@ function BatchProblem(problem::WindowedProblem;
         centersize = x, x
     else
         centersize = centersize isa Tuple{Int,Int} ? centersize : (centersize, centersize)
-        map(centersize, ConScape.centersize(problem)) do bcs, wcs 
+        map(centersize, ConScape.centersize(problem)) do bcs, wcs
             rem(bcs, wcs) == 0 ||
                 throw(ArgumentError("BatchProblem centersize must be a multiple of WindowedProblem centersize. Got $centersize and $(problem.centersize)"))
         end
@@ -248,7 +248,7 @@ end
 
 centersize(p::BatchProblem) = p.centersize
 
-function solve(p::BatchProblem, rast::RasterStack; 
+function solve(p::BatchProblem, rast::RasterStack;
     window_indices=_window_indices(p, rast), kw...
 )
     for i in eachindex(window_indices)
@@ -266,7 +266,7 @@ function solve!(ws::NamedTuple, p::BatchProblem; verbose=false, kw...)
     return _store(p, output, ws.window; verbose)
 end
 
-function init(p::BatchProblem, rast::RasterStack, i::Int; 
+function init(p::BatchProblem, rast::RasterStack, i::Int;
     window_ranges=_window_ranges(p, rast),
     window_indices=(println("Calculating window indices, pass `window_indices` to skip... "); _window_indices(p, rast; window_ranges)),
     kw...
@@ -317,8 +317,8 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
     )
 end
 function assess(
-    p::AbstractWindowedProblem{<:AbstractWindowedProblem}, 
-    rast::AbstractRasterStack; 
+    p::AbstractWindowedProblem{<:AbstractWindowedProblem},
+    rast::AbstractRasterStack;
     nthreads=Threads.nthreads(),
     verbose=true,
     kw...
@@ -344,7 +344,7 @@ function assess(
         window_rast = take!(channel)
         function empty_assesment()
             verbose && println("  No targets found")
-            WindowAssessment(; 
+            WindowAssessment(;
                 shape=(0, 0),
                 njobs=0,
                 sizes=Tuple{Int,Int}[],
@@ -384,7 +384,7 @@ function assess(
     shape = size(window_ranges)
     return NestedAssessment(
         shape,
-        njobs, 
+        njobs,
         mask,
         indices,
         assessments,
@@ -400,16 +400,16 @@ function Rasters.mosaic(p::BatchProblem; to, lazy=true, missingval=0.0, kw...)
     return Rasters.mosaic(sum, stacks; missingval, to, kw...)
 end
 
-function _store(p::BatchProblem, output::RasterStack{K}, ranges; kw...) where K
+function _store(p::BatchProblem, output::RasterStack{K}, ranges; kw...) where {K}
     dir = mkpath(_window_path(p, ranges))
-    return Rasters.write(joinpath(dir, ""), output; 
+    return Rasters.write(joinpath(dir, ""), output;
         ext=p.ext, force=true, verbose=false, kw...
     )
 end
 
 function _window_path(p, ranges::Tuple)
     corners = map(first, ranges)
-    window_dirname =  "window_" * join(corners, '_')
+    window_dirname = "window_" * join(corners, '_')
     return joinpath(p.datapath, window_dirname)
 end
 
@@ -442,9 +442,9 @@ function _window_ranges(p::Union{BatchProblem,WindowedProblem}, rast::AbstractRa
     # Define the corners of each window
     corners = CartesianIndices(size)[begin:cs1:end-2buffer, begin:cs2:end-2buffer]
     # Create an iterator of ranges for retreiving each window
-    return [map((i, s, ws) -> i:min(s, i + ws-1), Tuple(c), size, windowsize) for c in corners]
+    return [map((i, s, ws) -> i:min(s, i + ws - 1), Tuple(c), size, windowsize) for c in corners]
 end
-    
+
 function _get_window_with_zeroed_buffer!(dest, p::AbstractWindowedProblem, rast::RasterStack, rs)
     source = view(rast, rs...)
     # Reshape and rebuild to resuse memory
@@ -460,16 +460,16 @@ function _get_window_with_zeroed_buffer!(dest, p::AbstractWindowedProblem, rast:
 
     return _with_sparse_targets(p, source, dest)
 end
-_get_window_with_zeroed_buffer(p::AbstractWindowedProblem, args...) = 
+_get_window_with_zeroed_buffer(p::AbstractWindowedProblem, args...) =
     _get_window_with_zeroed_buffer(view, p, args...)
-_get_window_with_zeroed_buffer(f::Function , p::AbstractWindowedProblem, rast::RasterStack) = 
+_get_window_with_zeroed_buffer(f::Function, p::AbstractWindowedProblem, rast::RasterStack) =
     _get_window_with_zeroed_buffer(f, p, rast, axes(rast))
 function _get_window_with_zeroed_buffer(f::Function, p::AbstractWindowedProblem, rast::RasterStack, rs)
     source = f(rast, rs...)
     return _with_sparse_targets(p, source, source)
 end
 
-_target_ranges(p, source) = map(s -> buffer(p) + 1:s - buffer(p), size(source))
+_target_ranges(p, source) = map(s -> buffer(p)+1:s-buffer(p), size(source))
 
 function _with_sparse_targets(p, source, dest)
     tq = source.target_qualities

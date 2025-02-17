@@ -6,7 +6,7 @@ Solve all operations on a fully materialised Z matrix.
 This is fast but memory inneficient for CPUS, and isn't threaded.
 But may be best for GPUs using CuSSP.jl ?
 """
-@kwdef struct MatrixSolver <: Solver 
+@kwdef struct MatrixSolver <: Solver
     check::Bool = true
 end
 
@@ -16,7 +16,7 @@ end
 Use julias default solver but broken into columns, with 
 less memory use and the capacity for threading
 """
-@kwdef struct VectorSolver <: Solver 
+@kwdef struct VectorSolver <: Solver
     check::Bool = true
     threaded::Bool = false
 end
@@ -53,7 +53,7 @@ problem = ConScape.Problem(;
 )
 ````
 """
-struct LinearSolver{A,K} <: Solver 
+struct LinearSolver{A,K} <: Solver
     args::A
     keywords::K
     threaded::Bool
@@ -62,31 +62,31 @@ LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
 
 # In `init!` we allocate all large dense arrays 
 function init!(
-    ws::NamedTuple, 
-    solver::MatrixSolver, 
-    cm::FundamentalMeasure, 
+    ws::NamedTuple,
+    solver::MatrixSolver,
+    cm::FundamentalMeasure,
     p::AbstractProblem,
     rast::RasterStack;
     verbose=false,
-) 
-    _init!(ws, solver, cm, p, rast; verbose) 
+)
+    _init!(ws, solver, cm, p, rast; verbose)
 end
 function init!(
-    ws::NamedTuple, 
-    solver::Union{VectorSolver,LinearSolver}, 
-    cm::FundamentalMeasure, 
+    ws::NamedTuple,
+    solver::Union{VectorSolver,LinearSolver},
+    cm::FundamentalMeasure,
     p::AbstractProblem,
     rast::RasterStack;
     verbose=false,
-) 
+)
     grid = Grid(p, rast)
-    workspace = _init!(ws, solver, cm, p, rast; verbose) 
+    workspace = _init!(ws, solver, cm, p, rast; verbose)
     if isthreaded(solver)
         nbuffers = Thread.nthreads()
         channel = Channel{typeof(workspace)}(nbuffers)
         put!(channel, workspace)
         for n in 2:nbuffers
-            workspace_n = _init!(ws, solver, cm, p, rast; verbose, grid) 
+            workspace_n = _init!(ws, solver, cm, p, rast; verbose, grid)
             put!(channel, workspace_N)
         end
         return (; channel)
@@ -95,14 +95,14 @@ function init!(
     end
 end
 function _init!(
-    ws::NamedTuple, 
-    solver::Solver, 
-    cm::FundamentalMeasure, 
+    ws::NamedTuple,
+    solver::Solver,
+    cm::FundamentalMeasure,
     p::AbstractProblem,
     rast::RasterStack;
     verbose=false,
     grid=Grid(p, rast)
-) 
+)
     verbose && println("Retreiving measures...")
     g = grid
     gms = graph_measures(p)
@@ -111,7 +111,7 @@ function _init!(
     # B_dense becomes Z
     verbose && println("Allocating workspaces...")
     sze = _workspace_size(solver, g)
-    Z = if hastrait(needs_inv, gms) 
+    Z = if hastrait(needs_inv, gms)
         if haskey(ws, :Z)
             _reshape(ws.Z, sze)
         else
@@ -120,19 +120,19 @@ function _init!(
     else
         nothing
     end
-    Zⁱ = if hastrait(needs_inv, gms) 
-        haskey(ws, :Zⁱ) ? _reshape(ws.Zⁱ, sze) : similar(Z) 
+    Zⁱ = if hastrait(needs_inv, gms)
+        haskey(ws, :Zⁱ) ? _reshape(ws.Zⁱ, sze) : similar(Z)
     else
         nothing
     end
     n_workspaces = count_workspaces(p)
     n_permuted_workspaces = count_permuted_workspaces(p)
-    workspaces = if haskey(ws, :workspaces) 
+    workspaces = if haskey(ws, :workspaces)
         [_reshape(w, size(Z)) for w in ws.workspaces]
     else
         [similar(Z) for _ in 1:n_workspaces]
     end
-    permuted_workspaces = if haskey(ws, :workspaces) 
+    permuted_workspaces = if haskey(ws, :workspaces)
         [_reshape(pw, size(Z')) for pw in ws.permuted_workspaces]
     else
         [similar(Z') for _ in 1:n_permuted_workspaces]
@@ -152,9 +152,9 @@ function _init!(
     else
         nothing
     end
-    function matrix_or_nothing(gm) 
-        if returntype(gm) isa ReturnsDenseSpatial 
-            A = fill(NaN, size(rast)) 
+    function matrix_or_nothing(gm)
+        if returntype(gm) isa ReturnsDenseSpatial
+            A = fill(NaN, size(rast))
             A[grid.id_to_grid_coordinate_list] .= 0.0
             A
         else
@@ -177,7 +177,7 @@ function _init!(
             matrix_or_nothing(gm)
         end
     end
-    
+
     verbose && println("Finished allocating...")
 
     return (; Z, Zⁱ, workspaces, permuted_workspaces, g=grid, grid, free_energy_distances, expected_costs, proximities, outputs)
@@ -186,19 +186,19 @@ function init!(
     workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, rast::RasterStack;
     verbose=false,
     grid=Grid(p, rast),
-) 
+)
     # TODO what is needed here?
     return (; grid)
 end
 
 # RSP is not used for ConnectivityMeasure, so the solver isn't used
 function solve!(
-    workspace::NamedTuple, 
-    s::MatrixSolver, 
-    cm::ConnectivityMeasure, 
+    workspace::NamedTuple,
+    s::MatrixSolver,
+    cm::ConnectivityMeasure,
     p::AbstractProblem;
     verbose=false
-) 
+)
     g = workspace.g
     return map(graph_measures(p), workspace.outputs) do gm, output
         compute(gm, p; workspace..., output)
@@ -206,11 +206,11 @@ function solve!(
 end
 function solve!(
     ws::NamedTuple,
-    solver::MatrixSolver, 
-    cm::FundamentalMeasure, 
+    solver::MatrixSolver,
+    cm::FundamentalMeasure,
     p::Problem;
     verbose=false,
-) 
+)
     ws1 = _init_sparse(ws, solver, cm, p, ws.grid; verbose)
     ws2 = _solve_dense!(ws1, solver, cm, p; verbose)
     gms = graph_measures(p)
@@ -220,10 +220,10 @@ end
 function solve!(
     ws::NamedTuple,
     solver::Union{VectorSolver,LinearSolver},
-    cm, 
+    cm,
     p::Problem;
     verbose=false,
-) 
+)
     # Get grid and preallocated vectors
     (; g) = ws
     gms = graph_measures(p)
@@ -236,7 +236,7 @@ function solve!(
     _update_targets!(target_allocs, g, 1)
     target_properties = (; targetidx, targetnodes, qt)
     target_grid = ConstructionBase.setproperties(g, target_properties)
-    ws1 =_init_sparse(ws, solver, cm, p, target_grid; verbose)
+    ws1 = _init_sparse(ws, solver, cm, p, target_grid; verbose)
     ws2 = merge(ws1, (; grid=target_grid, g=target_grid))
     target_ws = ConstructionBase.setproperties(ws2, (; g=target_grid, grid=target_grid))
     target_ws1 = _solve_dense!(target_ws, solver, cm, p; verbose)
@@ -245,7 +245,7 @@ function solve!(
 
     target_results[1] = result1
 
-    function run(i) 
+    function run(i)
         target_qualities = g.target_qualities[g.targetidx[i]]
         _update_targets!(target_allocs, g, i)
         first = false
@@ -260,7 +260,7 @@ function solve!(
     if isthreaded(solver)
         isthreaded(p) && error("threading at solver level not properly implemented")
         # Threads.@threads for i in eachindex(g.targetnodes)[2:end]
-            # run(i)
+        # run(i)
         # end
     else
         for i in eachindex(g.targetnodes)[2:end]
@@ -301,14 +301,14 @@ function _solve!(workspace, solver, cm, dt::NamedTuple{DT}, gms::NamedTuple{GMS}
     # Combine nested and flat results
     return map(GMS) do k
         f = flat[k]
-        if isnothing(f) 
+        if isnothing(f)
             map(n -> n[k], nested)
         else
             f
         end
     end |> NamedTuple{GMS}
 end
-function _solve!(workspace, solver, cm, dt, gms::NamedTuple{GMS}, p; verbose) where GMS
+function _solve!(workspace, solver, cm, dt, gms::NamedTuple{GMS}, p; verbose) where {GMS}
     (; grid, Pref, W, Z, outputs) = workspace
     # GridRSP is just a wrapper now, we can remove it later
     grsp = GridRSP(grid, cm.θ, Pref, W, Z)
@@ -329,7 +329,7 @@ function _update_targets!(a, g, i)
 end
 
 # Do all the work shared accross outputs
-function _solve_dense!(ws::NamedTuple, solver::Solver, cm, p::Problem; 
+function _solve_dense!(ws::NamedTuple, solver::Solver, cm, p::Problem;
     verbose=false
 )
     (; grid, W, Pref, A, A_init, Aadj_init, Aadj) = ws
@@ -355,7 +355,7 @@ function _solve_dense!(ws::NamedTuple, solver::Solver, cm, p::Problem;
     end
 
     grsp = GridRSP(grid, cm.θ, Pref, W, Z)
-    workspace = (; ws..., Pref, W, A, A_init, Aadj, Aadj_init, Z, Zⁱ) 
+    workspace = (; ws..., Pref, W, A, A_init, Aadj, Aadj_init, Z, Zⁱ)
 
     expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
         verbose && println("Calculating expected cost...")
@@ -415,7 +415,7 @@ isthreaded(s::VectorSolver) = s.threaded
 
 # Solver init
 init(::Union{Nothing,MatrixSolver,VectorSolver}, A::AbstractMatrix) = (; F=lu(A))
-function init(solver::VectorSolver, A::AbstractMatrix) 
+function init(solver::VectorSolver, A::AbstractMatrix)
     F = lu(A)
     if isthreaded(solver)
         nbuffers = Threads.nthreads()
@@ -475,10 +475,10 @@ function LinearAlgebra.ldiv!(s::LinearSolver, init, B; B_copy)
     end
     return B
 end
-LinearAlgebra.ldiv!(::Union{MatrixSolver,Nothing}, (; F), B; B_copy=copy(B)) = 
+LinearAlgebra.ldiv!(::Union{MatrixSolver,Nothing}, (; F), B; B_copy=copy(B)) =
     ldiv!(B, F, B_copy)
 # LinearAlgebra.ldiv!(solver::Solver, A::AbstractMatrix, B::AbstractMatrix; kw...) = 
-    # ldiv!(solver, init(solver, A), B; kw...)
+# ldiv!(solver, init(solver, A), B; kw...)
 function LinearAlgebra.ldiv!(s::VectorSolver, init, B; B_copy)
     # for SparseArrays.UMFPACK._AqldivB_kernel!(Z, F, B, transposeoptype)
     transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
@@ -504,7 +504,7 @@ end
 # graph_measure, but we want a single RasterStack.
 # So we merge the names of the two layers
 
-function _merge_to_stack(nt::NamedTuple{K}) where K
+function _merge_to_stack(nt::NamedTuple{K}) where {K}
     unique_nts = map(K) do k
         _mergename(Val{k}(), nt[k])
     end
@@ -521,14 +521,14 @@ _maybe_raster(x) = x
 _maybe_raster(x::Raster) = x
 _maybe_raster(x::Number) = Raster(fill(x), ())
 _maybe_raster(mat::Raster, g) = mat
-_maybe_raster(mat::AbstractMatrix, g::Union{Grid,GridRSP}) = 
+_maybe_raster(mat::AbstractMatrix, g::Union{Grid,GridRSP}) =
     _maybe_raster(mat, dims(g))
-_maybe_raster(mats::NamedTuple, g::Union{Grid,GridRSP}) = 
+_maybe_raster(mats::NamedTuple, g::Union{Grid,GridRSP}) =
     map(mat -> _maybe_raster(mat, g), mats)
 _maybe_raster(mat::AbstractMatrix, ::Nothing) = mat
 _maybe_raster(mat::AbstractMatrix, dims::Tuple) = Raster(mat, dims)
 
-function _mergename(::Val{K1}, gm::NamedTuple{K2}) where {K1, K2}
+function _mergename(::Val{K1}, gm::NamedTuple{K2}) where {K1,K2}
     # Combine outer and inner names with an underscore
     joinedkeys = map(K2) do k2
         Symbol(K1, :_, k2)
@@ -536,8 +536,8 @@ function _mergename(::Val{K1}, gm::NamedTuple{K2}) where {K1, K2}
     # And rename the NamedTuple
     NamedTuple{joinedkeys}(map(_maybe_raster, values(gm)))
 end
-_mergename(::Val{K1}, gm) where K1 =
-    # We keep the name as is
+_mergename(::Val{K1}, gm) where {K1} =
+# We keep the name as is
     NamedTuple{(K1,)}((_maybe_raster(gm),))
 
 function _check_z(s, Z, W, g)
@@ -549,9 +549,9 @@ end
 
 # This duplicats some logic from gridrsp
 function _setproximities!(
-    proximities::AbstractMatrix, 
-    expected_costs::AbstractMatrix, 
-    cm::ConnectivityMeasure, 
+    proximities::AbstractMatrix,
+    expected_costs::AbstractMatrix,
+    cm::ConnectivityMeasure,
     p::Problem,
     grsp::GridRSP
 )
@@ -577,7 +577,7 @@ function _reshape(A::Array, dims::Tuple{Vararg{Int}})
         v = vec(A)
         resize!(v, len)
         reshape(v, dims)
-    # else
+        # else
         # error("Arrays were not sorted. Current len: $(length(A)), needed len: $len")
     end
 end

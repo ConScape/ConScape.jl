@@ -31,24 +31,24 @@ it is possible to supply a matrix to `costs` directly. If `prune=true` (the defa
 affinity and cost matrices will be pruned to exclude unreachable nodes.
 """
 function Grid(nrows::Integer,
-              ncols::Integer;
-              affinities=nothing,
-              qualities::AbstractMatrix=ones(nrows, ncols),
-              source_qualities::AbstractMatrix=qualities,
-              target_qualities::AbstractMatrix=qualities,
-              costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
-              prune=true)
+    ncols::Integer;
+    affinities=nothing,
+    qualities::AbstractMatrix=ones(nrows, ncols),
+    source_qualities::AbstractMatrix=qualities,
+    target_qualities::AbstractMatrix=qualities,
+    costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
+    prune=true)
 
     if affinities === nothing
         throw(ArgumentError("matrix of affinities must be supplied"))
     end
 
-    if nrows*ncols != LinearAlgebra.checksquare(affinities)
+    if nrows * ncols != LinearAlgebra.checksquare(affinities)
         n = size(affinities, 1)
         throw(ArgumentError("grid size ($nrows, $ncols) is incompatible with size of affinity matrix ($n, $n)"))
     end
 
-    _source_qualities = convert(Matrix{Float64}        , _unwrap(source_qualities))
+    _source_qualities = convert(Matrix{Float64}, _unwrap(source_qualities))
     _target_qualities = convert(AbstractMatrix{Float64}, _unwrap(target_qualities))
 
     # Prune
@@ -79,7 +79,7 @@ function Grid(nrows::Integer,
     # affinity_digraph = SimpleDiGraph(affinities)
 
     # if ne(difference(cost_digraph, affinity_digraph)) > 0
-        # throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
+    # throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
     # end
 
     targetidx, targetnodes = _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
@@ -108,22 +108,22 @@ function Grid(nrows::Integer,
         return g
     end
 end
-function Grid(rast::RasterStack; 
-    qualities=get(rast, :qualities) do 
+function Grid(rast::RasterStack;
+    qualities=get(rast, :qualities) do
         ones(size(rast))
     end,
     affinities=let
-        affinities_raster = get(rast, :affinities, nothing) 
+        affinities_raster = get(rast, :affinities, nothing)
         ConScape.graph_matrix_from_raster(affinities_raster)
     end,
     source_qualities=get(rast, :source_qualities, qualities),
-    target_qualities=get(rast, :target_qualities, qualities), 
+    target_qualities=get(rast, :target_qualities, qualities),
     kw...
 )
-    Grid(size(rast)...; affinities, qualities, source_qualities, target_qualities, kw...)  
+    Grid(size(rast)...; affinities, qualities, source_qualities, target_qualities, kw...)
 end
 # TODO move functions like MinusLog to problems and pass in here
-Grid(p::AbstractProblem, rast::RasterStack; kw...) = 
+Grid(p::AbstractProblem, rast::RasterStack; kw...) =
     Grid(rast; costs=costs(p), prune=prune(p), kw...)
 
 Base.size(g::Grid) = (g.nrows, g.ncols)
@@ -160,7 +160,7 @@ _targetidx(q::Raster, grididxs::AbstractVector) = _targetidx(parent(q), grididxs
 _targetidx(q::SparseMatrixCSC, grididxs::AbstractVector) =
     CartesianIndex.(findnz(q)[1:2]...) ∩ grididxs
 
-_targetidx_and_nodes(g::Grid) = 
+_targetidx_and_nodes(g::Grid) =
     _targetidx_and_nodes(g.target_qualities, g.id_to_grid_coordinate_list)
 function _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
     targetidx = _targetidx(target_qualities, id_to_grid_coordinate_list)
@@ -168,7 +168,7 @@ function _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
     # n = findfirst(==(id_to_grid_coordinate_list[1]), targetnodes)
     # targetnodes[1] = n
     # for i in eachindex(id_to_grid_coordinate_list)[2:end]
-        # findnext(==(id_to_grid_coordinate_list[i]), targetnodes, n)
+    # findnext(==(id_to_grid_coordinate_list[i]), targetnodes, n)
     # end
     targetnodes = findall(
         t -> t ∈ targetidx,
@@ -176,7 +176,7 @@ function _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
     return targetidx, targetnodes
 end
 
-function _fill_matrix(values, g) 
+function _fill_matrix(values, g)
     M = fill(NaN, g.nrows, g.ncols)
     for (i, v) in enumerate(values)
         M[g.id_to_grid_coordinate_list[i]] = v
@@ -245,7 +245,7 @@ function largest_subgraph(g::Grid)
 
     # ndiffnodes = size(g.costmatrix, 1) - length(scci)
     # if ndiffnodes > 0
-        # @info "removing $ndiffnodes nodes from affinity and cost graphs"
+    # @info "removing $ndiffnodes nodes from affinity and cost graphs"
     # end
 
     # Extract the adjacency matrix of the largest subgraph
@@ -336,8 +336,8 @@ A helper-function, used by coarse_graining, that computes the sum of pixels with
 """
 sum_neighborhood(g, rc, npix) = sum_neighborhood(g.target_qualities, rc, npix)
 function sum_neighborhood(target_qualities::AbstractMatrix, rc, npix)
-    getrows = (rc[1] - floor(Int, npix/2)):(rc[1] + (ceil(Int, npix/2) - 1))
-    getcols = (rc[2] - floor(Int, npix/2)):(rc[2] + (ceil(Int, npix/2) - 1))
+    getrows = (rc[1]-floor(Int, npix / 2)):(rc[1]+(ceil(Int, npix / 2)-1))
+    getcols = (rc[2]-floor(Int, npix / 2)):(rc[2]+(ceil(Int, npix / 2)-1))
     # pixels outside of the landscape are encoded with NaNs but we don't want
     # the NaNs to propagate to the coarse grained values
     return sum(t -> isnan(t) ? 0.0 : t, target_qualities[getrows, getcols])
@@ -349,7 +349,7 @@ end
 Creates a sparse matrix of target qualities for the landmarks based on merging npix pixels into the center pixel.
 """
 function coarse_graining(g, npix)
-    coarse_graining(g.target_qualities, npix; 
+    coarse_graining(g.target_qualities, npix;
         id_to_grid_coordinate_list=g.id_to_grid_coordinate_list
     )
 end
@@ -365,16 +365,16 @@ function coarse_graining(M::AbstractMatrix, npix;
     id_to_grid_coordinate_list=_id_gc_list(size(M)...)
 )
     nrows, ncols = size(M)
-    getrows = (floor(Int, npix/2)+1):npix:(nrows-ceil(Int, npix/2)+1)
-    getcols = (floor(Int, npix/2)+1):npix:(ncols-ceil(Int, npix/2)+1)
+    getrows = (floor(Int, npix / 2)+1):npix:(nrows-ceil(Int, npix / 2)+1)
+    getcols = (floor(Int, npix / 2)+1):npix:(ncols-ceil(Int, npix / 2)+1)
     coarse_target_rc = Base.product(getrows, getcols)
     coarse_target_ids = vec(
         [
-            findfirst(
-                isequal(CartesianIndex(ij)),
-                id_to_grid_coordinate_list
-            ) for ij in coarse_target_rc
-        ]
+        findfirst(
+            isequal(CartesianIndex(ij)),
+            id_to_grid_coordinate_list
+        ) for ij in coarse_target_rc
+    ]
     )
     coarse_target_rc = [ij for ij in coarse_target_rc if !ismissing(ij)]
     filter!(!ismissing, coarse_target_ids)
@@ -494,4 +494,4 @@ power_mean_proximity(
     g::Grid;
     θ::Union{Real,Nothing}=nothing,
     approx::Bool=false
-) = survival_probability(g; θ=θ, approx=approx) .^ (1/θ)
+) = survival_probability(g; θ=θ, approx=approx) .^ (1 / θ)
