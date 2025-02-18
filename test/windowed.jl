@@ -77,7 +77,7 @@ end
 
 
 # BatchProblem writes files to disk and mosaics to RasterStack
-# @testset "batch problem matches windowed problem" begin
+@testset "batch problem matches windowed problem" begin
     solver = ConScape.VectorSolver()
     # Use a higher alpha to catch differences
     distance_transformation = x -> exp(-x / 50)
@@ -108,6 +108,34 @@ end
     end
     batch_jobs_result = mosaic(batch_jobs_problem; to=rast)
 
+
+    @testset "reassessment" begin
+        # There should be no jobs left
+        re1 = ConScape.reassess(batch_jobs_problem, assessment)
+        @test re1.njobs == 0
+        @test length(re1.indices) == 0
+
+        # Delete three results
+        paths = ConScape._batch_paths(batch_jobs_problem, size(assessment))
+        rm.(paths[[1, 7, 21]]; recursive=true)
+        re2 = ConScape.reassess(batch_jobs_problem, assessment)
+        @test re2.njobs == 3
+        @test length(re2.indices) == 3
+        @test re2.mask[[1, 7, 21]] == [true, true, true]
+
+        # Run the reassessment
+        for job in 1:re2.njobs
+            ConScape.solve(batch_jobs_problem, rast, job; window_indices=re2.indices)
+        end
+
+        # Again there are no jobs left
+        re3 = ConScape.reassess(batch_jobs_problem, assessment)
+        @test re3.njobs == 0
+        @test length(re3.indices) == 0
+        @test count(re3.mask) == 0
+    end
+
+
     nested_problem = ConScape.BatchProblem(windowed_problem; 
         datapath=tempname(), centersize=(10, 10)
     )
@@ -128,7 +156,32 @@ end
         ConScape.solve(nested_jobs_problem, rast, job)
     end
     nested_jobs_result = mosaic(nested_jobs_problem; to=rast)
-    plot(windowed_result)
+
+    @testset "nested reassessment" begin
+        # There should be no jobs left
+        re1 = ConScape.reassess(nested_jobs_problem, assessment)
+        @test re1.njobs == 0
+        @test length(re1.indices) == 0
+
+        # Delete three results
+        paths = ConScape._batch_paths(nested_jobs_problem, size(assessment))
+        rm.(paths[[2, 5]]; recursive=true)
+        re2 = ConScape.reassess(nested_jobs_problem, assessment)
+        @test re2.njobs == 2
+        @test length(re2.indices) == 2
+        @test re2.mask[[2, 5]] == [true, true]
+
+        # Run the reassessment
+        for job in 1:re2.njobs
+            ConScape.solve(nested_jobs_problem, rast, job; window_indices=re2.indices)
+        end
+
+        # Again there are no jobs left
+        re3 = ConScape.reassess(nested_jobs_problem, assessment)
+        @test re3.njobs == 0
+        @test length(re3.indices) == 0
+        @test count(re3.mask) == 0
+    end
 
     @test keys(windowed_result) == 
           keys(nested_result) == 

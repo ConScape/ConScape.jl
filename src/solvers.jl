@@ -564,7 +564,7 @@ function _setproximities!(
     else
         map!(dt, proximities, expected_costs)
     end
-    _maybe_set_diagonal!(proximities, g, diagvalue(p))
+    maybe_set_diagonal!(proximities, diagvalue(p), g.targetnodes)
     return proximities
 end
 

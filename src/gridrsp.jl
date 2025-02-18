@@ -340,7 +340,7 @@ function connected_habitat(grsp::Union{Grid,GridRSP,NamedTuple}, S::Matrix;
     kw...
 )
     g = grsp.g
-    maybe_set_diagonal(S, diagvalue, g.targetnodes)
+    maybe_set_diagonal!(S, diagvalue, g.targetnodes)
 
     funvec = connected_habitat(g.qs, g.qt, S; kw...)
 
@@ -608,8 +608,8 @@ function _computeproximities(grsp;
     return proximities
 end
 
-maybe_set_diagonal!(proximities, diagvalue::Nothing, targetnodes) = nothing
-function maybe_set_diagonal!(proximities, diagvalue, targetnodes)
+maybe_set_diagonal!(proximities, diagvalue::Nothing, targetnodes::AbstractVector) = nothing
+function maybe_set_diagonal!(proximities, diagvalue, targetnodes::AbstractVector)
     for (j, i) in enumerate(targetnodes)
         proximities[i, j] = diagvalue
     end

@@ -289,125 +289,6 @@ function init!(workspace::NamedTuple, p::BatchProblem, i::Int; verbose=true)
     verbose && @show size(batch_rast)
     return (; rast=batch_rast, workspace=init(p.problem, batch_rast; verbose), batch=1, window)
 end
-
-function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack; kw...)
-    # Define the ranges of each window
-    window_ranges = _window_ranges(p, rast)
-
-    # Calculate window sizes and allocations
-    window_sizes = map(vec(window_ranges)) do rs
-        window_rast = view(rast, rs...)
-        _problem_size(p, window_rast)
-    end
-
-    # Organise stats for each window into vectors
-    window_mask = map(s -> prod(s) > 0, window_sizes)
-    window_indices = eachindex(window_mask)[window_mask]
-
-    # Calculate global stats
-    njobs = count(window_mask)
-    shape = size(window_ranges)
-
-    WindowAssessment(
-        shape,
-        njobs,
-        window_sizes,
-        window_mask,
-        window_indices,
-    )
-end
-function assess(
-    p::AbstractWindowedProblem{<:AbstractWindowedProblem},
-    rast::AbstractRasterStack;
-    nthreads=Threads.nthreads(),
-    verbose=true,
-    kw...
-)
-    # Calculate outer window ranges
-    window_ranges = _window_ranges(p, rast)
-    verbose && println("Assessing $(length(window_ranges)) jobs")
-
-    # Define a channel to store window raster and reuse memory
-    channel = Channel{Any}(Threads.nthreads())
-    open(rast) do o
-        for i in 1:nthreads
-            put!(channel, _get_window_with_zeroed_buffer(getindex, p, o, first(window_ranges)))
-        end
-    end
-
-    # Define a vector for all assessment data
-    assessments = Vector{WindowAssessment}(undef, length(window_ranges))
-    # Run assessments threaded as they can take a long time for large rasters
-    Threads.@threads for i in eachindex(vec(window_ranges))
-        rs = window_ranges[i]
-        verbose && println("Assessing batch: $i, $rs")
-        window_rast = take!(channel)
-        function empty_assesment()
-            verbose && println("  No targets found")
-            WindowAssessment(;
-                shape=(0, 0),
-                njobs=0,
-                sizes=Tuple{Int,Int}[],
-                mask=Bool[],
-                indices=Int[],
-            )
-        end
-        # Just load the target window quickly first to avoid loading large rasters
-        window_view = view(rast, rs...)
-        quick_targets = window_view.target_qualities[_target_ranges(p, window_view)...]
-        assessments[i] = if count(_isvalid, quick_targets) > 0
-            # TODO 
-            window_rast = open(rast) do o
-                if map(length, rs) == size(window_rast)
-                    _get_window_with_zeroed_buffer!(window_rast, p, o, rs)
-                else
-                    _get_window_with_zeroed_buffer(getindex, p, o, rs)
-                end
-            end
-            nvalid = count(_isvalid, window_rast.target_qualities)
-            if nvalid > 0
-                verbose && println("  nvalid: $nvalid")
-                assess(p.problem, window_rast; nthreads, kw...)
-            else
-                empty_assesment()
-            end
-        else
-            empty_assesment()
-        end
-        put!(channel, window_rast)
-    end
-    # Get mask and indices
-    mask = map(a -> any(a.mask), assessments)
-    indices = eachindex(vec(mask))[mask]
-    # Calculate global stats
-    njobs = count(mask)
-    shape = size(window_ranges)
-    return NestedAssessment(shape, njobs, mask, indices, assessments)
-end
-
-"""
-    reassess(a::NestedAssessment, p::BatchProblem)
-
-Re-asses an existing nested assesment of a BatchProblem.
-
-"""
-function reassess(a::NestedAssessment, p::BatchProblem)
-    # Paths for all batches
-    paths = _batch_paths(p, size(a))
-    # Paths for non-empty batches 
-    jobpaths = paths[a.indices]
-    # Find all the jobs that havent been saved (failed)
-    idxmask = .!(isdir.(jobpaths))
-    # Generate new arrays of indices and assessments for the remaining jobs
-    indices = a.indices[idxmask]
-    mask = falses(a.shape)
-    mask[indices] .= true
-    assessments = a.assesments[idxmask] 
-    njobs = lenth(indices)
-
-    return NestedAssessment(shape, njobs, mask, indices, assessments)
-end
-
 # Mosaic the stored files to a RasterStack
 function Rasters.mosaic(p::BatchProblem; to, lazy=true, missingval=0.0, kw...)
     paths = _batch_paths(p, to)
@@ -416,13 +297,13 @@ function Rasters.mosaic(p::BatchProblem; to, lazy=true, missingval=0.0, kw...)
 end
 
 function _store(p::BatchProblem, output::RasterStack{K}, ranges; kw...) where {K}
-    dir = mkpath(_window_path(p, ranges))
+    dir = mkpath(_batch_path(p, ranges))
     return Rasters.write(joinpath(dir, ""), output;
         ext=p.ext, force=true, verbose=false, kw...
     )
 end
 
-_batch_paths(p, x::Union{RaterStack,Tuple}; window_ranges=_window_ranges(p, x)) = 
+_batch_paths(p, x::Union{RasterStack,Tuple}; window_ranges=_window_ranges(p, x)) = 
     [_batch_path(p, rs) for rs in window_ranges]
 
 function _batch_path(p, ranges::Tuple)
@@ -531,33 +412,3 @@ end
 _isvalid(x) = !isnan(x) && x > zero(x)
 
 _resolution(rast) = abs(step(lookup(rast, X)))
-
-abstract type ProblemAssessment end
-
-@kwdef struct WindowAssessment <: ProblemAssessment
-    shape::Tuple{Int,Int}
-    njobs::Int
-    sizes::Vector{Tuple{Int,Int}}
-    mask::Vector{Bool}
-    indices::Vector{Int}
-end
-
-@kwdef struct NestedAssessment <: ProblemAssessment
-    shape::Tuple{Int,Int}
-    njobs::Int
-    mask::Vector{Bool}
-    indices::Vector{Int}
-    assessments::Vector{WindowAssessment}
-end
-
-Base.size(a::AbstractAssessment) = a.shape
-function Base.show(io::IO, mime::MIME"text/plain", bs::ProblemAssessment)
-    println(io, "NestedAssessment")
-    println(io)
-    println(io, "Raster shape: $(bs.shape)")
-    println(io, "Number of jobs: $(bs.njobs)")
-    # Use SparseArrays nice matrix printing for the mask
-    println(io, "Job mask: ")
-    mask = sparse(reshape(bs.mask, bs.shape))
-    Base.print_array(io, mask)
-end

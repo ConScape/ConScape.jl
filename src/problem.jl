@@ -7,16 +7,6 @@ solver(p::AbstractProblem) = solver(p.problem)
 isthreaded(p::AbstractProblem) = false
 
 """
-    assess(p::AbstractProblem, rast::RasterStack)
-
-Assess the computational requirements of problem
-`p` for `RasterStack` `rastr`. 
-
-This can be used to indicate memory and time reequiremtents on a cluster.
-"""
-function assess end
-
-"""
     Problem(graph_measures...; solver, θ)
 
 A `Problem` specifies graph and connectivity measures,
