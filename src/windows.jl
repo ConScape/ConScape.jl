@@ -382,21 +382,36 @@ function assess(
     # Calculate global stats
     njobs = count(mask)
     shape = size(window_ranges)
-    return NestedAssessment(
-        shape,
-        njobs,
-        mask,
-        indices,
-        assessments,
-    )
+    return NestedAssessment(shape, njobs, mask, indices, assessments)
+end
+
+"""
+    reassess(a::NestedAssessment, p::BatchProblem)
+
+Re-asses an existing nested assesment of a BatchProblem.
+
+"""
+function reassess(a::NestedAssessment, p::BatchProblem)
+    # Paths for all batches
+    paths = _batch_paths(p, size(a))
+    # Paths for non-empty batches 
+    jobpaths = paths[a.indices]
+    # Find all the jobs that havent been saved (failed)
+    idxmask = .!(isdir.(jobpaths))
+    # Generate new arrays of indices and assessments for the remaining jobs
+    indices = a.indices[idxmask]
+    mask = falses(a.shape)
+    mask[indices] .= true
+    assessments = a.assesments[idxmask] 
+    njobs = lenth(indices)
+
+    return NestedAssessment(shape, njobs, mask, indices, assessments)
 end
 
 # Mosaic the stored files to a RasterStack
 function Rasters.mosaic(p::BatchProblem; to, lazy=true, missingval=0.0, kw...)
-    ranges = _window_ranges(p, to)
-    paths = [_window_path(p, rs) for rs in ranges]
+    paths = _batch_paths(p, to)
     stacks = [RasterStack(path; lazy) for path in paths if isdir(path)]
-
     return Rasters.mosaic(sum, stacks; missingval, to, kw...)
 end
 
@@ -407,7 +422,10 @@ function _store(p::BatchProblem, output::RasterStack{K}, ranges; kw...) where {K
     )
 end
 
-function _window_path(p, ranges::Tuple)
+_batch_paths(p, x::Union{RaterStack,Tuple}; window_ranges=_window_ranges(p, x)) = 
+    [_batch_path(p, rs) for rs in window_ranges]
+
+function _batch_path(p, ranges::Tuple)
     corners = map(first, ranges)
     window_dirname = "window_" * join(corners, '_')
     return joinpath(p.datapath, window_dirname)
@@ -433,8 +451,9 @@ function _window_sizes(p, rast::RasterStack; window_ranges=_window_ranges(p, ras
     end
 end
 
-function _window_ranges(p::Union{BatchProblem,WindowedProblem}, rast::AbstractRasterStack)
-    size = Base.size(rast)
+_window_ranges(p::Union{BatchProblem,WindowedProblem}, rast::AbstractRasterStack) =
+    _window_ranges(p::Union{BatchProblem,WindowedProblem}, size(rast))
+function _window_ranges(p::Union{BatchProblem,WindowedProblem}, size::Tuple)
     centersize = ConScape.centersize(p)
     buffer = ConScape.buffer(p)
     windowsize = 2buffer .+ centersize
@@ -531,6 +550,7 @@ end
     assessments::Vector{WindowAssessment}
 end
 
+Base.size(a::AbstractAssessment) = a.shape
 function Base.show(io::IO, mime::MIME"text/plain", bs::ProblemAssessment)
     println(io, "NestedAssessment")
     println(io)
