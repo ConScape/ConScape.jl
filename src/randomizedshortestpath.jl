@@ -239,14 +239,14 @@ function RSP_expected_cost(W::SparseMatrixCSC,
 
     # When threaded the solver is faster than a dense matmul
     # C̄ = if size(Z, 1) == size(Z, 2)
-        # B = mul!(workspace1, C .* W,  Z)
-        # mul!(B, C .* W,  Z)
-        # This is a dense-dense matmul... very slow
-        # Z * B
+    # B = mul!(workspace1, C .* W,  Z)
+    # mul!(B, C .* W,  Z)
+    # This is a dense-dense matmul... very slow
+    # Z * B
     # else
-        # TODO permuted workspace here for the broadcast
-        B = mul!(workspace1, CW, Z)
-        C̄ = ldiv!(solver, A_init, B; B_copy=copy!(workspace2, B))
+    # TODO permuted workspace here for the broadcast
+    B = mul!(workspace1, CW, Z)
+    C̄ = ldiv!(solver, A_init, B; B_copy=copy!(workspace2, B))
     # end
 
     C̄ ./= Z

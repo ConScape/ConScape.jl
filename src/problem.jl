@@ -7,19 +7,24 @@ solver(p::AbstractProblem) = solver(p.problem)
 isthreaded(p::AbstractProblem) = false
 
 """
-    assess(p::AbstractProblem, g)
+    assess(p::AbstractProblem, rast::RasterStack)
 
-Assess the memory and solve requirements of problem
-`p` on grid `g`. This can be used to indicate memory
-and time reequiremtents on a cluster
+Assess the computational requirements of problem
+`p` for `RasterStack` `rastr`. 
+
+This can be used to indicate memory and time reequiremtents on a cluster.
 """
 function assess end
 
 """
     Problem(graph_measures...; solver, θ)
 
-Combine multiple solve operations into a single object, 
-to be run in the same job.
+A `Problem` specifies graph and connectivity measures,
+and a method to solve them.
+
+This lazy specification allows ConScape to minimise the work
+required to calculate multiple outputs: habitat conectivity
+betweenness metrics etc can use the same memory allocations and solves.
 
 # Keywords
 
@@ -55,15 +60,17 @@ costs(p::Problem) = p.costs
 prune(p::Problem) = p.prune
 isthreaded(p::Problem) = p.threaded
 
-
+# Solve just calls `init` and `solve!`
 solve(p::Problem, rast::RasterStack; kw...) = solve!(init(p, rast; kw...), p; kw...)
+# Solve defers to specific solver methods in solvers.jl
 solve!(workspace::NamedTuple, p::Problem; kw...) =
     solve!(workspace, solver(p), connectivity_measure(p), p; kw...)
 
-# Init is conditional on solver and connectivity measure
+# `init`` calls `init!` on an empty workspace
+init(p::AbstractProblem, args...; kw...) = init!((;), p, args...; kw...)
+# init! requirements are conditional on solver and connectivity measure
+# See solvers.jl
 function init!(workspace::NamedTuple, p::Problem, rast::RasterStack; verbose=false, kw...)
     verbose && println("Initialising for $(solver(p))")
     init!(workspace, solver(p), connectivity_measure(p), p, rast; kw...)
 end
-
-init(p::AbstractProblem, args...; kw...) = init!((;), p, args...; kw...)

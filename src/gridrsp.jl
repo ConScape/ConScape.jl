@@ -30,9 +30,6 @@ function GridRSP(g::Grid; θ=nothing, verbose=true)
     return GridRSP(g, θ, Pref, W, Z)
 end
 
-_get_grid(grsp::GridRSP) = grsp.g
-_get_grid(g::Grid) = g
-
 function Base.show(io::IO, ::MIME"text/plain", grsp::GridRSP)
     print(io, summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)
 end
@@ -127,14 +124,10 @@ function edge_betweenness_kweighted(grsp::Union{GridRSP,NamedTuple};
     # TODO why does this only use `expected_cost`?
     g = grsp.g
     # S = map(distance_transformation, expected_cost(grsp))
-    # _maybe_set_diagonal!(S, g.targetnodes, diagvalue)
+    # maybe_set_diagonal!(S, diagvalue, g.targetnodes)
     proximities = map(distance_transformation, expected_cost(grsp))
 
-    if diagvalue !== nothing
-        for (j, i) in enumerate(g.targetnodes)
-            proximities[i, j] = diagvalue
-        end
-    end
+    maybe_set_diagonal!(proximities, diagvalue, g.targetnodes)
 
     betmatrix = RSP_edge_betweenness_kweighted(grsp.W, grsp.Z, g.qs, g.qt, proximities, g.targetnodes; kw...)
     return betmatrix
@@ -183,7 +176,6 @@ function mean_kl_divergence(grsp::Union{GridRSP,NamedTuple};
     end
     return mean_kl_divergence(grsp::Union{GridRSP,NamedTuple}, free_energy_distances, expected_costs; kw...)
 end
-
 function mean_kl_divergence(grsp::Union{GridRSP,NamedTuple}, free_energy_distances, expected_costs;
     workspaces=(similar(grsp.Z),), kw...
 )
@@ -317,7 +309,8 @@ function connected_habitat(
     distance_transformation=nothing,
     diagvalue=nothing,
     θ::Union{Nothing,Real}=nothing,
-    approx::Bool=false)
+    approx::Bool=false
+)
 
     # Check that distance_transformation function has been passed if no cost function is saved
     if distance_transformation === nothing && connectivity_function <: DistanceFunction
@@ -332,7 +325,7 @@ function connected_habitat(
         map!(distance_transformation, S, S)
     end
 
-    return connected_habitat(grsp, S, diagvalue=diagvalue)
+    return connected_habitat(grsp, S; diagvalue)
 end
 
 function connected_habitat(grsp::Union{GridRSP,NamedTuple}; proximities=nothing, kw...)
@@ -346,13 +339,8 @@ function connected_habitat(grsp::Union{Grid,GridRSP,NamedTuple}, S::Matrix;
     output=fill(NaN, size(grsp.g)),
     kw...
 )
-    g = _get_grid(grsp)
-
-    if diagvalue !== nothing
-        for (j, i) in enumerate(g.targetnodes)
-            S[i, j] = diagvalue
-        end
-    end
+    g = grsp.g
+    maybe_set_diagonal(S, diagvalue, g.targetnodes)
 
     funvec = connected_habitat(g.qs, g.qt, S; kw...)
 
@@ -471,7 +459,7 @@ function LinearAlgebra.eigmax(grsp::Union{GridRSP,NamedTuple};
         map!(distance_transformation, S, S)
     end
 
-    _maybe_set_diagonal!(S, g, diagvalue)
+    maybe_set_diagonal!(S, diagvalue, g.targetnodes)
 
     # quality scaled proximity matrix
     qSq = workspace2 .= g.qs .* S .* g.qt'
@@ -616,12 +604,12 @@ function _computeproximities(grsp;
         end
         map!(distance_transformation, proximities, proximities)
     end
-    _maybe_set_diagonal!(proximities, g.targetnodes, diagvalue)
+    maybe_set_diagonal!(proximities, diagvalue, g.targetnodes)
     return proximities
 end
 
-_maybe_set_diagonal!(proximities, targetnodes, diagvalue::Nothing) = nothing
-function _maybe_set_diagonal!(proximities, targetnodes, diagvalue)
+maybe_set_diagonal!(proximities, diagvalue::Nothing, targetnodes) = nothing
+function maybe_set_diagonal!(proximities, diagvalue, targetnodes)
     for (j, i) in enumerate(targetnodes)
         proximities[i, j] = diagvalue
     end

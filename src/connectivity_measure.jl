@@ -13,22 +13,26 @@ abstract type FundamentalMeasure <: ConnectivityMeasure end
 abstract type DistanceMeasure <: FundamentalMeasure end
 
 struct LeastCostDistance <: ConnectivityMeasure end
-@kwdef struct ExpectedCost{T<:Union{Real,Nothing},CM} <: DistanceMeasure
-    θ::T = nothing
-    distance_transformation::CM = nothing
+@kwdef struct ExpectedCost{T<:Union{Real,Nothing},CM,DV} <: DistanceMeasure
+    θ::T
+    distance_transformation::CM
+    diagvalue::DV = nothing
     approx::Bool = false
 end
-@kwdef struct FreeEnergyDistance{T<:Union{Real,Nothing},CM} <: DistanceMeasure
-    θ::T = nothing
-    distance_transformation::CM = nothing
+@kwdef struct FreeEnergyDistance{T<:Union{Real,Nothing},CM,DV} <: DistanceMeasure
+    θ::T
+    distance_transformation::CM
+    diagvalue::DV = nothing
     approx::Bool = false
 end
-@kwdef struct SurvivalProbability{T<:Union{Real,Nothing}} <: FundamentalMeasure
+@kwdef struct SurvivalProbability{T<:Union{Real,Nothing},DV} <: FundamentalMeasure
     θ::T = nothing
+    diagvalue::DV = nothing # TODO should be 1
     approx::Bool = false
 end
-@kwdef struct PowerMeanProximity{T<:Union{Real,Nothing}} <: FundamentalMeasure
+@kwdef struct PowerMeanProximity{T<:Union{Real,Nothing},DV} <: FundamentalMeasure
     θ::T = nothing
+    diagvalue::DV = nothing
     approx::Bool = false
 end
 
