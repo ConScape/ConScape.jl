@@ -107,24 +107,16 @@ function assess(
     window_ranges = _window_ranges(p, rast)
     verbose && println("Assessing $(length(window_ranges)) jobs")
 
-    # Define a channel to store window raster and reuse memory
-    channel = Channel{Any}(Threads.nthreads())
-    open(rast) do o
-        for i in 1:nthreads
-            put!(channel, _get_window_with_zeroed_buffer(getindex, p, o, first(window_ranges)))
-        end
-    end
-
     # Define a vector for all assessment data
     assessments = Vector{WindowAssessment}(undef, length(window_ranges))
     # Run assessments threaded as they can take a long time for large rasters
     Threads.@threads for i in eachindex(vec(window_ranges))
         rs = window_ranges[i]
         verbose && println("Assessing batch: $i, $rs")
-        window_rast = take!(channel)
-        function empty_assesment()
+        function empty_assesment(size)
             verbose && println("  No targets found")
             WindowAssessment(;
+                size,
                 shape=(0, 0),
                 njobs=0,
                 sizes=Tuple{Int,Int}[],
@@ -134,27 +126,21 @@ function assess(
         end
         # Just load the target window quickly first to avoid loading large rasters
         window_view = view(rast, rs...)
-        quick_targets = window_view.target_qualities[_target_ranges(p, window_view)...]
-        assessments[i] = if count(_isvalid, quick_targets) > 0
-            # TODO 
-            window_rast = open(rast) do o
-                if map(length, rs) == size(window_rast)
-                    _get_window_with_zeroed_buffer!(window_rast, p, o, rs)
-                else
-                    _get_window_with_zeroed_buffer(getindex, p, o, rs)
-                end
+        target_ranges = _target_ranges(p, window_view)
+        # Convert targets to bool as early as possible
+        inner_target_bools = _isvalid.(window_view.target_qualities[target_ranges...])
+        assessments[i] = if count(inner_target_bools) > 0
+            window_bools = open(window_view) do o 
+                # Convert everything to Bool up front
+                qualities = collect(_isvalid.(o.qualities))
+                target_qualities = falses(size(o))
+                target_qualities[target_ranges...] .= inner_target_bools
+                RasterStack((; qualities, target_qualities), dims(window_view))
             end
-            nvalid = count(_isvalid, window_rast.target_qualities)
-            if nvalid > 0
-                verbose && println("  nvalid: $nvalid")
-                assess(p.problem, window_rast; nthreads, kw...)
-            else
-                empty_assesment()
-            end
+            assess(p.problem, window_bools; nthreads, kw...)
         else
-            empty_assesment()
+            empty_assesment(size(window_view))
         end
-        put!(channel, window_rast)
     end
     # Get mask and indices
     mask = map(a -> any(a.mask), assessments)

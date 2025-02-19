@@ -140,11 +140,16 @@ function init!(workspace::NamedTuple, p::WindowedProblem, rast::RasterStack;
     n = min(length(window_indices), p.threaded ? Threads.nthreads() : 1)
     # VERY important to use _get_window_with_zeroed_buffer here not just index the raster
     # Otherwise memory use will be TB
-    window_workspaces = if haskey(workspace, :window_workspaces)
-        [init!(ws, p.problem; verbose) for ws in window_workspaces]
+    window_workspaces = Vector{NamedTuple}(undef, n)
+    if haskey(workspace, :window_workspaces)
+        Threads.@threads for i in 1:n
+            window_workspaces[i] = init!(workspace.window_workspaces[i], p.problem; verbose)
+        end
     else
         largest_rast = _get_window_with_zeroed_buffer(view, p, rast, window_ranges[first(sorted_indices)])
-        [init(p.problem, largest_rast; verbose) for _ in 1:n]
+        Threads.@threads for i in 1:n
+            window_workspaces[i] = init(p.problem, largest_rast; verbose)
+        end
     end
     return (; rast, window_workspaces, window_sizes, window_ranges, window_indices, sorted_indices)
 end
@@ -274,6 +279,8 @@ function init(p::BatchProblem, rast::RasterStack, i::Int;
     init!((; rast, window_ranges, window_indices), p, i; kw...)
 end
 function init!(workspace::NamedTuple, p::BatchProblem, i::Int; verbose=true)
+    @show "here"
+    @show "Initialising batch problem"
     (; window_indices, window_ranges, rast) = workspace
     # Get the raster data for job i
     window = window_ranges[window_indices[i]]
@@ -410,5 +417,6 @@ function _valid_targets(
 end
 
 _isvalid(x) = !isnan(x) && x > zero(x)
+_isvalid(x::Bool) = x
 
 _resolution(rast) = abs(step(lookup(rast, X)))

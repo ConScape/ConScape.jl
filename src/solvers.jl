@@ -61,16 +61,16 @@ end
 LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
 
 # In `init!` we allocate all large dense arrays 
-function init!(
-    ws::NamedTuple,
-    solver::MatrixSolver,
-    cm::FundamentalMeasure,
-    p::AbstractProblem,
-    rast::RasterStack;
-    verbose=false,
-)
-    _init!(ws, solver, cm, p, rast; verbose)
-end
+# function init!(
+#     ws::NamedTuple,
+#     solver::MatrixSolver,
+#     cm::FundamentalMeasure,
+#     p::AbstractProblem,
+#     rast::RasterStack;
+#     verbose=false,
+# )
+#     _init!(ws, solver, cm, p, rast; verbose)
+# end
 function init!(
     ws::NamedTuple,
     solver::Union{VectorSolver,LinearSolver},
@@ -79,6 +79,8 @@ function init!(
     rast::RasterStack;
     verbose=false,
 )
+    @show "initing" isthreaded(solver)
+
     grid = Grid(p, rast)
     workspace = _init!(ws, solver, cm, p, rast; verbose)
     if isthreaded(solver)
@@ -86,6 +88,7 @@ function init!(
         channel = Channel{typeof(workspace)}(nbuffers)
         put!(channel, workspace)
         for n in 2:nbuffers
+            @show n
             workspace_n = _init!(ws, solver, cm, p, rast; verbose, grid)
             put!(channel, workspace_N)
         end
@@ -94,6 +97,7 @@ function init!(
         return workspace
     end
 end
+
 function _init!(
     ws::NamedTuple,
     solver::Solver,
@@ -184,14 +188,14 @@ function _init!(
 
     return (; Z, Zⁱ, workspaces, permuted_workspaces, g=grid, grid, free_energy_distances, expected_costs, proximities, outputs)
 end
-function init!(
-    workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, rast::RasterStack;
-    verbose=false,
-    grid=Grid(p, rast),
-)
-    # TODO what is needed here?
-    return (; grid)
-end
+# function init!(
+#     workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, rast::RasterStack;
+#     verbose=false,
+#     grid=Grid(p, rast),
+# )
+#     # TODO what is needed here?
+#     return (; grid)
+# end
 
 # RSP is not used for ConnectivityMeasure, so the solver isn't used
 function solve!(
