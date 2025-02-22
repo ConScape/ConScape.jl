@@ -17,9 +17,10 @@ Assessment of an AbstractWindowedProblem that holds
 a `Problem`.
 
 # Fields
+- `size::Tuple{Int,Int}`: the size of the input and output RasterStack
 - `shape::Tuple{Int,Int}`: the shape of the windowing
 - `njobs::Int`: the number of problem runs required to finish the problem
-- `sizes::Vector{Tuple{Int,Int}}`: the sizes of each window
+- `grid_sizes::Vector{Tuple{Int,Int}}`: the sizes of each window
 - `mask::Vector{Bool}`: Vector{Bool} where `true` values are jobs that need to be run.
 - `indices::Vector{Int}`: the indices of `mask` that are `true`.
 """
@@ -29,7 +30,7 @@ a `Problem`.
     njobs::Int
     mask::Vector{Bool}
     indices::Vector{Int}
-    sizes::Vector{Tuple{Int,Int}}
+    grid_sizes::Vector{Tuple{Int,Int}}
 end
 
 """
@@ -39,6 +40,7 @@ Assessment of a nested `AbstractWindowedProblem`,
 that holds another `AbstractWindowedProblem`.
 
 # Fields
+- `size::Tuple{Int,Int}`: the size of the `RasterStack` input and output.
 - `shape::Tuple{Int,Int}`: the shape of the windowing
 - `njobs::Int`: the number of problem runs required to finish the problem
 - `mask::Vector{Bool}`: Vector{Bool} where `true` values are jobs that need to be run.
@@ -81,20 +83,17 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
     window_ranges = _window_ranges(p, rast)
 
     # Calculate window sizes and allocations
-    window_sizes = map(vec(window_ranges)) do rs
-        window_rast = view(rast, rs...)
-        _problem_size(p, window_rast)
-    end
+    grid_sizes = vec(_estimate_grid_sizes(p, rast; window_ranges))
 
     # Organise stats for each window into vectors
-    window_mask = map(s -> prod(s) > 0, window_sizes)
-    window_indices = eachindex(window_mask)[window_mask]
+    window_mask = map(s -> prod(s) > 0, grid_sizes)
+    non_empty_indices = eachindex(window_mask)[window_mask]
 
     # Calculate global stats
     njobs = count(window_mask)
     shape = size(window_ranges)
 
-    WindowAssessment(size(rast), shape, njobs, window_mask, window_indices, window_sizes)
+    WindowAssessment(size(rast), shape, njobs, window_mask, non_empty_indices, grid_sizes)
 end
 function assess(
     p::AbstractWindowedProblem{<:AbstractWindowedProblem},
@@ -119,7 +118,7 @@ function assess(
                 size,
                 shape=(0, 0),
                 njobs=0,
-                sizes=Tuple{Int,Int}[],
+                grid_sizes=Tuple{Int,Int}[],
                 mask=Bool[],
                 indices=Int[],
             )
@@ -130,8 +129,8 @@ function assess(
         # Convert targets to bool as early as possible
         inner_target_bools = _isvalid.(window_view.target_qualities[target_ranges...])
         assessments[i] = if count(inner_target_bools) > 0
+            # Convert everything to Bool at the batch level so window assessments are fast
             window_bools = open(window_view) do o 
-                # Convert everything to Bool up front
                 qualities = collect(_isvalid.(o.qualities))
                 target_qualities = falses(size(o))
                 target_qualities[target_ranges...] .= inner_target_bools
@@ -144,11 +143,11 @@ function assess(
     end
     # Get mask and indices
     mask = map(a -> any(a.mask), assessments)
-    indices = eachindex(vec(mask))[mask]
+    non_empty_indices = eachindex(vec(mask))[mask]
     # Calculate global stats
     njobs = count(mask)
     shape = size(window_ranges)
-    return NestedAssessment(size(rast), shape, njobs, mask, indices, assessments)
+    return NestedAssessment(size(rast), shape, njobs, mask, non_empty_indices, assessments)
 end
 
 """

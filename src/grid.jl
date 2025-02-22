@@ -1,19 +1,3 @@
-struct Grid{D<:Union{Tuple,Nothing},SQ,TQ}
-    nrows::Int
-    ncols::Int
-    affinities::SparseMatrixCSC{Float64,Int}
-    costfunction::Union{Nothing,Transformation}
-    costmatrix::SparseMatrixCSC{Float64,Int}
-    id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
-    source_qualities::SQ
-    target_qualities::TQ
-    targetidx::Vector{CartesianIndex{2}}
-    targetnodes::Vector{Int}
-    qs::Vector{Float64}
-    qt::Vector{Float64}
-    dims::D
-end
-
 """
     Grid(nrows::Integer,
               ncols::Integer;
@@ -32,6 +16,21 @@ a `costs` function that maps the `affinities` matrix to a `costs` matrix.
 Alternatively, it is possible to supply a matrix to `costs` directly. If `prune=true` (the default), 
 the affinity and cost matrices will be pruned to exclude unreachable nodes.
 """
+struct Grid{D<:Union{Tuple,Nothing},SQ,TQ}
+    nrows::Int
+    ncols::Int
+    affinities::SparseMatrixCSC{Float64,Int}
+    costfunction::Union{Nothing,Transformation}
+    costmatrix::SparseMatrixCSC{Float64,Int}
+    id_to_grid_coordinate_list::Vector{CartesianIndex{2}}
+    source_qualities::SQ
+    target_qualities::TQ
+    targetidx::Vector{CartesianIndex{2}}
+    targetnodes::Vector{Int}
+    qs::Vector{Float64}
+    qt::Vector{Float64}
+    dims::D
+end
 function Grid(nrows::Integer,
     ncols::Integer;
     affinities=nothing,
@@ -114,10 +113,7 @@ function Grid(rast::RasterStack;
     qualities=get(rast, :qualities) do
         ones(size(rast))
     end,
-    affinities=let
-        affinities_raster = get(rast, :affinities, nothing)
-        ConScape.graph_matrix_from_raster(affinities_raster)
-    end,
+    affinities=ConScape.graph_matrix_from_raster(rast.affinities),
     source_qualities=get(rast, :source_qualities, qualities),
     target_qualities=get(rast, :target_qualities, qualities),
     kw...
@@ -127,6 +123,10 @@ end
 # TODO move functions like MinusLog to problems and pass in here
 Grid(p::AbstractProblem, rast::RasterStack; kw...) =
     Grid(rast; costs=costs(p), prune=prune(p), kw...)
+
+
+# TODO: clarify this
+target_size(g::Grid) = size(g.costmatrix, 1), length(g.targetnodes)
 
 Base.size(g::Grid) = (g.nrows, g.ncols)
 DimensionalData.dims(g::Grid) = g.dims

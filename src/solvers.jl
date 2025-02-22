@@ -79,16 +79,15 @@ function init!(
     rast::RasterStack;
     verbose=false,
 )
-    @show "initing" isthreaded(solver)
-
-    grid = Grid(p, rast)
-    workspace = _init!(ws, solver, cm, p, rast; verbose)
+    # Initialise the whole grid
+    grid = Grid(p, rast; prune=false)
+    # Initialise the workspace
+    workspace = _init!(ws, solver, cm, p, grid; verbose)
     if isthreaded(solver)
         nbuffers = Thread.nthreads()
         channel = Channel{typeof(workspace)}(nbuffers)
         put!(channel, workspace)
         for n in 2:nbuffers
-            @show n
             workspace_n = _init!(ws, solver, cm, p, rast; verbose, grid)
             put!(channel, workspace_N)
         end
@@ -103,9 +102,8 @@ function _init!(
     solver::Solver,
     cm::FundamentalMeasure,
     p::AbstractProblem,
-    rast::RasterStack;
+    grid::Grid;
     verbose=false,
-    grid=Grid(p, rast)
 )
     verbose && println("Retreiving measures...")
     g = grid
@@ -146,8 +144,8 @@ function _init!(
     expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
         haskey(ws, :expected_costs) ? _reshape(ws.expected_costs, size(Z)) : similar(Z)
     else
-        nothing
-    end
+        end
+   
     free_energy_distances = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
         haskey(ws, :free_energy_distances) ? _reshape(ws.free_energy_distances, size(Z)) : similar(Z)
     else
@@ -160,7 +158,7 @@ function _init!(
     end
     function matrix_or_nothing(gm)
         if returntype(gm) isa ReturnsDenseSpatial
-            A = fill(NaN, size(rast))
+            A = fill(NaN, size(grid))
             A[grid.id_to_grid_coordinate_list] .= 0.0
             A
         else
@@ -233,10 +231,10 @@ function solve!(
     # Get grid and preallocated vectors
     (; g) = ws
     gms = graph_measures(p)
-    # Predefine min-vectors for targets (not worth putting in the workspace)
-    target_qualities = g.target_qualities[g.targetnodes[1]]
-    targetidx = g.targetidx[1:1]
+    # Predefine min-vectors targets (not worth putting in the workspace) ?
     targetnodes = g.targetnodes[1:1]
+    target_qualities = g.target_qualities[targetnodes[1]]
+    targetidx = g.targetidx[1:1]
     qt = g.qt[1:1]
     target_allocs = (; target_qualities, targetidx, targetnodes, qt)
     _update_targets!(target_allocs, g, 1)
@@ -411,9 +409,9 @@ function _init_sparse(ws::NamedTuple, solver, cm, p::Problem, grid::Grid; verbos
 end
 
 # All targets at once
-_workspace_size(::MatrixSolver, g) = size(g.costmatrix, 1), length(g.targetnodes)
+_workspace_size(::MatrixSolver, g) = target_size(g)
 # One target at a time
-_workspace_size(::Union{VectorSolver,LinearSolver}, g) = size(g.costmatrix, 1), 1
+_workspace_size(::Union{VectorSolver,LinearSolver}, g) = first(target_size(g)), 1
 
 isthreaded(s::Solver) = false
 isthreaded(s::LinearSolver) = s.threaded
