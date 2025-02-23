@@ -331,10 +331,12 @@ function solve!(ws::NamedTuple, p::BatchProblem; verbose=false, kw...)
 end
 function solve!(ws::NamedTuple, p::BatchProblem, i::Int; verbose=false)
     output = solve!(init!(ws, p, i).child_workspace, p.problem; verbose) # Store the output rasters for this job to disk and return the fiee path
-    return if ismissing(output) 
+    iw = ws.batch_indices[i]
+    ranges = ws.batch_ranges[iw]
+    return if ismissing(output)
+        println("Warning: output was empty for job $i at window $iw over ranges $ranges")
         missing
     else
-        ranges = ws.batch_ranges[ws.batch_indices[i]]
         # Clear out some memory before writing
         GC.gc()
         _store(p, output, ranges; verbose)
