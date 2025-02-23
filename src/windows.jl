@@ -100,6 +100,8 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
         end
         # Return the workspace to the channel
         put!(ch, workspace)
+        # Garbage collect for this window
+        GC.gc()
         return output, elapsed
     end
     # Run the window problems
@@ -332,7 +334,10 @@ function solve!(ws::NamedTuple, p::BatchProblem, i::Int; verbose=false)
     return if ismissing(output) 
         missing
     else
-        _store(p, output, ws.batch_ranges[ws.batch_indices[i]]; verbose)
+        ranges = ws.batch_ranges[ws.batch_indices[i]]
+        # Clear out some memory before writing
+        GC.gc()
+        _store(p, output, ranges; verbose)
     end
 end
 
