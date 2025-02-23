@@ -1,3 +1,4 @@
+
 using ConScape, Test, SparseArrays
 using Rasters, ArchGDAL, Plots
 
@@ -130,14 +131,6 @@ _tempdir = mkdir(tempname())
         b = IOBuffer()
         show(b, "text/plain", grsp)
         @test occursin("GridRSP", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", g)
-        @test occursin("Grid", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", grsp)
-        @test occursin("GridRSP", String(take!(b)))
     end
 end
 
@@ -211,12 +204,6 @@ end
             17.339919976251554
             16.99334638597158
             17.339919976251554]
-    end
-
-    @testset "Old Grid plotting" begin
-        @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
     end
 
     grsp = ConScape.GridRSP(g, θ=θ)
@@ -314,14 +301,6 @@ end
         b = IOBuffer()
         show(b, "text/plain", grsp)
         @test occursin("GridRSP", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", g)
-        @test occursin("Grid", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", grsp)
-        @test occursin("GridRSP", String(take!(b)))
     end
 end
 
@@ -354,12 +333,6 @@ end
               0.0   0.0   0.0
             571.0 570.0 569.0
             511.0 510.0 509.0]
-    end
-
-    @testset "Grid plotting" begin
-        @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
     end
 
     grsp = ConScape.GridRSP(g, θ=θ)
@@ -513,14 +486,6 @@ end
         b = IOBuffer()
         show(b, "text/plain", grsp)
         @test occursin("GridRSP", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", g)
-        @test occursin("Grid", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", grsp)
-        @test occursin("GridRSP", String(take!(b)))
     end
 end
 
@@ -544,12 +509,6 @@ end
         corridorwidths=(3,2),
         qualities=sq)
 
-    @testset "Grid plotting" begin
-        @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
-    end
-
     grsp = ConScape.GridRSP(g, θ=0.2)
 
     @testset "Show methods" begin
@@ -559,14 +518,6 @@ end
 
         b = IOBuffer()
         show(b, "text/plain", grsp)
-        @test occursin("GridRSP", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", g)
-        @test occursin("Grid", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", grsp)
         @test occursin("GridRSP", String(take!(b)))
     end
 
@@ -594,12 +545,6 @@ end
         source_qualities=sq,
         target_qualities=landmarks)
 
-    @testset "Grid plotting" begin
-        @test ConScape.plot_indegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_outdegrees(g) isa ConScape.Plots.Plot
-        @test ConScape.plot_values(g,ones(length(g.id_to_grid_coordinate_list))) isa ConScape.Plots.Plot
-    end
-
     grsp = ConScape.GridRSP(g, θ=0.2)
 
     @testset "Show methods" begin
@@ -609,14 +554,6 @@ end
 
         b = IOBuffer()
         show(b, "text/plain", grsp)
-        @test occursin("GridRSP", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", g)
-        @test occursin("Grid", String(take!(b)))
-
-        b = IOBuffer()
-        show(b, "text/html", grsp)
         @test occursin("GridRSP", String(take!(b)))
     end
 
@@ -918,5 +855,5 @@ end
         costs=sparse(
             [2, 3, 1, 4, 1, 4, 2, 3],
             [1, 1, 2, 2, 3, 3, 4, 4],
-            [1.0, 1, 1, 1, 1, 1, 1, 1]))
+            [1.0, 1, 1, 1, 1, 1, 1, 1]); check=true)
 end

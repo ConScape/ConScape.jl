@@ -160,18 +160,16 @@ already have a data folder (assumed to be successfully completed).
 """
 function reassess(p::BatchProblem, a::NestedAssessment)
     (; njobs, mask, indices) = _reassess(p, a)
-    assessments = a.assessments[indices]
-    return NestedAssessment(a.size, a.shape, njobs, mask, indices, assessments)
+    return NestedAssessment(a.size, a.shape, njobs, mask, indices, a.assessments)
 end
 function reassess(p::BatchProblem, a::WindowAssessment)
     (; njobs, mask, indices) = _reassess(p, a)
-    sizes = a.sizes[indices]
-    return WindowAssessment(a.size, a.shape, njobs, mask, indices, sizes)
+    return WindowAssessment(a.size, a.shape, njobs, mask, indices, a.grid_sizes)
 end
 
 function _reassess(p, a)
     # Paths for all batches
-    paths = _batch_paths(p, size(a))
+    paths = batch_paths(p, size(a))
     # Paths for non-empty batches 
     jobpaths = paths[a.indices]
     # Find all the jobs that havent been saved (failed)
@@ -184,3 +182,25 @@ function _reassess(p, a)
     return (; njobs, mask, indices)
 end
 
+# Accept ProblemAssessment as an argument to solve and init 
+# To used instead of keywords
+solve(p::BatchProblem, rast::RasterStack, a::ProblemAssessment, i::Int...; verbose=false) =
+    solve!(init(p, rast, a), p, i...; verbose)
+   
+function init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack, a::NestedAssessment, i::Int...; kw...) 
+    batch_ranges = _window_ranges(p, rast)
+    grid_sizes = map(a.assessments) do a_w
+        a_w.grid_sizes
+    end
+    selected_window_indices = map(a.assessments) do a_w
+        a_w.indices
+    end
+    init(p, rast, i...; 
+        batch_ranges,
+        batch_indices=a.indices,
+        grid_sizes,
+        selected_window_indices,
+    )
+end
+init(p::BatchProblem{<:Problem}, rast::RasterStack, a::WindowAssessment, i::Int...; kw...) =
+    init(p, rast, i...; batch_indices=a.indices)

@@ -1,12 +1,12 @@
 """
     Grid(nrows::Integer,
-              ncols::Integer;
-              affinities=nothing,
-              qualities::Matrix=ones(nrows, ncols),
-              source_qualities::Matrix=qualities,
-              target_qualities::AbstractMatrix=qualities,
-              costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
-              prune=true)::Grid
+         ncols::Integer;
+         affinities=nothing,
+         qualities::Matrix=ones(nrows, ncols),
+         source_qualities::Matrix=qualities,
+         target_qualities::AbstractMatrix=qualities,
+         costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
+         prune=true)::Grid
 
 Construct a `Grid` from an `affinities` matrix of type `SparseMatrixCSC`. 
 
@@ -38,7 +38,9 @@ function Grid(nrows::Integer,
     source_qualities::AbstractMatrix=qualities,
     target_qualities::AbstractMatrix=qualities,
     costs::Union{Transformation,SparseMatrixCSC{Float64,Int}}=MinusLog(),
-    prune=true)
+    prune=true,
+    check=false,
+)
 
     if affinities === nothing
         throw(ArgumentError("matrix of affinities must be supplied"))
@@ -52,6 +54,7 @@ function Grid(nrows::Integer,
     _source_qualities = convert(Matrix{Float64}, _unwrap(source_qualities))
     _target_qualities = convert(AbstractMatrix{Float64}, _unwrap(target_qualities))
 
+    # TODO use or remove this
     # Prune
     # id_to_grid_coordinate_list = if prune
     #     nonzerocells = findall(!iszero, vec(sum(affinities, dims=1)))
@@ -73,15 +76,18 @@ function Grid(nrows::Integer,
         nothing, costs
     end
 
-    # if any(t -> t < 0, nonzeros(costmatrix))
-    #     throw(ArgumentError("The cost graph can have only non-negative edge weights. Perhaps you should change the cost function?"))
-    # end
-    # cost_digraph = SimpleDiGraph(costmatrix)
-    # affinity_digraph = SimpleDiGraph(affinities)
+    # This is too expensive to calculate for small target grids
+    if check
+        if any(t -> t < 0, nonzeros(costmatrix))
+            throw(ArgumentError("The cost graph can have only non-negative edge weights. Perhaps you should change the cost function?"))
+        end
+        cost_digraph = SimpleDiGraph(costmatrix)
+        affinity_digraph = SimpleDiGraph(affinities)
 
-    # if ne(difference(cost_digraph, affinity_digraph)) > 0
-    # throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
-    # end
+        if ne(difference(cost_digraph, affinity_digraph)) > 0
+        throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
+        end
+    end
 
     targetidx, targetnodes = _targetidx_and_nodes(target_qualities, id_to_grid_coordinate_list)
     qs = [_source_qualities[i] for i in id_to_grid_coordinate_list]
@@ -120,41 +126,24 @@ function Grid(rast::RasterStack;
 )
     Grid(size(rast)...; affinities, qualities, source_qualities, target_qualities, kw...)
 end
-# TODO move functions like MinusLog to problems and pass in here
 Grid(p::AbstractProblem, rast::RasterStack; kw...) =
     Grid(rast; costs=costs(p), prune=prune(p), kw...)
 
-
-# TODO: clarify this
+# TODO: better name?
 target_size(g::Grid) = size(g.costmatrix, 1), length(g.targetnodes)
 
 Base.size(g::Grid) = (g.nrows, g.ncols)
-DimensionalData.dims(g::Grid) = g.dims
-
 function Base.show(io::IO, ::MIME"text/plain", g::Grid)
     print(io, summary(g), " of size ", g.nrows, "x", g.ncols)
 end
-# function Base.show(io::IO, ::MIME"text/html", g::Grid)
-#     t = string(summary(g), " of size ", g.nrows, "x", g.ncols)
-#     write(io, "<h4>$t</h4>")
-#     write(io, "<table><tr><td>Affinities</br>")
-#     show(io, MIME"text/html"(), plot_outdegrees(g))
-#     write(io, "</td></tr></table>")
-#     if g.source_qualities === g.target_qualities
-#         write(io, "<table><tr><td>Qualities</td></tr></table>")
-#         show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
-#     else
-#         write(io, "<table><tr><td>Source qualities")
-#         show(io, MIME"text/html"(), heatmap(g.source_qualities, yflip=true))
-#         write(io, "</td><td>Target qualities")
-#         show(io, MIME"text/html"(), heatmap(Matrix(g.target_qualities), yflip=true))
-#         write(io, "</td></tr></table>")
-#     end
-# end
+
+DimensionalData.dims(g::Grid) = g.dims
 
 _id_gc_list(nrows, ncols) = vec(collect(CartesianIndices((nrows, ncols))))
+
 _unwrap(R::Raster) = parent(R)
 _unwrap(R::AbstractMatrix) = R
+
 # Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices
 _targetidx(q::AbstractMatrix, grididxs::AbstractVector) = grididxs

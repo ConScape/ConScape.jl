@@ -57,7 +57,7 @@ solve!(workspace::NamedTuple, p::Problem; kw...) =
     solve!(workspace, solver(p), connectivity_measure(p), p; kw...)
 
 # `init`` calls `init!` on an empty workspace
-init(p::AbstractProblem, args...; kw...) = init!((;), p, args...; kw...)
+init(p::Problem, args...; kw...) = init!((;), p, args...; kw...)
 # init! requirements are conditional on solver and connectivity measure
 # See solvers.jl
 function init!(workspace::NamedTuple, p::Problem, rast::RasterStack; verbose=false, kw...)

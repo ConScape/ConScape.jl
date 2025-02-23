@@ -1,5 +1,5 @@
 using ConScape, Test, SparseArrays, LinearAlgebra
-using Rasters, ArchGDAL, Plots
+using Rasters, ArchGDAL
 using ConScape.LinearSolve
 
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
@@ -18,7 +18,7 @@ qualities_asc = ConScape.readasc(joinpath(datadir, "qualities_$landscape.asc"))[
 qualities_asc[(affinities_asc .> 0) .& isnan.(qualities_asc)] .= 1e-20
 
 graph_measures = (;
-    # betq=ConScape.BetweennessQweighted(),
+# betq=ConScape.BetweennessQweighted(),
     betk=ConScape.BetweennessKweighted(),
     ch=ConScape.ConnectedHabitat(),
     # # TODO sens=ConScape.Sensitivity(),
@@ -104,9 +104,10 @@ end
     @test assessment.njobs == 39
 
     for job in 1:assessment.njobs
-        ConScape.solve(batch_jobs_problem, rast, job; window_indices=assessment.indices)
+        ConScape.solve(batch_jobs_problem, rast, assessment, job)
     end
     batch_jobs_result = mosaic(batch_jobs_problem; to=rast)
+    batch_jobs_result.betk
 
 
     @testset "reassessment" begin
@@ -116,7 +117,7 @@ end
         @test length(re1.indices) == 0
 
         # Delete three results
-        paths = ConScape._batch_paths(batch_jobs_problem, size(assessment))
+        paths = ConScape.batch_paths(batch_jobs_problem, size(assessment))
         rm.(paths[[1, 7, 21]]; recursive=true)
         re2 = ConScape.reassess(batch_jobs_problem, assessment)
         @test re2.njobs == 3
@@ -125,7 +126,7 @@ end
 
         # Run the reassessment
         for job in 1:re2.njobs
-            ConScape.solve(batch_jobs_problem, rast, job; window_indices=re2.indices)
+            ConScape.solve(batch_jobs_problem, rast, re2, job)
         end
 
         # Again there are no jobs left
@@ -148,8 +149,8 @@ end
         datapath=tempname(), centersize=(10, 10)
     )
     # Try one
-    @time workspace = ConScape.init(nested_jobs_problem, rast, 5)
-    @time ConScape.solve!(workspace, nested_jobs_problem)
+    @time workspace = ConScape.init(nested_jobs_problem, rast)
+    @time ConScape.solve!(workspace, nested_jobs_problem, 5)
 
     assessment = ConScape.assess(nested_jobs_problem, rast);
     for job in 1:assessment.njobs
@@ -164,16 +165,16 @@ end
         @test length(re1.indices) == 0
 
         # Delete three results
-        paths = ConScape._batch_paths(nested_jobs_problem, size(assessment))
+        paths = ConScape.batch_paths(nested_jobs_problem, size(assessment))
         rm.(paths[[2, 5]]; recursive=true)
         re2 = ConScape.reassess(nested_jobs_problem, assessment)
         @test re2.njobs == 2
         @test length(re2.indices) == 2
         @test re2.mask[[2, 5]] == [true, true]
-
+        re2
         # Run the reassessment
         for job in 1:re2.njobs
-            ConScape.solve(nested_jobs_problem, rast, job; window_indices=re2.indices)
+            ConScape.solve(nested_jobs_problem, rast, re2, job)
         end
 
         # Again there are no jobs left
@@ -190,13 +191,15 @@ end
           keys(nested_jobs_result) == 
           Tuple(sort(collect(expected_layers)))
 
-    @test all(permutedims(batch_jobs_result.ch) .=== permutedims(batch_result.ch))
-    @test all(permutedims(batch_jobs_result.betk) .=== permutedims(batch_result.betk))
-
     # These may be approximate after mosaic order changes
     compare(a, b) = isnan(a) && isnan(b) || isapprox(a, b)
+    
+    @test all(batch_jobs_result.ch .=== batch_result.ch)
+    @test all(batch_jobs_result.betk .=== batch_result.betk)
     @test all(compare.(permutedims(batch_result.ch), windowed_result.ch))
     @test all(compare.(permutedims(batch_result.betk), windowed_result.betk))
+    @test all(compare.(nested_result.betk, nested_jobs_result.betk))
+    @test all(compare.(nested_result.ch, nested_jobs_result.ch))
 
     # TODO: there are some tiny fp differences in the nested result
     @test all(map(nested_result.ch, batch_result.ch) do n, b

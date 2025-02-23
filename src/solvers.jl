@@ -61,16 +61,17 @@ end
 LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
 
 # In `init!` we allocate all large dense arrays 
-# function init!(
-#     ws::NamedTuple,
-#     solver::MatrixSolver,
-#     cm::FundamentalMeasure,
-#     p::AbstractProblem,
-#     rast::RasterStack;
-#     verbose=false,
-# )
-#     _init!(ws, solver, cm, p, rast; verbose)
-# end
+function init!(
+    ws::NamedTuple,
+    solver::MatrixSolver,
+    cm::FundamentalMeasure,
+    p::AbstractProblem,
+    rast::RasterStack;
+    verbose=false,
+)
+    grid = Grid(p, rast)
+    _init!(ws, solver, cm, p, grid; verbose)
+end
 function init!(
     ws::NamedTuple,
     solver::Union{VectorSolver,LinearSolver},
@@ -80,7 +81,7 @@ function init!(
     verbose=false,
 )
     # Initialise the whole grid
-    grid = Grid(p, rast; prune=false)
+    grid = Grid(p, rast)
     # Initialise the workspace
     workspace = _init!(ws, solver, cm, p, grid; verbose)
     if isthreaded(solver)

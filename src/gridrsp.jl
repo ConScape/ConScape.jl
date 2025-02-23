@@ -30,6 +30,7 @@ function GridRSP(g::Grid; θ=nothing, verbose=true)
     return GridRSP(g, θ, Pref, W, Z)
 end
 
+Base.size(grsp::GridRSP) = size(grsp.g)
 function Base.show(io::IO, ::MIME"text/plain", grsp::GridRSP)
     print(io, summary(grsp), " of size ", grsp.g.nrows, "x", grsp.g.ncols)
 end
@@ -46,7 +47,7 @@ DimensionalData.dims(grsp::GridRSP) = dims(grsp.g)
 Compute RSP betweenness of all nodes weighted by source and target qualities.
 """
 function betweenness_qweighted(grsp::Union{GridRSP,NamedTuple};
-    output=fill(NaN, g.nrows, g.ncols),
+    output=_init_output(grsp.g),
     kw...
 )
     g = grsp.g
@@ -88,7 +89,7 @@ of the matrix of proximities, i.e. after applying the inverse cost function to t
 matrix of distances. When nothing is specified, the diagonal elements won't be adjusted.
 """
 function betweenness_kweighted(grsp::Union{GridRSP,NamedTuple};
-    output=fill(NaN, size(grsp.g)),
+    output=_init_output(grsp.g),
     proximities=nothing,
     kw...
 )
@@ -103,6 +104,7 @@ function betweenness_kweighted(grsp::Union{GridRSP,NamedTuple};
 
     return _maybe_raster(output, grsp)
 end
+
 
 """
     edge_betweenness_kweighted(grsp::GridRSP; [distance_transformation=inv(grsp.g.costfunction), diagvalue=nothing])::SparseMatrixCSC{Float64,Int}
@@ -328,18 +330,19 @@ function connected_habitat(
     return connected_habitat(grsp, S; diagvalue)
 end
 
-function connected_habitat(grsp::Union{GridRSP,NamedTuple}; proximities=nothing, kw...)
+function connected_habitat(grsp::GridRSP; proximities=nothing, kw...)
     if isnothing(proximities)
         proximities = _computeproximities(grsp; kw...)
     end
     return connected_habitat(grsp, proximities; kw...)
 end
-function connected_habitat(grsp::Union{Grid,GridRSP,NamedTuple}, S::Matrix;
+connected_habitat(grsp::GridRSP, S::Matrix; kw...) =
+    connected_habitat(grsp.g, S; kw...)
+function connected_habitat(g::Grid, S::Matrix;
     diagvalue::Union{Nothing,Real}=nothing,
-    output=fill(NaN, size(grsp.g)),
+    output=_init_output(g),
     kw...
 )
-    g = grsp.g
     maybe_set_diagonal!(S, diagvalue, g.targetnodes)
 
     funvec = connected_habitat(g.qs, g.qt, S; kw...)
@@ -348,10 +351,9 @@ function connected_habitat(grsp::Union{Grid,GridRSP,NamedTuple}, S::Matrix;
         output[ij] = x
     end
 
-    return _maybe_raster(output, grsp)
+    return _maybe_raster(output, g)
 end
-function connected_habitat(grsp::Union{GridRSP,NamedTuple},
-    cell::CartesianIndex{2};
+function connected_habitat(grsp::GridRSP, cell::CartesianIndex{2};
     distance_transformation=nothing,
     diagvalue=nothing,
     avalue=floatmin(), # smallest non-zero value
@@ -561,7 +563,7 @@ function criticality(grsp::Union{GridRSP,NamedTuple};
     distance_transformation=nothing,
     diagvalue=nothing,
     avalue=floatmin(),
-    output=fill(NaN, size(grsp.g)),
+    output=_init_output(grsp.g),
     qˢvalue=0.0,
     qᵗvalue=0.0,
     kw...
@@ -613,4 +615,10 @@ function maybe_set_diagonal!(proximities, diagvalue, targetnodes::AbstractVector
     for (j, i) in enumerate(targetnodes)
         proximities[i, j] = diagvalue
     end
+end
+
+function _init_output(g::Grid)
+    o = fill(eltype(g.affinities)(NaN), size(g))
+    o[g.id_to_grid_coordinate_list] .= 0
+    return o
 end
