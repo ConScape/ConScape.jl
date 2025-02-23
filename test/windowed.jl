@@ -36,7 +36,7 @@ solve(problem, rast; verbose=true)
 
 @testset "target mosaicing matches original" begin
     windowed_problem = ConScape.WindowedProblem(problem; 
-        buffer=10, centersize=5, threaded=false
+        buffer=10, centersize=5, threaded=true,
     )
     @test collect(ConScape._window_ranges(windowed_problem, rast)) == [
         (1:25, 1:25)   (1:25, 6:30)   (1:25, 11:35)   (1:25, 16:40)   (1:25, 21:45)   (1:25, 26:50)   (1:25, 31:55)   (1:25, 36:59)

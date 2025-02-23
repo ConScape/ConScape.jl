@@ -76,13 +76,11 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
         put!(ch, ws)
     end
     # Set up channels for threading
-    # Define empty outputs
-    output_stacks = Vector{Union{RasterStack,Missing}}(undef, length(sorted_indices))
     # Define a runner for threaded/non-threaded operation
     function run(i, iw)
         # Get a window range
         window = window_ranges[iw]
-        verbose && println("Running job $iw on ranges $window and thread $(Threads.threadid())")
+        verbose && println("Running job $i - $iw for ranges $window and thread $(Threads.threadid())")
         # verbose && println("Solving window $i $window ")
         window_rast = _get_window_with_zeroed_buffer(view, p, rast, window)
         # Initialise the window using stored memory
@@ -93,29 +91,25 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
         # Solve for the window
         verbose && println("Solving window $window...")
         grid = workspace_initialised.grid
-        output_stacks[i] = if prod(target_size(grid)) > 0
-            solve!(workspace_initialised, p.problem)
-        else
-            missing
+        elapsed = @elapsed begin
+            output = if prod(target_size(grid)) > 0
+                solve!(workspace_initialised, p.problem)
+            else
+                missing
+            end
         end
         # Return the workspace to the channel
         put!(ch, workspace)
+        return output, elapsed
     end
-    window_elapsed = Vector{Pair{Float64,Int64}}(undef, length(sorted_indices))
     # Run the window problems
-    if p.threaded
-        Threads.@threads for i in eachindex(sorted_indices)
-            iw = sorted_indices[i]
-            e = @elapsed run(i, iw)
-            window_elapsed[i] = e => iw
-        end
+    out_elapsed = if p.threaded
+        fetch.([Threads.@spawn run(i, sorted_indices[i]) for i in eachindex(sorted_indices)])
     else
-        for i in eachindex(sorted_indices)
-            iw = sorted_indices[i]
-            e = @elapsed run(i, iw)
-            window_elapsed[i] = e => iw
-        end
+        [run(i, sorted_indices[i]) for i in eachindex(sorted_indices)]
     end
+    output_stacks = first.(out_elapsed)
+    window_elapsed = last.(out_elapsed)
     # Maybe mosaic the output
     return if mosaic_return
         t = time()
