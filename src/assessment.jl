@@ -151,7 +151,7 @@ function assess(
 end
 
 """
-    reassess(a::NestedAssessment, p::BatchProblem)
+    reassess(p::BatchProblem, a::NestedAssessment)
 
 Re-asses an existing nested assesment of a BatchProblem.
 
