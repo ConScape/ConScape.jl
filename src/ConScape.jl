@@ -9,7 +9,13 @@ using ProgressLogging
 using Rasters
 using SimpleWeightedGraphs
 using SparseArrays
+using SortTileRecursiveTree
+
+import GeometryOps as GO
+import GeometryOps.GeoInterface as GI
+
 using Rasters.DimensionalData
+using Rasters.Extents
 
 import CommonSolve
 import CommonSolve: solve, init
