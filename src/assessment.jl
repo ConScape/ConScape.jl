@@ -1,3 +1,23 @@
+
+struct AssessmentWarnings
+    source_qualities_nan_found::Bool
+    target_qualities_nan_found::Bool
+end
+
+function Base.:(|)(aw1::AssessmentWarnings, aw2)
+    AssessmentWarnings(
+        aw1.source_qualities_nan_found | aw2.source_qualities_nan_found,
+        aw1.target_qualities_nan_found | aw2.target_qualities_nan_found,    
+    )
+end
+function Base.:(&)(aw1::AssessmentWarnings, aw2)
+    AssessmentWarnings(
+        aw1.source_qualities_nan_found & aw2.source_qualities_nan_found,
+        aw1.target_qualities_nan_found & aw2.target_qualities_nan_found,    
+    )
+end
+Base.any(aw::AssessmentWarnings) = aw.source_qualities_nan_found | aw.target_qualities_nan_found
+
 """
     ProblemAssessment
 
@@ -30,6 +50,7 @@ a `Problem`.
     njobs::Int
     mask::Vector{Bool}
     indices::Vector{Int}
+    warnings::AssessmentWarnings
     grid_sizes::Vector{Tuple{Int,Int}}
 end
 
@@ -53,18 +74,22 @@ that holds another `AbstractWindowedProblem`.
     njobs::Int
     mask::Vector{Bool}
     indices::Vector{Int}
+    warnings::AssessmentWarnings
     assessments::Vector{WindowAssessment}
 end
 
-function Base.show(io::IO, mime::MIME"text/plain", bs::ProblemAssessment)
+function Base.show(io::IO, mime::MIME"text/plain", a::ProblemAssessment)
     println(io, "NestedAssessment")
     println(io)
-    println(io, "Raster shape: $(bs.shape)")
-    println(io, "Number of jobs: $(bs.njobs)")
+    println(io, "Shape: $(a.shape)")
+    println(io, "Number of jobs: $(a.njobs)")
     # Use SparseArrays nice matrix printing for the mask
     println(io, "Job mask: ")
-    mask = sparse(reshape(bs.mask, bs.shape))
+    mask = sparse(reshape(a.mask, a.shape))
     Base.print_array(io, mask)
+    if any(a.warnings) 
+        show(io, mime, a.warnings)
+    end
 end
 
 
@@ -78,12 +103,28 @@ This can be used to indicate memory and time reequiremtents on a cluster.
 """
 function assess end
 
-function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack; kw...)
+function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack; 
+    inner_target_bools=nothing,
+    target_ranges=_target_ranges(p, rast),
+    kw...
+)
     # Define the ranges of each window
     window_ranges = _window_ranges(p, rast)
 
+    # Convert everything to Bool at the batch level so window assessments are fast
+    inner_targets = view(rast.target_qualities, target_ranges...)
+    warnings = AssessmentWarnings(
+        any(isnan, rast.qualities),
+        any(isnan, inner_targets),
+    )
+    inner_target_bools = isnothing(inner_target_bools) ? _isvalid.(inner_targets) : inner_target_bools
+    qualities = _isvalid.(rast.qualities)
+    target_qualities = falses(size(rast))
+    target_qualities[target_ranges...] .= inner_target_bools
+    bool_rast = RasterStack((; qualities, target_qualities), dims(rast))
+
     # Calculate window sizes and allocations
-    grid_sizes = vec(_estimate_grid_sizes(p, rast; window_ranges))
+    grid_sizes = vec(_estimate_grid_sizes(p, bool_rast; window_ranges))
 
     # Organise stats for each window into vectors
     window_mask = map(s -> prod(s) > 0, grid_sizes)
@@ -93,7 +134,7 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
     njobs = count(window_mask)
     shape = size(window_ranges)
 
-    WindowAssessment(size(rast), shape, njobs, window_mask, non_empty_indices, grid_sizes)
+    WindowAssessment(size(rast), shape, njobs, window_mask, non_empty_indices, warnings, grid_sizes)
 end
 function assess(
     p::AbstractWindowedProblem{<:AbstractWindowedProblem},
@@ -118,27 +159,22 @@ function assess(
                 size,
                 shape=(0, 0),
                 njobs=0,
-                grid_sizes=Tuple{Int,Int}[],
                 mask=Bool[],
                 indices=Int[],
+                warnings=AssessmentWarnings(false, false),
+                grid_sizes=Tuple{Int,Int}[],
             )
         end
-        # Just load the target window quickly first to avoid loading large rasters
-        window_view = view(rast, rs...)
-        target_ranges = _target_ranges(p, window_view)
+        # We only need qualities for the assessment
+        window_rast = rast[(:qualities, :target_qualities)][rs...]
+        target_ranges = _target_ranges(p, window_rast)
         # Convert targets to bool as early as possible
-        inner_target_bools = _isvalid.(window_view.target_qualities[target_ranges...])
+        inner_targets = view(window_rast.target_qualities, target_ranges...)
+        inner_target_bools = _isvalid.(inner_targets)
         assessments[i] = if count(inner_target_bools) > 0
-            # Convert everything to Bool at the batch level so window assessments are fast
-            window_bools = open(window_view) do o 
-                qualities = collect(_isvalid.(o.qualities))
-                target_qualities = falses(size(o))
-                target_qualities[target_ranges...] .= inner_target_bools
-                RasterStack((; qualities, target_qualities), dims(window_view))
-            end
-            assess(p.problem, window_bools; nthreads, kw...)
+            assess(p.problem, window_rast; inner_target_bools, target_ranges, nthreads, kw...)
         else
-            empty_assesment(size(window_view))
+            empty_assesment(size(window_rast))
         end
     end
     # Get mask and indices
@@ -147,7 +183,8 @@ function assess(
     # Calculate global stats
     njobs = count(mask)
     shape = size(window_ranges)
-    return NestedAssessment(size(rast), shape, njobs, mask, non_empty_indices, assessments)
+    warnings = reduce(|, (a.warnings for a in assessments))
+    return NestedAssessment(size(rast), shape, njobs, mask, non_empty_indices, warnings, assessments)
 end
 
 """
@@ -159,12 +196,15 @@ The returned `NestedAssessment` will exclude any jobs that
 already have a data folder (assumed to be successfully completed).
 """
 function reassess(p::BatchProblem, a::NestedAssessment)
-    (; njobs, mask, indices) = _reassess(p, a)
-    return NestedAssessment(a.size, a.shape, njobs, mask, indices, a.assessments)
+    patch = _reassess(p, a)
+    a1 = ConstructionBase.setproperties(a, patch)
+    # Update nan_target_found from remaining indices
+    warnings = reduce(|, (a1.assessments[i].warnings for i in a1.indices))
+    return ConstructionBase.setproperties(a1, (; warnings))
 end
 function reassess(p::BatchProblem, a::WindowAssessment)
-    (; njobs, mask, indices) = _reassess(p, a)
-    return WindowAssessment(a.size, a.shape, njobs, mask, indices, a.grid_sizes)
+    patch = _reassess(p, a)
+    return ConstructionBase.setproperties(a, patch)
 end
 
 function _reassess(p, a)
