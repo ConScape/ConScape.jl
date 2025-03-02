@@ -365,8 +365,8 @@ end
 function init!(ws::NamedTuple, p::BatchProblem{<:WindowedProblem}, i::Int; verbose=false)
     (; rast, batch_ranges, batch_indices, selected_window_indices, grid_sizes) = ws
     # Get the raster data for job i
-    verbose && @show ranges
     ranges = batch_ranges[batch_indices[i]]
+    verbose && @show ranges
     batch_rast = rast[ranges...]
     # Get window ranges for batch i
     window_ranges = _window_ranges(p.problem, batch_rast)
@@ -387,13 +387,6 @@ function init!(ws::NamedTuple, p::BatchProblem{<:Problem}, i::Int; verbose=false
     child_workspace = init(p.problem, batch_rast; verbose)
     return merge(ws, (; child_workspace, batch=i))
 end
-
-function Rasters.mosaic(p::BatchProblem; to, lazy=true, missingval=0.0, kw...)
-    paths = batch_paths(p, to)
-    stacks = [RasterStack(path; lazy) for path in paths if isdir(path)]
-    return Rasters.mosaic(sum, stacks; missingval, to, kw...)
-end
-
 
 function _store(p::BatchProblem, output::RasterStack{K}, ranges::Tuple; kw...) where {K}
     dir = mkpath(_batch_path(p, ranges))
