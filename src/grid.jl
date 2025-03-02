@@ -31,9 +31,10 @@ struct Grid{D<:Union{Tuple,Nothing},SQ,TQ}
     qt::Vector{Float64}
     dims::D
 end
-function Grid(nrows::Integer,
+function Grid(
+    nrows::Integer,
     ncols::Integer;
-    affinities=nothing,
+    affinities,
     qualities::AbstractMatrix=ones(nrows, ncols),
     source_qualities::AbstractMatrix=qualities,
     target_qualities::AbstractMatrix=qualities,
@@ -41,18 +42,13 @@ function Grid(nrows::Integer,
     prune=true,
     check=false,
 )
-
-    if affinities === nothing
-        throw(ArgumentError("matrix of affinities must be supplied"))
-    end
-
     if nrows * ncols != LinearAlgebra.checksquare(affinities)
         n = size(affinities, 1)
         throw(ArgumentError("grid size ($nrows, $ncols) is incompatible with size of affinity matrix ($n, $n)"))
     end
 
-    _source_qualities = convert(Matrix{Float64}, _unwrap(source_qualities))
-    _target_qualities = convert(AbstractMatrix{Float64}, _unwrap(target_qualities))
+    _source_qualities = _prepare_qualities(source_qualities)
+    _target_qualities = _prepare_qualities(target_qualities)
 
     # TODO use or remove this
     # Prune
@@ -85,7 +81,7 @@ function Grid(nrows::Integer,
         affinity_digraph = SimpleDiGraph(affinities)
 
         if ne(difference(cost_digraph, affinity_digraph)) > 0
-        throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
+            throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
         end
     end
 
@@ -141,8 +137,12 @@ DimensionalData.dims(g::Grid) = g.dims
 
 _id_gc_list(nrows, ncols) = vec(collect(CartesianIndices((nrows, ncols))))
 
-_unwrap(R::Raster) = parent(R)
-_unwrap(R::AbstractMatrix) = R
+_prepare_qualities(A::AbstractMatrix) = _no_nan_f64.(_unwrap_raster(A))
+
+_no_nan_f64(x) = isnan(x) ? 0.0 : Float64(x)
+
+_unwrap_raster(R::Raster) = parent(R)
+_unwrap_raster(R::AbstractMatrix) = R
 
 # Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices
