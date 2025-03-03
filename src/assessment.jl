@@ -4,19 +4,20 @@ struct AssessmentWarnings
     target_qualities_nan_found::Bool
 end
 
-function Base.:(|)(aw1::AssessmentWarnings, aw2)
+function Base.:(|)(aw1::AssessmentWarnings, aw2::AssessmentWarnings)
     AssessmentWarnings(
         aw1.source_qualities_nan_found | aw2.source_qualities_nan_found,
         aw1.target_qualities_nan_found | aw2.target_qualities_nan_found,    
     )
 end
-function Base.:(&)(aw1::AssessmentWarnings, aw2)
+function Base.:(&)(aw1::AssessmentWarnings, aw2::AssessmentWarnings)
     AssessmentWarnings(
         aw1.source_qualities_nan_found & aw2.source_qualities_nan_found,
         aw1.target_qualities_nan_found & aw2.target_qualities_nan_found,    
     )
 end
 Base.any(aw::AssessmentWarnings) = aw.source_qualities_nan_found | aw.target_qualities_nan_found
+Base.all(aw::AssessmentWarnings) = aw.source_qualities_nan_found & aw.target_qualities_nan_found
 
 """
     ProblemAssessment
@@ -190,16 +191,18 @@ end
 """
     reassess(p::BatchProblem, a::NestedAssessment)
 
-Re-asses an existing nested assesment of a BatchProblem.
+Re-asses an existing nested assesment of a [`BatchProblem`](@ref).
 
-The returned `NestedAssessment` will exclude any jobs that 
+The returned `NestedAssessment` will exclude any batches that 
 already have a data folder (assumed to be successfully completed).
 """
 function reassess(p::BatchProblem, a::NestedAssessment)
     patch = _reassess(p, a)
     a1 = ConstructionBase.setproperties(a, patch)
     # Update nan_target_found from remaining indices
-    warnings = reduce(|, (a1.assessments[i].warnings for i in a1.indices))
+    warnings = reduce(|, (a1.assessments[i].warnings for i in a1.indices); 
+        init=AssessmentWarnings(false, false)
+    )
     return ConstructionBase.setproperties(a1, (; warnings))
 end
 function reassess(p::BatchProblem, a::WindowAssessment)
