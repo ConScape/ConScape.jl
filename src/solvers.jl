@@ -522,17 +522,6 @@ function _merge_to_stack(nt::NamedTuple{K}) where {K}
     end
 end
 
-_maybe_raster(x) = x
-_maybe_raster(x::Raster) = x
-_maybe_raster(x::Number) = Raster(fill(x), ())
-_maybe_raster(mat::Raster, g) = mat
-_maybe_raster(mat::AbstractMatrix, g::Union{Grid,GridRSP}) =
-    _maybe_raster(mat, dims(g))
-_maybe_raster(mats::NamedTuple, g::Union{Grid,GridRSP}) =
-    map(mat -> _maybe_raster(mat, g), mats)
-_maybe_raster(mat::AbstractMatrix, ::Nothing) = mat
-_maybe_raster(mat::AbstractMatrix, dims::Tuple) = Raster(mat, dims)
-
 function _mergename(::Val{K1}, gm::NamedTuple{K2}) where {K1,K2}
     # Combine outer and inner names with an underscore
     joinedkeys = map(K2) do k2

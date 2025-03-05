@@ -339,7 +339,8 @@ function solve!(ws::NamedTuple, p::BatchProblem, i::Int; verbose=false)
     else
         # Clear out some memory before writing
         GC.gc()
-        _store(p, output, ranges; verbose)
+        # Write raster to disk
+        _write(p, output, ranges; verbose)
     end
 end
 
@@ -388,7 +389,7 @@ function init!(ws::NamedTuple, p::BatchProblem{<:Problem}, i::Int; verbose=false
     return merge(ws, (; child_workspace, batch=i))
 end
 
-function _store(p::BatchProblem, output::RasterStack{K}, ranges::Tuple; kw...) where {K}
+function _write(p::BatchProblem, output::RasterStack{K}, ranges::Tuple; kw...) where {K}
     dir = mkpath(_batch_path(p, ranges))
     return Rasters.write(joinpath(dir, ""), output;
         ext=p.ext, force=true, verbose=false, kw...

@@ -201,3 +201,15 @@ function _keywords(o::T) where T
     vals = map(f -> getfield(o, f), fieldnames(T))
     return NamedTuple{fieldnames(T)}(vals) 
 end
+
+_maybe_raster(x) = x
+_maybe_raster(x::Raster) = x
+_maybe_raster(x::T) where T<:Number = Raster(fill(x), (); missingval=T(NaN))
+_maybe_raster(mat::Raster, g) = mat
+_maybe_raster(mat::AbstractMatrix, g::Union{Grid,GridRSP}) =
+    _maybe_raster(mat, dims(g))
+_maybe_raster(mats::NamedTuple, g::Union{Grid,GridRSP}) =
+    map(mat -> _maybe_raster(mat, g), mats)
+_maybe_raster(mat::AbstractMatrix, ::Nothing) = mat
+_maybe_raster(mat::AbstractMatrix{T}, dims::Tuple) where T =
+    Raster(mat, dims; missingval=T(NaN))
