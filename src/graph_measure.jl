@@ -6,19 +6,22 @@ These are lazy definitions of conscape functions.
 """
 abstract type GraphMeasure end
 
+abstract type SpatialMeasure <: GraphMeasure end
 abstract type TopologicalMeasure <: GraphMeasure end
-abstract type BetweennessMeasure <: GraphMeasure end
-abstract type PerturbationMeasure <: GraphMeasure end
+abstract type BetweennessMeasure <: SpatialMeasure end
+abstract type PerturbationMeasure <: SpatialMeasure end
 abstract type PathDistributionMeasure <: GraphMeasure end
 
 # Concrete GraphMeasure structs
 
 struct BetweennessQweighted <: BetweennessMeasure end
-@kwdef struct BetweennessKweighted <: BetweennessMeasure end
-struct EdgeBetweennessQweighted <: BetweennessMeasure end
-@kwdef struct EdgeBetweennessKweighted <: BetweennessMeasure end
+struct BetweennessKweighted <: BetweennessMeasure end
 
-@kwdef struct ConnectedHabitat <: GraphMeasure end
+abstract type EdgeBetweennessMeasure <: BetweennessMeasure end
+struct EdgeBetweennessQweighted <: EdgeBetweennessMeasure end
+struct EdgeBetweennessKweighted <: EdgeBetweennessMeasure end
+
+struct ConnectedHabitat <: SpatialMeasure end
 
 @kwdef struct Criticality{AV,QT,QS} <: PerturbationMeasure
     avalue::AV = floatmin()
@@ -75,15 +78,10 @@ struct ReturnsOther{F} <: ReturnType
 end
 
 # These allow calculation of return allocations
-returntype(::EdgeBetweennessQweighted) = ReturnsSparse()
-returntype(::EdgeBetweennessKweighted) = ReturnsSparse()
-returntype(::BetweennessQweighted) = ReturnsDenseSpatial()
-returntype(::BetweennessKweighted) = ReturnsDenseSpatial()
-returntype(::ConnectedHabitat) = ReturnsDenseSpatial()
-returntype(::Criticality) = ReturnsDenseSpatial()
+returntype(::SpatialMeasure) = ReturnsDenseSpatial()
+returntype(::EdgeBetweennessMeasure) = ReturnsSparse()
 returntype(::EigMax) = ReturnsOther((n, m) -> n + m)
-returntype(::MeanLeastCostKullbackLeiblerDivergence) = ReturnsScalar()
-returntype(::MeanKullbackLeiblerDivergence) = ReturnsScalar()
+returntype(::PerturbationMeasure) = ReturnsScalar()
 
 # A trait for connectivity requirement
 needs_connectivity(::GraphMeasure) = false
@@ -94,7 +92,6 @@ needs_connectivity(::ConnectedHabitat) = true
 needs_connectivity(::Criticality) = true
 
 # Workspace allocation traits
-return_type(::GraphMeasure) = false
 needs_inv(::GraphMeasure) = false
 needs_inv(::BetweennessMeasure) = true
 needs_Z(::GraphMeasure) = true
@@ -111,7 +108,7 @@ needs_expected_cost(::EdgeBetweennessKweighted) = true
 needs_expected_cost(::MeanKullbackLeiblerDivergence) = true
 needs_free_energy_distance(::GraphMeasure) = false
 needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
-needs_Aaj_init(::GraphMeasure) = true # TODO which dont?
+needs_adjoint_init(::GraphMeasure) = true # TODO which dont?
 
 # Trait helpers
 
@@ -127,7 +124,6 @@ count_permuted_workspaces(p::AbstractProblem) =
 
 # Trait aggregator
 hastrait(t, gms) = reduce(|, map(t, gms); init=false)
-
 
 # compute: run a graph function with the appropriate keywords
 compute(gm::GraphMeasure, p::AbstractProblem, g::Union{Grid,GridRSP}; kw...) =

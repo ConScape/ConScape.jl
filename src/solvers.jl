@@ -63,34 +63,23 @@ LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
 # In `init!` we allocate all large dense arrays 
 function init!(
     ws::NamedTuple,
-    solver::MatrixSolver,
-    cm::FundamentalMeasure,
-    p::AbstractProblem,
-    rast::RasterStack;
-    verbose=false,
-)
-    grid = Grid(p, rast)
-    _init!(ws, solver, cm, p, grid; verbose)
-end
-function init!(
-    ws::NamedTuple,
-    solver::Union{VectorSolver,LinearSolver},
+    solver::Solver,
     cm::FundamentalMeasure,
     p::AbstractProblem,
     rast::RasterStack;
     verbose=false,
 )
     # Initialise the whole grid
-    grid = Grid(p, rast)
+    grid = Grid(p, rast; prune=false)
     # Initialise the workspace
-    workspace = _init!(ws, solver, cm, p, grid; verbose)
+    workspace = _init_dense!(ws, solver, cm, p, grid; verbose)
     if isthreaded(solver)
         nbuffers = Thread.nthreads()
         channel = Channel{typeof(workspace)}(nbuffers)
         put!(channel, workspace)
         for n in 2:nbuffers
-            workspace_n = _init!(ws, solver, cm, p, rast; verbose, grid)
-            put!(channel, workspace_N)
+            workspace_n = _init_dense!(ws, solver, cm, p, grid; verbose)
+            put!(channel, workspace_n)
         end
         return (; channel)
     else
@@ -98,16 +87,19 @@ function init!(
     end
 end
 
-function _init!(
+# _init_dense! may be called multiple times from `init!`, for each thread
+function _init_dense!(
     ws::NamedTuple,
     solver::Solver,
     cm::FundamentalMeasure,
     p::AbstractProblem,
     grid::Grid;
     verbose=false,
+    reuse_output=false,
 )
     verbose && println("Retreiving measures...")
-    g = grid
+    subgrids = split_subgraphs(grid)
+    g = first(subgrids)
     gms = graph_measures(p)
     cf = connectivity_function(p)
     verbose && println("Defining sparse arrays...")
@@ -145,7 +137,8 @@ function _init!(
     expected_costs = if hastrait(needs_expected_cost, gms) || cf == ConScape.expected_cost
         haskey(ws, :expected_costs) ? _reshape(ws.expected_costs, size(Z)) : similar(Z)
     else
-        end
+        nothing
+    end
    
     free_energy_distances = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
         haskey(ws, :free_energy_distances) ? _reshape(ws.free_energy_distances, size(Z)) : similar(Z)
@@ -167,25 +160,29 @@ function _init!(
         end
     end
     # We don't re-use outputs
-    outputs = if distance_transformation(cm) isa NamedTuple
-        map(gms) do gm
-            if needs_connectivity(gm)
-                map(distance_transformation(cm)) do dt
+    outputs = if reuse_output && haskey(ws, :outputs)
+        ws.outputs
+    else
+        if distance_transformation(cm) isa NamedTuple
+            map(gms) do gm
+                if needs_connectivity(gm)
+                    map(distance_transformation(cm)) do dt
+                        matrix_or_nothing(gm)
+                    end
+                else
                     matrix_or_nothing(gm)
                 end
-            else
+            end
+        else
+            map(gms) do gm
                 matrix_or_nothing(gm)
             end
-        end
-    else
-        map(gms) do gm
-            matrix_or_nothing(gm)
         end
     end
 
     verbose && println("Finished allocating...")
 
-    return (; Z, Zⁱ, workspaces, permuted_workspaces, g=grid, grid, free_energy_distances, expected_costs, proximities, outputs)
+    return (; Z, Zⁱ, workspaces, permuted_workspaces, free_energy_distances, expected_costs, proximities, outputs, grid, subgrids)
 end
 # function init!(
 #     workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, rast::RasterStack;
@@ -206,7 +203,7 @@ function solve!(
 )
     g = workspace.g
     return map(graph_measures(p), workspace.outputs) do gm, output
-        compute(gm, p; workspace..., output)
+        compute(gm, p; workspace..., output, verbose)
     end
 end
 function solve!(
@@ -216,11 +213,18 @@ function solve!(
     p::Problem;
     verbose=false,
 )
-    ws1 = _init_sparse(ws, solver, cm, p, ws.grid; verbose)
-    ws2 = _solve_dense!(ws1, solver, cm, p; verbose)
-    gms = graph_measures(p)
-    results = _solve!(ws2, solver, cm, cm.distance_transformation, gms, p; verbose)
-    return _merge_to_stack(results)
+    # Loop over unnconnected subgrids 
+    sg1 = first(ws.subgrids)
+    ws1 = _init_dense!(ws, solver, cm, p, sg1; verbose)
+    for subgrid in ws.subgrids
+        ws2 = _init_dense!(ws1, solver, cm, p, subgrid; verbose, reuse_output=true)
+        ws3 = _init_sparse(ws2, solver, cm, p, subgrid; verbose)
+        ws4 = _solve_dense!(ws3, solver, cm, p; verbose)
+        gms = graph_measures(p)
+        _solve!(ws4, solver, cm, cm.distance_transformation, gms, p; verbose)
+    end
+    @show typeof(ws1.outputs)
+    return _merge_to_stack(_maybe_raster(ws1.outputs, sg1))
 end
 function solve!(
     ws::NamedTuple,
@@ -229,50 +233,44 @@ function solve!(
     p::Problem;
     verbose=false,
 )
-    # Get grid and preallocated vectors
-    (; g) = ws
+    sg1 = first(ws.subgrids) 
     gms = graph_measures(p)
     # Predefine min-vectors targets (not worth putting in the workspace) ?
-    targetnodes = g.targetnodes[1:1]
-    target_qualities = g.target_qualities[targetnodes[1]]
-    targetidx = g.targetidx[1:1]
-    qt = g.qt[1:1]
-    target_allocs = (; target_qualities, targetidx, targetnodes, qt)
-    _update_targets!(target_allocs, g, 1)
-    target_properties = (; targetidx, targetnodes, qt)
-    target_grid = ConstructionBase.setproperties(g, target_properties)
-    ws1 = _init_sparse(ws, solver, cm, p, target_grid; verbose)
-    ws2 = merge(ws1, (; grid=target_grid, g=target_grid))
-    target_ws = ConstructionBase.setproperties(ws2, (; g=target_grid, grid=target_grid))
-    target_ws1 = _solve_dense!(target_ws, solver, cm, p; verbose)
-    result1 = _solve!(target_ws1, solver, cm, cm.distance_transformation, gms, p; verbose)
-    target_results = Vector{typeof(result1)}(undef, length(g.targetnodes))
+    targetnodes = sg1.targetnodes[1:1]
+    targetidx = sg1.targetidx[1:1]
+    qt = sg1.qt[1:1]
+    target_allocs = (; targetidx, targetnodes, qt)
+    target_grid = ConstructionBase.setproperties(sg1, target_allocs)
+    # Allocate dense arrays at the single target size
+    ws1 = _init_dense!(ws, solver, cm, p, target_grid; verbose)
 
-    target_results[1] = result1
-
-    function run(i)
-        target_qualities = g.target_qualities[g.targetidx[i]]
-        _update_targets!(target_allocs, g, i)
-        first = false
+    # Internally we solve one target at a time, for each prefactorized subgrid
+    function solve_target!(workspace, subgrid, i)
+        target_grid = ConstructionBase.setproperties(workspace.grid, target_allocs)
+        _update_targets!(target_allocs, subgrid, i)
         # And rebuild the workspace with the new grid
-        target_ws = ConstructionBase.setproperties(ws2, (; g=target_grid, grid=target_grid))
-        # Use the matrix solve on this smaller problem
+        target_ws = (; workspace..., g=target_grid, grid=target_grid)
         target_ws1 = _solve_dense!(target_ws, solver, cm, p; verbose)
-        result = _solve!(target_ws1, solver, cm, cm.distance_transformation, gms, p; verbose)
-        target_results[i] = result
+        _solve!(target_ws1, solver, cm, cm.distance_transformation, gms, p; verbose)
     end
-    # solve one target at a time
-    if isthreaded(solver)
-        isthreaded(p) && error("threading at solver level not properly implemented")
-        # Threads.@threads for i in eachindex(g.targetnodes)[2:end]
-        # run(i)
-        # end
-    else
-        for i in eachindex(g.targetnodes)[2:end]
-            run(i)
+
+    # Loop over unnconnected subgrids (there may be only one)
+    for subgrid in ws.subgrids
+        # Intitalise sparse matrices and precalculate e.g. LU factorizations
+        ws2 = _init_sparse(ws1, solver, cm, p, subgrid; verbose)
+        if isthreaded(solver)
+            isthreaded(p) && error("threading at solver level not yet implemented")
+            # Threads.@threads for i in eachindex(g.targetnodes)[2:end]
+            # run(i)
+            # end
+        else
+            # Then solve each target as a single right hand side column
+            for i in eachindex(subgrid.targetnodes)
+                solve_target!(ws2, subgrid, i)
+            end
         end
     end
-    return _merge_to_stack(_maybe_raster(ws.outputs, g))
+    return _merge_to_stack(_maybe_raster(ws1.outputs, ws.grid))
 end
 
 function _solve!(workspace, solver, cm, dt::NamedTuple{DT}, gms::NamedTuple{GMS}, p; verbose) where {DT,GMS}
@@ -350,6 +348,7 @@ function _solve_dense!(ws::NamedTuple, solver::Solver, cm, p::Problem;
         copyto!(B, B_sparse)
         verbose && println("Solving Z matrix...")
         # Check that values in Z are not too small:
+
         Z = ldiv!(solver, A_init, B; B_copy=copyto!(ws.workspaces[1], B))
         # verbose && _check_z(s, Z, W, g)
         Z
@@ -384,27 +383,30 @@ function _init_sparse(ws::NamedTuple, solver, cm, p::Problem, grid::Grid; verbos
     # Sparse lhs
     A = I - W
     A_init = init(solver, A)
-    Aadj_init, Aadj = if hastrait(needs_Aaj_init, gms)
+    Aadj, Aadj_init = if hastrait(needs_adjoint_init, gms)
         # Just take the adjoint of the factorization of A
         # where possible to save calculations and memory
-        Aadj_init, Aadj = if hasproperty(A_init, :F)
+        if hasproperty(A_init, :F)
             Aadj = A'
             # Use adjoint factorization of A rather than recalculating for A'
             Aadj_init = merge(A_init, (; F=A_init.F'))
-            Aadj_init, Aadj
+            Aadj, Aadj_init
         else
             # LinearSolve.jl cant handle the adjoint 
             # so we duplicate work and allocations
             Aadj = sparse(A')
             Aadj_init = init(solver, Aadj)
-            Aadj_init, Aadj
+            Aadj, Aadj_init
         end
-        Aadj_init, Aadj
     else
         nothing, nothing
     end
 
-    CW = grid.costmatrix .* W
+    CW = if hastrait(needs_expected_cost, gms) || connectivity_function(p) == ConScape.expected_cost
+        grid.costmatrix .* W
+    else
+        nothing
+    end
 
     return merge(ws, (; W, Pref, A, A_init, Aadj_init, Aadj, CW))
 end

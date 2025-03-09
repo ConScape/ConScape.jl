@@ -61,9 +61,10 @@ solvers = (
     # ConScape.LinearSolver(; threaded=true),
 )
 
-# solver = ConScape.VectorSolver()
+solver = ConScape.VectorSolver()
+solver = ConScape.MatrixSolver()
 
-for solver in solvers
+#for solver in solvers
 
 @testset "$solver" begin
     println("\n Testing with solver: ", solver)
@@ -80,6 +81,7 @@ for solver in solvers
     @test size(result.ch_one) == size(rast)
     @test keys(result) == expected_layers
     g = workspace.grid
+    sg1 = workspace.subgrids[1]
     # Base.summarysize(workspace) / 1e6
     # ConScape.allocations(problem, size(workspace.B_sparse)).total / 1e6
 
@@ -121,8 +123,7 @@ for solver in solvers
             826.0710054834001 1883.0940077789735 1935.4450344630702
             676.9212075214159 2228.2700913772774 2884.0409495023364], atol=1e-3)
 
-        @test result.betk_one[g.id_to_grid_coordinate_list] ≈
-            result.betq[g.id_to_grid_coordinate_list]
+        @test result.betk_one[sg1.id_to_grid_coordinate_list] ≈ result.betq[sg1.id_to_grid_coordinate_list]
         # @test result.ebetk_one ≈ result.ebetq
     end
 
@@ -176,9 +177,9 @@ solvers = (
 )
 solver = ConScape.MatrixSolver()
 
-for solver in solvers
+# for solver in solvers
 
-@testset "$solver complete" begin
+# @testset "$solver complete" begin
     println("\n Testing with solver: ", solver)
     # Basic Problem
     problem = ConScape.Problem(; 

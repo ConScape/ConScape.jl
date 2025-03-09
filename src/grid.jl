@@ -105,7 +105,7 @@ function Grid(
         dims(source_qualities),
     )
 
-    return prune ? prune_unconnected(g) : g
+    return prune ? largest_subgraph(g) : g
 end
 function Grid(rast::RasterStack;
     qualities=get(rast, :qualities) do
@@ -208,12 +208,7 @@ false
 """
 Graphs.is_strongly_connected(g::Grid) = is_strongly_connected(SimpleWeightedDiGraph(g.affinities))
 
-"""
-    prune_unconnected(g::Grid)
-
-Remove source pixels that are not accessible from target pixels.
-"""
-function prune_unconnected(g::Grid)
+function split_subgraphs(g::Grid)
     # Convert cost matrix to graph, todo: is `permute=false` needed
     graph = SimpleWeightedDiGraph(g.costmatrix, permute=false)
 
@@ -221,36 +216,36 @@ function prune_unconnected(g::Grid)
     scc = strongly_connected_components(graph)
 
     # Keep all subgraphs that contain target nodes
-    targetnodes = g.targetnodes
-    keep = map(scc) do c
-        any(n -> n in c, targetnodes)
+    subgraphs_with_targets = map(scc) do c
+        length(c) > 1 && any(n -> n in c, g.targetnodes) 
     end
+    subgraphs = sort!(scc[subgraphs_with_targets]; by=length, rev=true)
 
-    scci = sort!(reduce(vcat, scc[keep]))
-
-    # Extract the adjacency matrix of the largest subgraph
-    affinities = g.affinities[scci, scci]
-
-    costmatrix = g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinities)
-    id_to_grid_coordinate_list = g.id_to_grid_coordinate_list[scci]
-    targetidx, targetnodes = _targetidx_and_nodes(g.target_qualities, id_to_grid_coordinate_list)
-    qs = [g.source_qualities[i] for i in id_to_grid_coordinate_list]
-    qt = [g.target_qualities[i] for i in id_to_grid_coordinate_list ∩ targetidx]
-    return Grid(
-        g.nrows,
-        g.ncols,
-        affinities,
-        g.costfunction,
-        costmatrix,
-        id_to_grid_coordinate_list,
-        g.source_qualities,
-        g.target_qualities,
-        targetidx,
-        targetnodes,
-        qs,
-        qt,
-        g.dims,
-    )
+    # Return a Vector of Grids for each subgraph
+    return map(subgraphs) do scci
+        sort!(scci)
+        affinities = g.affinities[scci, scci]
+        costmatrix = g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinities)
+        id_to_grid_coordinate_list = g.id_to_grid_coordinate_list[scci]
+        targetidx, targetnodes = _targetidx_and_nodes(g.target_qualities, id_to_grid_coordinate_list)
+        qs = [g.source_qualities[i] for i in id_to_grid_coordinate_list]
+        qt = [g.target_qualities[i] for i in id_to_grid_coordinate_list ∩ targetidx]
+        Grid(
+            g.nrows,
+            g.ncols,
+            affinities,
+            g.costfunction,
+            costmatrix,
+            id_to_grid_coordinate_list,
+            g.source_qualities,
+            g.target_qualities,
+            targetidx,
+            targetnodes,
+            qs,
+            qt,
+            g.dims,
+        )
+    end
 end
 
 """

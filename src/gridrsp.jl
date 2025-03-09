@@ -52,12 +52,15 @@ function betweenness_qweighted(grsp::Union{GridRSP,NamedTuple};
 )
     g = grsp.g
     betvec = RSP_betweenness_qweighted(grsp.W, grsp.Z, g.qs, g.qt, g.targetnodes; kw...)
-    coordinate_list = g.id_to_grid_coordinate_list
+    _update_output!(output, g, betvec)
+    return _maybe_raster(output, g)
+end
 
-    for (i, v) in enumerate(betvec)
-        output[coordinate_list[i]] += v
+function _update_output!(output, g, betvec)
+    for (I, v) in zip(g.id_to_grid_coordinate_list, betvec)
+        x = output[I]
+        output[I] = isnan(x) ? v : x + v
     end
-    return _maybe_raster(output, grsp)
 end
 
 """
@@ -99,10 +102,8 @@ function betweenness_kweighted(grsp::Union{GridRSP,NamedTuple};
     end
 
     betvec = RSP_betweenness_kweighted(grsp.W, grsp.Z, g.qs, g.qt, proximities, g.targetnodes; kw...)
-    coordinate_list = g.id_to_grid_coordinate_list
-    output[coordinate_list] .+= betvec
-
-    return _maybe_raster(output, grsp)
+    _update_output!(output, g, betvec)
+    return _maybe_raster(output, g)
 end
 
 
@@ -126,9 +127,7 @@ function edge_betweenness_kweighted(grsp::Union{GridRSP,NamedTuple};
     # TODO why does this only use `expected_cost`?
     g = grsp.g
     # S = map(distance_transformation, expected_cost(grsp))
-    # maybe_set_diagonal!(S, diagvalue, g.targetnodes)
     proximities = map(distance_transformation, expected_cost(grsp))
-
     maybe_set_diagonal!(proximities, diagvalue, g.targetnodes)
 
     betmatrix = RSP_edge_betweenness_kweighted(grsp.W, grsp.Z, g.qs, g.qt, proximities, g.targetnodes; kw...)
@@ -313,7 +312,6 @@ function connected_habitat(
     θ::Union{Nothing,Real}=nothing,
     approx::Bool=false
 )
-
     # Check that distance_transformation function has been passed if no cost function is saved
     if distance_transformation === nothing && connectivity_function <: DistanceFunction
         throw(ArgumentError("distance_transformation function is required when passing a Grid together with a Distance function"))
@@ -322,12 +320,12 @@ function connected_habitat(
     if θ === nothing && connectivity_function !== least_cost_distance
         throw(ArgumentError("θ must be a positive real number when passing a Grid"))
     end
-    S = connectivity_function(grsp; θ=θ, approx=approx)
+    proximities = connectivity_function(grsp; θ=θ, approx=approx)
     if connectivity_function <: DistanceFunction
-        map!(distance_transformation, S, S)
+        map!(distance_transformation, proximities, proximities)
     end
 
-    return connected_habitat(grsp, S; diagvalue)
+    return connected_habitat(grsp, proximities; diagvalue)
 end
 
 function connected_habitat(grsp::GridRSP; proximities=nothing, kw...)
@@ -347,8 +345,8 @@ function connected_habitat(g::Grid, S::Matrix;
 
     funvec = connected_habitat(g.qs, g.qt, S; kw...)
 
-    for (ij, x) in zip(g.id_to_grid_coordinate_list, funvec)
-        output[ij] = x
+    for (I, x) in zip(g.id_to_grid_coordinate_list, funvec)
+        output[I] = x
     end
 
     return _maybe_raster(output, g)
@@ -445,7 +443,7 @@ function LinearAlgebra.eigmax(grsp::Union{GridRSP,NamedTuple};
         end
     end
 
-    S = if connectivity_function == ConScape.expected_cost && !isnothing(expected_costs)
+    proximities = if connectivity_function == ConScape.expected_cost && !isnothing(expected_costs)
         # workspace1 .= expected_costs
         # workspace1
         copy(expected_costs)
@@ -455,10 +453,10 @@ function LinearAlgebra.eigmax(grsp::Union{GridRSP,NamedTuple};
     else
         connectivity_function(grsp; kw...)
     end
-    # S = connectivity_function(grsp; kw...)
+    # proximities = connectivity_function(grsp; kw...)
 
     if connectivity_function <: DistanceFunction
-        map!(distance_transformation, S, S)
+        map!(distance_transformation, proximities, proximities)
     end
 
     maybe_set_diagonal!(S, diagvalue, g.targetnodes)
@@ -618,7 +616,7 @@ function maybe_set_diagonal!(proximities, diagvalue, targetnodes::AbstractVector
 end
 
 function _init_output(g::Grid)
-    o = fill(eltype(g.affinities)(NaN), size(g))
+    o = fill(eltype(g.affinities)(0.0), size(g))
     o[g.id_to_grid_coordinate_list] .= 0
     return o
 end
