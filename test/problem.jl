@@ -64,7 +64,7 @@ solvers = (
 solver = ConScape.VectorSolver()
 solver = ConScape.MatrixSolver()
 
-#for solver in solvers
+for solver in solvers
 
 @testset "$solver" begin
     println("\n Testing with solver: ", solver)
@@ -177,9 +177,9 @@ solvers = (
 )
 solver = ConScape.MatrixSolver()
 
-# for solver in solvers
+for solver in solvers
 
-# @testset "$solver complete" begin
+@testset "$solver complete" begin
     println("\n Testing with solver: ", solver)
     # Basic Problem
     problem = ConScape.Problem(; 

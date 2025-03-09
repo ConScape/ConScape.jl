@@ -80,8 +80,8 @@ end
 # These allow calculation of return allocations
 returntype(::SpatialMeasure) = ReturnsDenseSpatial()
 returntype(::EdgeBetweennessMeasure) = ReturnsSparse()
+returntype(::PathDistributionMeasure) = ReturnsScalar()
 returntype(::EigMax) = ReturnsOther((n, m) -> n + m)
-returntype(::PerturbationMeasure) = ReturnsScalar()
 
 # A trait for connectivity requirement
 needs_connectivity(::GraphMeasure) = false
