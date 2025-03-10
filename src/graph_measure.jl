@@ -10,16 +10,23 @@ abstract type SpatialMeasure <: GraphMeasure end
 abstract type TopologicalMeasure <: GraphMeasure end
 abstract type BetweennessMeasure <: SpatialMeasure end
 abstract type PerturbationMeasure <: SpatialMeasure end
-abstract type PathDistributionMeasure <: GraphMeasure end
 
 # Concrete GraphMeasure structs
 
-struct BetweennessQweighted <: BetweennessMeasure end
-struct BetweennessKweighted <: BetweennessMeasure end
+abstract type BetweennessWeight end
 
-abstract type EdgeBetweennessMeasure <: BetweennessMeasure end
-struct EdgeBetweennessQweighted <: EdgeBetweennessMeasure end
-struct EdgeBetweennessKweighted <: EdgeBetweennessMeasure end
+struct Unweighted <: BetweennessWeighting end
+struct QualityWeighted <: BetweennessWeighting end
+struct ProximityWeighted <: BetweennessWeighting end
+struct QualityAndProximityWeighted <: BetweennessWeighting end
+
+@kwdef struct Betweenness{W} <: BetweennessMeasure 
+    weigth::W
+end
+
+@kwdef struct EdgeBetweenness{W} <: BetweennessMeasure 
+    weigth::W
+end
 
 struct ConnectedHabitat <: SpatialMeasure end
 
@@ -33,19 +40,14 @@ end
     tol::T = 1e-14
 end
 
-struct MeanLeastCostKullbackLeiblerDivergence <: PathDistributionMeasure end
-struct MeanKullbackLeiblerDivergence <: PathDistributionMeasure end
-
 # Map structs to function calls
 
-graph_function(m::BetweennessKweighted) = betweenness_kweighted
-graph_function(m::BetweennessQweighted) = betweenness_qweighted
+graph_function(m::Betweenness{ProximityWeighted}) = betweenness_kweighted
+graph_function(m::Betweenness{QualityWeighted}) = betweenness_qweighted
 graph_function(m::ConnectedHabitat) = connected_habitat
 graph_function(m::Criticality) = criticality
-graph_function(m::MeanLeastCostKullbackLeiblerDivergence) = mean_lc_kl_divergence
-graph_function(m::MeanKullbackLeiblerDivergence) = mean_kl_divergence
-graph_function(m::EdgeBetweennessKweighted) = edge_betweenness_kweighted
-graph_function(m::EdgeBetweennessQweighted) = edge_betweenness_qweighted
+graph_function(m::EdgeBetweenness{ProximityWeighted}) = edge_betweenness_kweighted
+graph_function(m::EdgeBetweenness{QualityWeighted}) = edge_betweenness_qweighted
 graph_function(m::EigMax) = eigmax
 
 # Function keywords
@@ -79,14 +81,14 @@ end
 
 # These allow calculation of return allocations
 returntype(::SpatialMeasure) = ReturnsDenseSpatial()
-returntype(::EdgeBetweennessMeasure) = ReturnsSparse()
+returntype(::EdgeBetweenness) = ReturnsSparse()
 returntype(::PathDistributionMeasure) = ReturnsScalar()
 returntype(::EigMax) = ReturnsOther((n, m) -> n + m)
 
 # A trait for connectivity requirement
 needs_connectivity(::GraphMeasure) = false
-needs_connectivity(::BetweennessKweighted) = true
-needs_connectivity(::EdgeBetweennessKweighted) = true
+needs_connectivity(::Betweenness{ProximitWeighted}) = true
+needs_connectivity(::EdgeBetweenness{ProximitWeighted}) = true
 needs_connectivity(::EigMax) = true
 needs_connectivity(::ConnectedHabitat) = true
 needs_connectivity(::Criticality) = true
