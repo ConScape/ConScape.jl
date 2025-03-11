@@ -54,7 +54,7 @@ function compute_target(::LeastCost, gm::Betweenness, g::Grid, target::Int)
     # Apply weight for the specific BetweennessWeight
     apply_weight!(k, gm, g, target)
 
-    # Then what does all this do...
+    # TODO what does all this do...
     shortest_paths_en[target] = [target]
     tgts = [repeat([i], length(dijk[i])) for i in (1:length(shorted_paths))]
     tgts = reduce(vcat, tgts)
@@ -71,18 +71,19 @@ function compute_target(m::RandomWalk, ::EdgeBetweenness{Weighting}, g::Grid, (i
     return nodebet * pref[g.id_to_grid_coordinate_list[i]]
 end
 function compute_target(::RandomWalk, ::Betweenness{QualityWeighted}, g::Grid, t::Int)
-    Z, H, qˢ, qᵗ, p, workspace = g.fundamental, g.commute_time, g.source_quality, g.target_quality, g.stationary_distribution, g.workspaces[1]
+    Z, H, qˢ, qᵗ, p, workspace = g.fundamental, g.hitting_time, g.source_quality, g.target_quality, g.stationary_distribution, g.workspaces[1]
     return qˢ' * _betweenness!(workspace, Z, H, p, t) * qᵗ
 end
 function compute_target(::RandomWalk, ::Betweenness{QualityAndProximityWeighted}, g::Grid, target::Int)
-    Z, H, K, workspace = g.probability, g.cost, g.fundamental, g.hitting_time, g.quality_weighted_proximity, g.workspaces[1]
+    Z, H, K, p, workspace = g.probability, g.cost, g.fundamental, g.hitting_time, g.quality_weighted_proximity, g.stationary_distribution, g.workspaces[1]
     return sum(_betweenness!(workspace, Z, H, p, t) .* K)
 end
 function compute_target(::RandomWalk, ::Betweenness{ProximityWeighted}, g::Grid, target::Int)
-    Z, H, K, workspace = g.fundamental, g.hitting_time, g.proximity, g.workspaces[1]
+    Z, H, K, p, workspace = g.fundamental, g.hitting_time, g.proximity, g.stationary_distribution, g.workspaces[1]
     return sum(_betweenness!(workspace, Z, H, p, t) .* K)
 end
 
+# TODO this only works for simmetrical Z
 _betweenness!(workspace, Z, H, p, t) = 
     workspace .= view(Z, :, t) .- view(Z, :, t)' .+ H .* p[t]
 
@@ -91,13 +92,11 @@ _betweenness!(workspace, Z, H, p, t) =
 # This function could also be defined with a @needs macro on the 
 # `compute_target` function to remove the name duplication
 needs(::RandomWalk, ::Betweenness{QualityAndProximityWeighted}) = 
-    (:fundamental, :commutetime, :source_quality, :target_quality, :stationary_distribution, :workspaces => 1)
+    (:fundamental, :hitting_time, :source_quality, :target_quality, :stationary_distribution, :workspaces => 1)
 needs(::RandomWalkd, ::Betweenness{QualityAndProximityWeighted}) = 
-    (:fundamental, :hitting_time, :proximity, :quality_weighted_proximity)
+    (:fundamental, :hitting_time, :quality_weighted_proximity, :stationary_distribution, :workspaces => 1)
 needs(::RandomWalkd, ::Betweenness{ProximityWeighted}) = 
-    (:fundamental, :hitting_time, :proximity, :proximity)
-
-
+    (:fundamental, :hitting_time, :proximity, :stationary_distribution, :workspaces => 1)
 
 
 function stationary_distribution(P::SparseMatrixCSC)
