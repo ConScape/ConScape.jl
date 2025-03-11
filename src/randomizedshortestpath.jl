@@ -1,36 +1,3 @@
-# Generate the sparse diagonal rhs matrix
-function sparse_rhs(targetnodes, n)
-    sparse(targetnodes,
-        1:length(targetnodes),
-        1.0,
-        n,
-        length(targetnodes),
-    )
-end
-
-_inv(Z) = _inv!(similar(Z), Z)
-function _inv!(Zⁱ, Z)
-    broadcast!(Zⁱ, Z) do x
-        x = inv(x)
-        isfinite(x) ? x : floatmax(eltype(Z))
-    end
-end
-
-_Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A
-
-function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
-
-    n = LinearAlgebra.checksquare(Pref)
-    if LinearAlgebra.checksquare(C) != n
-        throw(DimensionMismatch("Pref and C must have same size"))
-    end
-
-    W = Pref .* exp.((-).(θ) .* C)
-    replace!(W.nzval, NaN => 0.0)
-
-    return W
-end
-
 function RSP_betweenness_qweighted(W::SparseMatrixCSC,
     Z::AbstractMatrix,
     qˢ::AbstractVector,

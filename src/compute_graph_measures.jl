@@ -97,17 +97,6 @@ needs(::RandomWalkd, ::Betweenness{QualityAndProximityWeighted}) =
 needs(::RandomWalkd, ::Betweenness{ProximityWeighted}) = 
     (:fundamental, :hitting_time, :proximity, :stationary_distribution, :workspaces => 1)
 
-
-function stationary_distribution(P::SparseMatrixCSC)
-    #Input: the transition probability matrix P
-    #Output: the stationary distribution of the random walk
-    n = LinearAlgebra.checksquare(P)
-    PI = P' - I
-    PI[1, :] = ones(n)
-    v = [1; zeros(n - 1)]
-    return PI \ v
-end
-
 apply_weight!(k, ::Unweigthed, g::GridPrecalculations, target) = k
 function apply_weight!(k, ::QualityAndProximityWeighted, g::GridPrecalculations, target)
     k .*= g.qˢ .* g.qᵗ[findfirst(isequal(target), g.targetidx)]
