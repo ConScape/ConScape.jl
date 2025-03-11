@@ -10,14 +10,15 @@ compute(m::MovementMode, gm::GraphMeasure, g::Grid) =
     compute(returntrait(gm) m, gm, g)
 # We specialise on returntrait
 function compute(::ReturnsDenseSpatial, m::MovementMode, gm::GraphMeasure, g::Grid)
+    grid_precalculations = precalculate(m, g)
     output = allocate_output(gm, g)
     for (i, t) in enumerate(g.targetids)
-        v = compute_target(m, gm, g, t)
+        v = compute_target(m, gm, grid_precalculations, t)
         output[g.id_to_grid_coordinate_list[i]] = v
     end
     return output
 end
-function compute(::ReturnsSparse, m::MovementMode, gm::GraphMeasure, g::Grid)
+function compute(::ReturnsSparse, m::MovementMode, gm::GraphMeasure, g::GridPrecalculations)
     output = allocate_output(gm, g)
     for (i, t) in enumerate(g.targetids)
         v = compute_target(m, gm, g, t)
@@ -27,20 +28,18 @@ function compute(::ReturnsSparse, m::MovementMode, gm::GraphMeasure, g::Grid)
 end
 
 """
-    compute_target(::MovementMode, gm::GraphMeasure, g::Grid, target::Int)
+    compute_target(::MovementMode, gm::GraphMeasure, g::GridPrecalculations, target::Int)
 
 Computes results of a single target pixel for a graph measure
 and movement mode. 
 
 `compute_target` is called inside `compute` or in the loop in `solve!` for 
 VectorSolver/LinearSolver. 
-
-TODO: We need to move precomputed arrays into the `Grid` for these to actually work.
 """
 function compute_target end
 
 # LeastCost
-function compute_target(::LeastCost, gm::Betweenness, g::Grid, target::Int)
+function compute_target(::LeastCost, gm::Betweenness, g::GridPrecalculations, target::Int)
     # Calculate distances
     (; cost_weighted_digraph) = g.cost_weighted_digraph # simpleweighteddigraph(g.costmatrix)
     shorted_paths = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, target)
@@ -66,19 +65,19 @@ function compute_target(::LeastCost, gm::Betweenness, g::Grid, target::Int)
 end
 
 # RandomWalk 
-function compute_target(m::RandomWalk, ::EdgeBetweenness{Weighting}, g::Grid, (i, t)) where Weighting
+function compute_target(m::RandomWalk, ::EdgeBetweenness{Weighting}, g::GridPrecalculations, (i, t)) where Weighting
     nodebet = compute_target(m, Betweenness(Weighting()), g, t)
     return nodebet * pref[g.id_to_grid_coordinate_list[i]]
 end
-function compute_target(::RandomWalk, ::Betweenness{QualityWeighted}, g::Grid, t::Int)
+function compute_target(::RandomWalk, ::Betweenness{QualityWeighted}, g::GridPrecalculations, t::Int)
     Z, H, qˢ, qᵗ, p, workspace = g.fundamental, g.hitting_time, g.source_quality, g.target_quality, g.stationary_distribution, g.workspaces[1]
     return qˢ' * _betweenness!(workspace, Z, H, p, t) * qᵗ
 end
-function compute_target(::RandomWalk, ::Betweenness{QualityAndProximityWeighted}, g::Grid, target::Int)
+function compute_target(::RandomWalk, ::Betweenness{QualityAndProximityWeighted}, g::GridPrecalculations, target::Int)
     Z, H, K, p, workspace = g.probability, g.cost, g.fundamental, g.hitting_time, g.quality_weighted_proximity, g.stationary_distribution, g.workspaces[1]
     return sum(_betweenness!(workspace, Z, H, p, t) .* K)
 end
-function compute_target(::RandomWalk, ::Betweenness{ProximityWeighted}, g::Grid, target::Int)
+function compute_target(::RandomWalk, ::Betweenness{ProximityWeighted}, g::GridPrecalculations, target::Int)
     Z, H, K, p, workspace = g.fundamental, g.hitting_time, g.proximity, g.stationary_distribution, g.workspaces[1]
     return sum(_betweenness!(workspace, Z, H, p, t) .* K)
 end
@@ -109,8 +108,8 @@ function stationary_distribution(P::SparseMatrixCSC)
     return PI \ v
 end
 
-apply_weight!(k, ::Unweigthed, g::Grid, target) = k
-function apply_weight!(k, ::QualityAndProximityWeighted, g::Grid, target)
+apply_weight!(k, ::Unweigthed, g::GridPrecalculations, target) = k
+function apply_weight!(k, ::QualityAndProximityWeighted, g::GridPrecalculations, target)
     k .*= g.qˢ .* g.qᵗ[findfirst(isequal(target), g.targetidx)]
     return k
 end

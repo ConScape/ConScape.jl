@@ -14,6 +14,16 @@ Base.size(gp::GridPrecalculations) = size(grid(gp))
 DimensionalData.dims(gp::GridPrecalculations) = dims(grid(gp))
 
 """
+    precalculate(::MovementMode, g::Grid)
+
+Returns a `GridPrecalculation` object for the specific `MovementMode`.
+
+This contains all sparse and dense matrices needed for computing 
+graph measures for the targets in the `Grid` `g`.
+"""
+function precalculate end
+
+"""
     RandomisedShortestPathPrecalculations(g::Grid; θ=nothing)
 
 Stores precalculated variables for use in `RandomisedShortestPath`-based measures.
@@ -45,6 +55,8 @@ function RandomisedShortestPathPrecalculations(g::Grid; θ=nothing, verbose=true
     return RandomisedShortestPathPrecalculations(g, θ, Pref, W, Z)
 end
 
+precalculate(m::RandomisedShortestPath, g) = RandomisedShortestPathPrecalculations(g; θ=m.θ)
+
 function reinit!(allocs::RandomisedShortestPathPrecalculations, g; θ=nothing)
 end
 
@@ -64,6 +76,8 @@ function LeastCostPrecalculations(g)
     cost_weighted_digraph = simpleweighteddigraph(g.costmatrix)
     LeastCostPrecalculations(g, probability, cost_weighted_digraph)
 end
+
+precalculate(::LeastCost, g) = LeastCostPrecalculations(g)
 
 function reinit!(allocs::LeastCostPrecalculations, g)
 end
@@ -88,6 +102,8 @@ function RandomWalkPrecalculations(g)
     hitting_time = (diag(Z)' .- Z) ./ p'
     RandomWalkPrecalculations(g, probability, fundamental, hitting_time, p)
 end
+
+precalculate(::RandomWalk, g) = RandomWalkPrecalculations(g)
 
 function reinit!(allocs::RandomWalkPrecalculations, g)
     # TODO in-place version
