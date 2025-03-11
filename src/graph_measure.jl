@@ -21,11 +21,11 @@ struct ProximityWeighted <: BetweennessWeighting end
 struct QualityAndProximityWeighted <: BetweennessWeighting end
 
 @kwdef struct Betweenness{W} <: BetweennessMeasure 
-    weigth::W
+    weighting::W
 end
 
 @kwdef struct EdgeBetweenness{W} <: BetweennessMeasure 
-    weigth::W
+    weighting::W
 end
 
 struct ConnectedHabitat <: SpatialMeasure end
@@ -40,15 +40,17 @@ end
     tol::T = 1e-14
 end
 
+weighting(gm::BetweennessMeasure) = gm.weighting
+
 # Map structs to function calls
 
-graph_function(m::Betweenness{ProximityWeighted}) = betweenness_kweighted
-graph_function(m::Betweenness{QualityWeighted}) = betweenness_qweighted
-graph_function(m::ConnectedHabitat) = connected_habitat
-graph_function(m::Criticality) = criticality
-graph_function(m::EdgeBetweenness{ProximityWeighted}) = edge_betweenness_kweighted
-graph_function(m::EdgeBetweenness{QualityWeighted}) = edge_betweenness_qweighted
-graph_function(m::EigMax) = eigmax
+graph_function(::Betweenness{QualityAndProximityWeighted}) = betweenness_kweighted
+graph_function(::Betweenness{QualityWeighted}) = betweenness_qweighted
+graph_function(::ConnectedHabitat) = connected_habitat
+graph_function(::Criticality) = criticality
+graph_function(::EdgeBetweenness{QualityAndProximityWeighted}) = edge_betweenness_kweighted
+graph_function(::EdgeBetweenness{QualityWeighted}) = edge_betweenness_qweighted
+graph_function(::EigMax) = eigmax
 
 # Function keywords
 
@@ -71,19 +73,24 @@ end
 
 # Traits
 
-abstract type ReturnType end
-struct ReturnsDenseSpatial <: ReturnType end
-struct ReturnsSparse <: ReturnType end
-struct ReturnsScalar <: ReturnType end
-struct ReturnsOther{F} <: ReturnType
+"""
+    ReturnTrait
+
+Traits for preallocated return values of GraphMeasures.
+"""
+abstract type ReturnTrait end
+struct ReturnsDenseSpatial <: ReturnTrait end
+struct ReturnsSparse <: ReturnTrait end
+struct ReturnsScalar <: ReturnTrait end
+struct ReturnsOther{F} <: ReturnTrait
     f::F
 end
 
 # These allow calculation of return allocations
-returntype(::SpatialMeasure) = ReturnsDenseSpatial()
-returntype(::EdgeBetweenness) = ReturnsSparse()
-returntype(::PathDistributionMeasure) = ReturnsScalar()
-returntype(::EigMax) = ReturnsOther((n, m) -> n + m)
+returntrait(::SpatialMeasure) = ReturnsDenseSpatial()
+returntrait(::EdgeBetweenness) = ReturnsSparse()
+returntrait(::PathDistributionMeasure) = ReturnsScalar()
+returntrait(::EigMax) = ReturnsOther((n, m) -> n + m)
 
 # A trait for connectivity requirement
 needs_connectivity(::GraphMeasure) = false
@@ -112,8 +119,9 @@ needs_free_energy_distance(::GraphMeasure) = false
 needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
 needs_adjoint_init(::GraphMeasure) = true # TODO which dont?
 
-# Trait helpers
+# Graph measure helpers
 
+# Count how many workspaces are needed for a problem
 function count_workspaces(p::AbstractProblem)
     gms = graph_measures(p)
     n = mapreduce(needs_workspaces, max, gms)
@@ -123,6 +131,16 @@ function count_workspaces(p::AbstractProblem)
 end
 count_permuted_workspaces(p::AbstractProblem) =
     mapreduce(needs_permuted_workspaces, max, graph_measures(p))
+
+# Preallocate the output for a graph measure, where needed
+allocate_output(gm::GraphMeasure, g::Grid) = 
+    allocate_output(returntrait(gm), gm::GraphMeasure, g)
+function allocate_output(::ReturnsDenseSpatial, gm::GraphMeasure, g::Grid)
+    A = fill(NaN, size(grid))
+    A[grid.id_to_grid_coordinate_list] .= 0.0
+    return A
+end
+allocate_output(::ReturnTrait, gm::GraphMeasure, g::Grid) = nothing
 
 # Trait aggregator
 hastrait(t, gms) = reduce(|, map(t, gms); init=false)

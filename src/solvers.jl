@@ -150,15 +150,6 @@ function _init_dense!(
     else
         nothing
     end
-    function matrix_or_nothing(gm)
-        if returntype(gm) isa ReturnsDenseSpatial
-            A = fill(NaN, size(grid))
-            A[grid.id_to_grid_coordinate_list] .= 0.0
-            A
-        else
-            nothing
-        end
-    end
     # We don't re-use outputs
     outputs = if reuse_output && haskey(ws, :outputs)
         ws.outputs
@@ -167,15 +158,15 @@ function _init_dense!(
             map(gms) do gm
                 if needs_connectivity(gm)
                     map(distance_transformation(cm)) do dt
-                        matrix_or_nothing(gm)
+                        allocate_output(gm)
                     end
                 else
-                    matrix_or_nothing(gm)
+                    allocate_output(gm)
                 end
             end
         else
             map(gms) do gm
-                matrix_or_nothing(gm)
+                allocate_output(gm)
             end
         end
     end
