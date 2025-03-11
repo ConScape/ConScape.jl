@@ -42,7 +42,7 @@ function compute_target end
 # LeastCost
 function compute_target(::LeastCost, gm::Betweenness, g::Grid, target::Int)
     # Calculate distances
-    (; cost_weighted_digraph) = g.costweighteddigraph # SimpleWeightedDiGraph(g.costmatrix)
+    (; cost_weighted_digraph) = g.cost_weighted_digraph # simpleweighteddigraph(g.costmatrix)
     shorted_paths = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, target)
     shortest_paths_en = Graphs.enumerate_paths(shorted_paths)
     k = ones(size(g.costmatrix)[1]) # TODO use a workspace
