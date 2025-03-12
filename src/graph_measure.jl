@@ -47,8 +47,8 @@ struct LandscapeSum <: LandscapeMeasure end
 struct LandscapeEigen <: LandscapeMeasure end
 
 @kwdef struct Sensitivity{C<:SeensitivityContext,LM<:LandscapeMeasure} <: PerturbationMeasure
-    wrt::C
-    landscare_measure::LM
+    context::C
+    landscape_measure::LM
     unitless::Bool
 end
 
