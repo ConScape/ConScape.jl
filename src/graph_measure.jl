@@ -11,7 +11,7 @@ abstract type TopologicalMeasure <: GraphMeasure end
 abstract type BetweennessMeasure <: SpatialMeasure end
 abstract type PerturbationMeasure <: SpatialMeasure end
 
-# Concrete GraphMeasure structs
+# Betweenness
 
 abstract type BetweennessWeight end
 
@@ -23,13 +23,38 @@ struct QualityAndProximityWeighted <: BetweennessWeighting end
 @kwdef struct Betweenness{W} <: BetweennessMeasure 
     weighting::W
 end
-
 @kwdef struct EdgeBetweenness{W} <: BetweennessMeasure 
     weighting::W
 end
 
-struct ConnectedHabitat <: SpatialMeasure end
+weighting(gm::BetweennessMeasure) = gm.weighting
 
+
+# Sensitivity
+
+abstract type SensitivityContext end
+
+struct Affinity <: SensitivityContext end
+struct Cost <: SensitivityContext end
+struct Quality <: SensitivityContext end
+abstract type CostAndAffinitySensitivityContext end
+struct CostAndAffinity <: CostAndAffinitySensitivityContext end
+struct AffinityAndCost <: CostAndAffinitySensitivityContext end
+
+abstract type LandscapeMeasure end
+
+struct LandscapeSum <: LandscapeMeasure end
+struct LandscapeEigen <: LandscapeMeasure end
+
+@kwdef struct Sensitivity{C<:SeensitivityContext,LM<:LandscapeMeasure} <: PerturbationMeasure
+    wrt::C
+    landscare_measure::LM
+    unitless::Bool
+end
+
+# Others
+
+struct ConnectedHabitat <: SpatialMeasure end
 @kwdef struct Criticality{AV,QT,QS} <: PerturbationMeasure
     avalue::AV = floatmin()
     qˢvalue::QS = 0.0
@@ -39,8 +64,6 @@ end
 @kwdef struct EigMax{T} <: TopologicalMeasure
     tol::T = 1e-14
 end
-
-weighting(gm::BetweennessMeasure) = gm.weighting
 
 # Map structs to function calls
 
