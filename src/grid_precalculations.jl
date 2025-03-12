@@ -1,6 +1,6 @@
-# TODO: move all/most of the preallocation in solve.jl here
+# TODO: move all the preallocation in solve.jl here
 
-""
+"""
     GridPrecalculations
 
 Abstract type for precalculated variables for use in graph measures.
@@ -155,4 +155,35 @@ function stationary_distribution(P::SparseMatrixCSC)
     PI[1, :] = ones(n)
     v = [1; zeros(n - 1)]
     return PI \ v
+end
+
+
+function _computeproximities(grsp;
+    connectivity_function=expected_cost,
+    distance_transformation=nothing,
+    diagvalue=nothing,
+    kw...
+)
+    proximities = connectivity_function(g; kw...)
+
+    # Check that distance_transformation function has been passed if no cost function is saved
+    if connectivity_function <: DistanceFunction
+        if distance_transformation === nothing
+            if g.costfunction === nothing
+                throw(ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function."))
+            else
+                distance_transformation = inv(g.costfunction)
+            end
+        end
+        map!(distance_transformation, proximities, proximities)
+    end
+    maybe_set_diagonal!(proximities, diagvalue, g.targetnodes)
+    return proximities
+end
+
+maybe_set_diagonal!(proximities, diagvalue::Nothing, targetnodes::AbstractVector) = nothing
+function maybe_set_diagonal!(proximities, diagvalue, targetnodes::AbstractVector)
+    for (j, i) in enumerate(targetnodes)
+        proximities[i, j] = diagvalue
+    end
 end

@@ -541,37 +541,6 @@ function criticality(grsp::Union{GridRSP,NamedTuple};
     return _maybe_raster(output, grsp)
 end
 
-function _computeproximities(grsp;
-    connectivity_function=expected_cost,
-    distance_transformation=nothing,
-    diagvalue=nothing,
-    kw...
-)
-    g = grsp.g
-    proximities = connectivity_function(grsp; kw...)
-
-    # Check that distance_transformation function has been passed if no cost function is saved
-    if connectivity_function <: DistanceFunction
-        if distance_transformation === nothing
-            if g.costfunction === nothing
-                throw(ArgumentError("no distance_transformation function supplied and cost matrix in GridRSP isn't based on a cost function."))
-            else
-                distance_transformation = inv(g.costfunction)
-            end
-        end
-        map!(distance_transformation, proximities, proximities)
-    end
-    maybe_set_diagonal!(proximities, diagvalue, g.targetnodes)
-    return proximities
-end
-
-maybe_set_diagonal!(proximities, diagvalue::Nothing, targetnodes::AbstractVector) = nothing
-function maybe_set_diagonal!(proximities, diagvalue, targetnodes::AbstractVector)
-    for (j, i) in enumerate(targetnodes)
-        proximities[i, j] = diagvalue
-    end
-end
-
 function _init_output(g::Grid)
     o = fill(eltype(g.affinities)(0.0), size(g))
     o[g.id_to_grid_coordinate_list] .= 0

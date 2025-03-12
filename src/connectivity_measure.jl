@@ -108,20 +108,8 @@ keywords(cm::ConnectivityMeasure) = _keywords(cm)
 distance_transformation(cm::FundamentalMeasure) = nothing
 distance_transformation(cm::DistanceMeasure) = cm.distance_transformation
 
-# TODO remove the complexity of the source_target_function
-# These methods are mostly to avoid changing the original interface for now
-# Its a quirk of how MeanKullbackLeiblerDivergence is implemented
-# that these can be calculated separately from the main grid
-source_target_function(::LeastCostDistance) = least_cost_distance
-source_target_function(::ExpectedCost) = expected_cost
-source_target_function(::FreeEnergyDistance) = free_energy_distance
-source_target_function(::SurvivalProbability) = survival_probability
-source_target_function(::PowerMeanProximity) = power_mean_proximity
-
-source_target_function(::KullbackLeiblerDivergence{LeastCost,typeof(mean)}) = mean_lc_kl_divergence
-source_target_function(::KullbackLeiblerDivergence{RandomisedShortestPath,typeof(mean)}) = mean_kl_divergence
-source_target_function(::KullbackLeiblerDivergence{RandomWalk,typeof(mean)}) = (args...; kw...) -> 0.0
-
+returntrait(::ConnectivityMeasure) = ReturnsDense()
+returntrait(::KullbackLeiblerDivergence) = ReturnsDense()
 
 # This is not used yet but could be
 compute(cm::SourceTargetMeasure, g; kw...) =

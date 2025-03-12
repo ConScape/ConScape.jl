@@ -6,14 +6,13 @@ aggregation processes controlled with `returntrait`
 =#
 
 # Compute can be called on any graph measure
-compute(m::MovementMode, gm::GraphMeasure, g::Grid) = 
-    compute(returntrait(gm) m, gm, g)
+compute(m::MovementMode, gm::GraphMeasure, g::Grid) = compute(returntrait(gm) m, gm, g)
 # We specialise on returntrait
 function compute(::ReturnsDenseSpatial, m::MovementMode, gm::GraphMeasure, g::Grid)
     grid_precalculations = precalculate(m, g)
     output = allocate_output(gm, g)
     for (i, t) in enumerate(g.targetids)
-        v = compute_target(m, gm, grid_precalculations, t)
+        v = compute(m, gm, grid_precalculations, t)
         output[g.id_to_grid_coordinate_list[i]] = v
     end
     return output
@@ -21,25 +20,25 @@ end
 function compute(::ReturnsSparse, m::MovementMode, gm::GraphMeasure, g::GridPrecalculations)
     output = allocate_output(gm, g)
     for (i, t) in enumerate(g.targetids)
-        v = compute_target(m, gm, g, t)
+        v = compute(m, gm, g, t)
         # TODO output[...] = v
     end
     return output
 end
 
 """
-    compute_target(::MovementMode, gm::GraphMeasure, g::GridPrecalculations, target::Int)
+    compute(::MovementMode, gm::GraphMeasure, g::GridPrecalculations, target::Int)
 
 Computes results of a single target pixel for a graph measure
 and movement mode. 
 
-`compute_target` is called inside `compute` or in the loop in `solve!` for 
+`compute` is called inside `compute` or in the loop in `solve!` for 
 VectorSolver/LinearSolver. 
 """
-function compute_target end
+function compute end
 
 # LeastCost
-function compute_target(::LeastCost, gm::Betweenness, g::GridPrecalculations, target::Int)
+function compute(::LeastCost, gm::Betweenness, g::GridPrecalculations, target::Int)
     # Calculate distances
     (; cost_weighted_digraph) = g.cost_weighted_digraph # simpleweighteddigraph(g.costmatrix)
     shorted_paths = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, target)
@@ -65,19 +64,19 @@ function compute_target(::LeastCost, gm::Betweenness, g::GridPrecalculations, ta
 end
 
 # RandomWalk 
-function compute_target(m::RandomWalk, ::EdgeBetweenness{Weighting}, g::GridPrecalculations, (i, t)) where Weighting
-    nodebet = compute_target(m, Betweenness(Weighting()), g, t)
+function compute(m::RandomWalk, ::EdgeBetweenness{Weighting}, g::GridPrecalculations, (i, t)) where Weighting
+    nodebet = compute(m, Betweenness(Weighting()), g, t)
     return nodebet * pref[g.id_to_grid_coordinate_list[i]]
 end
-function compute_target(::RandomWalk, ::Betweenness{QualityWeighted}, g::GridPrecalculations, t::Int)
+function compute(::RandomWalk, ::Betweenness{QualityWeighted}, g::GridPrecalculations, t::Int)
     Z, H, qˢ, qᵗ, p, workspace = g.fundamental, g.hitting_time, g.source_quality, g.target_quality, g.stationary_distribution, g.workspaces[1]
     return qˢ' * _betweenness!(workspace, Z, H, p, t) * qᵗ
 end
-function compute_target(::RandomWalk, ::Betweenness{QualityAndProximityWeighted}, g::GridPrecalculations, target::Int)
+function compute(::RandomWalk, ::Betweenness{QualityAndProximityWeighted}, g::GridPrecalculations, target::Int)
     Z, H, K, p, workspace = g.probability, g.cost, g.fundamental, g.hitting_time, g.quality_weighted_proximity, g.stationary_distribution, g.workspaces[1]
     return sum(_betweenness!(workspace, Z, H, p, t) .* K)
 end
-function compute_target(::RandomWalk, ::Betweenness{ProximityWeighted}, g::GridPrecalculations, target::Int)
+function compute(::RandomWalk, ::Betweenness{ProximityWeighted}, g::GridPrecalculations, target::Int)
     Z, H, K, p, workspace = g.fundamental, g.hitting_time, g.proximity, g.stationary_distribution, g.workspaces[1]
     return sum(_betweenness!(workspace, Z, H, p, t) .* K)
 end
@@ -89,7 +88,7 @@ _betweenness!(workspace, Z, H, p, t) =
 # This is an idea for specifying precomputed arrays needed for a given graph measure
 # It would be nice to have this close top the algorithme.
 # This function could also be defined with a @needs macro on the 
-# `compute_target` function to remove the name duplication
+# `compute` function to remove the name duplication
 needs(::RandomWalk, ::Betweenness{QualityAndProximityWeighted}) = 
     (:fundamental, :hitting_time, :source_quality, :target_quality, :stationary_distribution, :workspaces => 1)
 needs(::RandomWalkd, ::Betweenness{QualityAndProximityWeighted}) = 
@@ -99,6 +98,33 @@ needs(::RandomWalkd, ::Betweenness{ProximityWeighted}) =
 
 apply_weight!(k, ::Unweigthed, g::GridPrecalculations, target) = k
 function apply_weight!(k, ::QualityAndProximityWeighted, g::GridPrecalculations, target)
+    # TODO lookup target not findfirst
     k .*= g.qˢ .* g.qᵗ[findfirst(isequal(target), g.targetidx)]
     return k
+end
+
+# RandomShortestPath
+
+# Betweenness
+function compute(::RandomShortestPath, ::Betweenness{QualityWeighted}, gp::GridPrecalculations; kw...)
+    g = grid(gp)
+    return RSP_betweenness_qweighted(gp.W, gp.Z, g.qs, g.qt, g.targetnodes; kw...)
+end
+function compute(::RandomShortestPath, ::Betweenness{QualityAndProximityWeighted}, gp::GridPrecalculations; kw...)
+    g = grid(gp)
+    return RSP_betweenness_kweighted(gp.W, gp.Z, g.qs, g.qt, g.targetnodes; kw...)
+end
+function compute(::RandomShortestPath, ::EdgeBetweenness{QualityWeighted}, gp::GridPrecalculations; kw...) 
+    g = gp.g
+    return RSP_edge_betweenness_qweighted(gp.W, gp.Z, g.qs, g.qt, g.targetnodes; kw...)
+end
+function compute(::RandomShortestPath, ::EdgeBetweenness{QualityAndProximityWeighted}, gp::GridPrecalculations; kw...) 
+    g = gp.g
+    return RSP_edge_betweenness_kweighted(gp.W, gp.Z, g.qs, g.qt, g.targetnodes; kw...)
+end
+# ConnectedHabitat
+function compute(::ConnectedHabitat, gp::GridPrecalculations, t::Int)
+    g = gp.g
+    qˢ, qᵗ, K = g.source_quality, g.target_quality, gp.proximity
+    return mul!(view(workspaces, :, 1), K, qᵗ) .*= qˢ
 end
