@@ -62,29 +62,16 @@ LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
 
 # In `init!` we allocate all large dense arrays 
 function init!(
-    ws::NamedTuple,
+    gp::GridPrecalculations,
     solver::Solver,
-    cm::FundamentalMeasure,
-    p::AbstractProblem,
+    p::Problem,
     rast::RasterStack;
     verbose=false,
 )
     # Initialise the whole grid
     grid = Grid(p, rast; prune=false)
     # Initialise the workspace
-    workspace = _init_dense!(ws, solver, cm, p, grid; verbose)
-    if isthreaded(solver)
-        nbuffers = Thread.nthreads()
-        channel = Channel{typeof(workspace)}(nbuffers)
-        put!(channel, workspace)
-        for n in 2:nbuffers
-            workspace_n = _init_dense!(ws, solver, cm, p, grid; verbose)
-            put!(channel, workspace_n)
-        end
-        return (; channel)
-    else
-        return workspace
-    end
+    precalculate!(gp, grid; verbose)
 end
 
 # _init_dense! may be called multiple times from `init!`, for each thread
@@ -139,7 +126,6 @@ function _init_dense!(
     else
         nothing
     end
-   
     free_energy_distances = if hastrait(needs_free_energy_distance, gms) || cf == ConScape.free_energy_distance
         haskey(ws, :free_energy_distances) ? _reshape(ws.free_energy_distances, size(Z)) : similar(Z)
     else
@@ -452,7 +438,6 @@ function init(solver::LinearSolver, A::AbstractMatrix)
     end
 end
 
-
 function LinearAlgebra.ldiv!(s::LinearSolver, init, B; B_copy)
     # TODO: for now we define a Z matrix, but later modify ops 
     # to run column by column without materialising Z
@@ -535,8 +520,7 @@ function _check_z(s, Z, W, g)
 end
 
 # This duplicats some logic from gridrsp
-function _setproximities!(
-    proximities::AbstractMatrix,
+function _proximities!(
     expected_costs::AbstractMatrix,
     cm::ConnectivityMeasure,
     p::Problem,

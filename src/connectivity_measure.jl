@@ -35,7 +35,8 @@ Assumes partial knowledge and immortality.
 - `diagvalue`: the value to use for the diagonal of the proximity matrix
 - `approx`: whether to use an approximate algorithm
 """
-struct RandomisedShortestPath{T<:Union{Real,Nothing},DV} <: ArrivingMovement
+struct RandomisedShortestPath{CM<:FundamentalMeasure,T<:Union{Real,Nothing},DV} <: ArrivingMovement
+    connectivity_maesure::CM
     θ::T
     diagvalue::DV = nothing
     approx::Bool = false
@@ -83,21 +84,15 @@ abstract type ConnectivityMeasure{M} <: SourceTargetMeasure{M} end
 abstract type FundamentalMeasure{M} <: ConnectivityMeasure{M} end
 abstract type DistanceMeasure{M} <: FundamentalMeasure{M} end
 
-@kwdef struct ExpectedCost{M<:ArrivingMovementMode,DT} <: DistanceMeasure{M}
-    movement::M
+@kwdef struct ExpectedCost{DT} <: DistanceMeasure{M}
     distance_transformation::DT
 end
-@kwdef struct FreeEnergyDistance{M<:ArrivingMovementMode,DT} <: DistanceMeasure{M}
-    movement::M
+@kwdef struct FreeEnergyDistance{DT} <: DistanceMeasure{M}
     distance_transformation::DT
 end
-@kwdef struct PowerMeanProximity{M<:RSP} <: FundamentalMeasure{M}
-    movement::M
-end
+@kwdef struct PowerMeanProximity <: FundamentalMeasure{M} end
 # TODO: look at theta use for SurvivalProbability, it should be 1
-@kwdef struct SurvivalProbability{M<:AbsorbingRandomWalk} <: FundamentalMeasure{M}
-    movement::M
-end
+@kwdef struct SurvivalProbability <: FundamentalMeasure{M} end
 @kwdef struct KullbackLeiblerDivergence{M<:ArrivingMovementMode,F} <: PathDistributionMeasure 
     movement::M
     summary::F=mean
@@ -110,7 +105,3 @@ distance_transformation(cm::DistanceMeasure) = cm.distance_transformation
 
 returntrait(::ConnectivityMeasure) = ReturnsDense()
 returntrait(::KullbackLeiblerDivergence) = ReturnsDense()
-
-# This is not used yet but could be
-compute(cm::SourceTargetMeasure, g; kw...) =
-    source_target_function(m)(g; keywords(cm)..., kw...)

@@ -1,7 +1,7 @@
 # TODO: the loop here doesn't decompose to single targets, so the full Z matrix seems to be needed.
 # this is a problem for memory use in e.g. BatchProblem, D may be large fraction of 
 # the available memory per node on the cluster (~3gb per core)
-function compute(::DistanceMetric{<:RandomWalk}, g::Grid)
+function compute(::RandomWalk, g::Grid)
     (; P, C) = g
     PC = sum(P .* C; dims=2)
     IP = I - P
@@ -29,8 +29,8 @@ function compute(::DistanceMetric{<:RandomWalk}, g::Grid)
 end
 
 function compute(
-    ::ExpectedCost{<:RandomShortestPath}, 
-    gp::RandomisedShortestPathPrecalculations, 
+    ::RandomShortestPath{ExpexctedCost}, 
+    gp::RandomisedShortestPathGridPrecalculations, 
     targets::AbstractVector,
 )
     (; W, C, CW, Z, A, A_init, workspace1, workspace2) = gp
@@ -46,9 +46,9 @@ function compute(
     return copy(C̄)
 end
 function compute(
-    cm::FreeEnergyDistance{<:::RandomShortestPath}, 
-    gp::RandomisedShortestPathPrecalculations, 
-    targets,
+    cm::RandomShortestPath{FreeEnergyDistance}, 
+    gp::RandomisedShortestPathGridPrecalculations, 
+    target::Target,
 )
     θ = movement(cm).θ
     (; survival_probability, free_energy_distances_buffer) = gp
@@ -57,22 +57,22 @@ function compute(
 end
 function compute(
     ::SurvivalProbability{<:RandomShortestPath}, 
-    gp::RandomisedShortestPathPrecalculations, 
+    gp::RandomisedShortestPathGridPrecalculations, 
     targets::AbstractVector
 ) 
     Z .* inv.((Z[i, j] for (j, i) in enumerate(targets)))'
 end
 function compute(
     ::SurvivalProbability{<:RandomShortestPath}, 
-    gp::RandomisedShortestPathPrecalculations, 
+    gp::RandomisedShortestPathGridPrecalculations, 
     target::Int
 ) 
     Z ./ Z[target, 1]
 end
 function compute(
-    cm::PowerMeanProximity{<:::RandomShortestPath}, 
-    gp::RandomisedShortestPathPrecalculations, 
-    targets::AbstractVector, 
+    cm::PowerMeanProximity{<:RandomShortestPath}, 
+    gp::RandomisedShortestPathGridPrecalculations, 
+    target::Target, 
 )
     θ = movement(cm).θ
     (; survival_probability) = gp
@@ -89,17 +89,12 @@ end
 
 function compute(
     ::KullbackLeiblerDivergence{<:LeastCost}, 
-    gp::LeastCostPrecalculations;
+    gp::LeastCostGridPrecalculations,
+    precomputed::NamedTuple,
 )
-    workspace1 = workspaces[1]
-    g = grsp.g
-    C = g.costmatrix
-    cost_weighted_digraph = SimpleWeightedDiGraph(C)
-    n = size(C, 1)
+    cost_weighted_digraph = get(() -> SimpleWeightedDiGraph(C), precomputed, :cost_weighted_digraph)
     from = Array{Int}(undef, n)
     kl_div = Array{Float64}(undef, n)
-    # Previously
-    # div = hcat([least_cost_kl_divergence(C, grsp.Pref, i; cost_weighted_digraph, from, kl_div, kw...) for i in g.targetnodes]...)
     div = workspace1
     for i in g.targetnodes
         div[i, :] .= least_cost_kl_divergence(C, grsp.Pref, i; cost_weighted_digraph, from, kl_div, kw...)

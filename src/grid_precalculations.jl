@@ -16,6 +16,13 @@ Base.size(gp::GridPrecalculations) = size(grid(gp))
 DimensionalData.dims(gp::GridPrecalculations) = dims(grid(gp))
 
 """
+    TargetPrecalculations
+
+Abstract type for precalculated variables at the level of single targets.
+"""
+abstract type TargetPrecalculations end
+
+"""
     precalculate(::MovementMode, g::Grid)
 
 Returns a `GridPrecalculation` object for the specific `MovementMode`.
@@ -32,39 +39,64 @@ Stores precalculated variables for use in `RandomisedShortestPath`-based measure
 
 (formerly GridRSP)
 """
-struct RandomisedShortestPathPrecalculations <: GridPrecalucations
+struct RandomisedShortestPathGridPrecalculations{CM,S<:AbstractSolver,F} <: GridPrecalucations
     g::Grid
+    cm::CM
+    solver::S
     θ::Float64
     probability::SparseMatrixCSC{Float64,Int}
     W::SparseMatrixCSC{Float64,Int} # TODO what is a longer name for W
     IW::SparseMatrixCSC{Float64,Int}
-    fundamental::Matrix{Float64}
+    IW_factorization::F
     # TODO the rest here
 end
-function RandomisedShortestPathPrecalculations(g::Grid; 
-    θ=nothing, 
-    verbose=true, 
-    solver,
+function RandomisedShortestPathGridPrecalculations(
+    m::RandomisedShortestPath, problem::Problem, rast::RasterStack
 )
-    Pref = _probabilities(g.affinities)
-    W = _W(Pref, θ, g.costmatrix)
-    A = I - W
-    A_factorization = init(solver, A)
-    B_sparse = _rsp_sparse_rhs(g.targetnodes, size(g.costmatrix, 1))
+    g = Grid(problem, rast)
+    cm = connectivity_measure(m)
+    probability = _probabilities(g.affinities)
+    W = _W(probability, θ, g.costmatrix)
+    IW = I - W
+    IW_factorization = init(solver, IW)
 
-    Z = ldiv!(Z, A, B; B_copy=copyto!(workspace, B))
     # Check that values in Z are not too small:
     verbose && if minimum(Z) * minimum(nonzeros(g.costmatrix .* W)) == 0
         @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
     end
 
-    return RandomisedShortestPathPrecalculations(g, θ, Pref, W, , Z)
+    return RandomisedShortestPathGridPrecalculations(cm, g, θ, probability, W, IW, IW_factorization, fundamental, solver)
 end
 
-precalculate(m::RandomisedShortestPath, g) = RandomisedShortestPathPrecalculations(g; θ=m.θ)
+precalculate(m::RandomisedShortestPath, g) = RandomisedShortestPathGridPrecalculations(g, m)
+precalculate(gp::RandomisedShortestPathGridPrecalculations, targets) = 
+    RandomisedShortestPathTargetPrecalculations(gp, targets)
+
+struct RandomisedShortestPathTargetPrecalculations{CM}
+    gp::RandomisedShortestPathGridPrecalculations{CM}
+    fundamental_matrix::Matrix{Float64}
+    proximities::Matrix{Float64}
+    landscape_matrix::Matrix{Float64}
+    target::Target
+end
+function RandomisedShortestPathTargetPrecalculations(
+    gp::RandomisedShortestPathGridPrecalculations, 
+    target::Target,
+    nworkspaces=1
+)
+    B_sparse = _rsp_sparse_rhs(g.targetnodes, size(g.costmatrix, 1))
+    workspaces = map(1:nworkspaces) do i
+        Matrix{Float64}(undef, size(B_sparse))
+    end
+    B = Matrix(B_sparse)
+    B_copy=copyto!(workspaces[1], B)
+    fundamental = ldiv!(solver(gp), gp.IW, B; B_copy)
+    proximities = compute(cm, gp)
+    RandomisedShortestPathTargetPrecalculations(gp, fundamental, proximities, target)
+end
 
 # Update rhs
-function reinit!(allocs::RandomisedShortestPathPrecalculations, g; θ=nothing)
+function reinit!(allocs::RandomisedShortestPathGridPrecalculations, g; θ=nothing)
 end
 
 # Generate the sparse diagonal rhs matrix
@@ -73,7 +105,7 @@ function _rsp_sparse_rhs(targetnodes, n)
     sparse(targetnodes, 1:m, 1.0, n, m)
 end
 
-function _probabilities(A::SparseMatrixCSC) 
+function _probabilities(A::SparseMatrixCSC)
     # TODO drop the LinAlg here, broadcasting a division by 
     # a vector is faster, and easier to read for almost everyone
     source_sums = vec(sum(A, dims=2))
@@ -125,36 +157,51 @@ end
 
 Stores precalculated variables for use in `RandomWalk`-based measures.
 """
-struct RandomWalkPrecalculations <: GridPrecalucations
+struct RandomWalkGridPrecalculations{CM,S} <: GridPrecalucations
     g::Grid
+    connectivity_measure::CM
+    solver::S
     probability::SparseMatrixCSC{Float64,Int}
     fundamental::Matrix{Float64}
     hitting_time::Matrix{Float64}
     stationary_distribution::Vector{Float64}
     # TODO the rest here
 end
-function RandomWalkPrecalculations(g)
-    probability = _Pref(g.affinities)
-    stationary_distribution = ConScape.stationary_distribution(probability)
-    fundamental = inv(Matrix(I-P) .+ p')
+function RandomWalkGridPrecalculations(g; solver=VectorSolver())
+    probability = _probabilities(g.affinities)
+    stationary_distribution = stationary_distribution(probability)
+    fundamental = inv(Matrix(I-P) .+ p') # TODO make this not square
     hitting_time = (diag(Z)' .- Z) ./ p'
-    RandomWalkPrecalculations(g, probability, fundamental, hitting_time, stationary_distribution)
+    RandomWalkPrecalculations(g, probability, fundamental, hitting_time, stationary_distribution, solver)
 end
 
-precalculate(::RandomWalk, g) = RandomWalkPrecalculations(g)
+struct RandomWalkTargetPrecalculations{CM,S}
+    gp::RandomWalkGridPrecalculations{CM,S}
+    target::Target
+end
+function RandomWalkTargetPrecalculations(
+    gp::RandomWalkGridPrecalculations, 
+    target::Target,
+)
+    RandomWalkTargetPrecalculations(gp, target)
+end
+
+precalculate(m::RandomWalk, g) = RandomWalkGridPrecalculations(m, g)
+precalculate(g::RandomWalkGridPrecalculation, target) = RandomWalkTargetPrecalculations(g, target)
 
 function reinit!(allocs::RandomWalkPrecalculations, g)
     # TODO in-place version
 end
 
-function stationary_distribution(P::SparseMatrixCSC)
-    #Input: the transition probability matrix P
-    #Output: the stationary distribution of the random walk
+function stationary_distribution(P::SparseMatrixCSC, solver::AbstractSolver)
+    # Input: the transition probability matrix P
+    # Output: the stationary distribution of the random walk
     n = LinearAlgebra.checksquare(P)
     PI = P' - I
-    PI[1, :] = ones(n)
-    v = [1; zeros(n - 1)]
-    return PI \ v
+    PI[1, :] .= 1
+    v = zeros(n)
+    v[1] = 1
+    return ldiv!(solver, PI, v)
 end
 
 

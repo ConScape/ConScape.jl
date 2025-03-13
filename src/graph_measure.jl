@@ -105,15 +105,14 @@ abstract type ReturnTrait end
 struct ReturnsDenseSpatial <: ReturnTrait end
 struct ReturnsSparse <: ReturnTrait end
 struct ReturnsScalar <: ReturnTrait end
-struct ReturnsOther{F} <: ReturnTrait
-    f::F
-end
+struct ReturnsEigMax <: ReturnTrait end
 
 # These allow calculation of return allocations
-returntrait(::SpatialMeasure) = ReturnsDenseSpatial()
-returntrait(::EdgeBetweenness) = ReturnsSparse()
+returntrait(::SpatialMeasure) = AssignDenseSpatial()
+returntrait(::ConnectedHabitat) = SumDenseSpatial()
+returntrait(::EdgeBetweenness) = AssignSparse()
 returntrait(::PathDistributionMeasure) = ReturnsScalar()
-returntrait(::EigMax) = ReturnsOther((n, m) -> n + m)
+returntrait(::EigMax) = ReturnsEigMaxTuple() # (n, m) -> n + m
 
 # A trait for connectivity requirement
 needs_connectivity(::GraphMeasure) = false
