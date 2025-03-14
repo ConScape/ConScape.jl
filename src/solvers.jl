@@ -161,14 +161,6 @@ function _init_dense!(
 
     return (; Z, Zⁱ, workspaces, permuted_workspaces, free_energy_distances, expected_costs, proximities, outputs, grid, subgrids)
 end
-# function init!(
-#     workspace::NamedTuple, s::Solver, cm::ConnectivityMeasure, p::AbstractProblem, rast::RasterStack;
-#     verbose=false,
-#     grid=Grid(p, rast),
-# )
-#     # TODO what is needed here?
-#     return (; grid)
-# end
 
 # RSP is not used for ConnectivityMeasure, so the solver isn't used
 function solve!(
@@ -200,7 +192,6 @@ function solve!(
         gms = graph_measures(p)
         _solve!(ws4, solver, cm, cm.distance_transformation, gms, p; verbose)
     end
-    @show typeof(ws1.outputs)
     return _merge_to_stack(_maybe_raster(ws1.outputs, sg1))
 end
 function solve!(
