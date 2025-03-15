@@ -7,11 +7,16 @@ These are lazy definitions of conscape functions.
 abstract type GraphMeasure end
 
 abstract type SpatialMeasure <: GraphMeasure end
-abstract type TopologicalMeasure <: GraphMeasure end
-abstract type BetweennessMeasure <: SpatialMeasure end
 abstract type PerturbationMeasure <: SpatialMeasure end
 
 # Betweenness
+
+"""
+    BetweennessMeasure 
+
+Measures of node and edge betweenness.
+"""
+abstract type BetweennessMeasure <: SpatialMeasure end
 
 abstract type BetweennessWeight end
 
@@ -32,7 +37,7 @@ weighting(gm::BetweennessMeasure) = gm.weighting
 
 # Sensitivity
 
-abstract type SensitivityContext end
+abstract type SensitivityContext end # "With regards to"
 
 struct Affinity <: SensitivityContext end
 struct Cost <: SensitivityContext end
@@ -61,7 +66,7 @@ struct ConnectedHabitat <: SpatialMeasure end
     qᵗvalue::QT = 0.0
 end
 
-@kwdef struct EigMax{T} <: TopologicalMeasure
+@kwdef struct EigMax{T} <: GraphMeasure
     tol::T = 1e-14
 end
 
@@ -104,19 +109,18 @@ Traits for preallocated return values of GraphMeasures.
 abstract type ReturnTrait end
 struct ReturnsDenseSpatial <: ReturnTrait end
 struct ReturnsSparse <: ReturnTrait end
+struct ReturnsDense <: ReturnTrait end
 struct ReturnsScalar <: ReturnTrait end
-struct ReturnsEigMax <: ReturnTrait end
+struct ReturnsEigMaxTuple <: ReturnTrait end
 
 # These allow calculation of return allocations
 returntrait(::SpatialMeasure) = AssignDenseSpatial()
-returntrait(::ConnectedHabitat) = SumDenseSpatial()
+returntrait(::SpatialMeasure) = SumDenseSpatial()
 returntrait(::EdgeBetweenness) = AssignSparse()
-returntrait(::PathDistributionMeasure) = ReturnsScalar()
 returntrait(::EigMax) = ReturnsEigMaxTuple() # (n, m) -> n + m
 
+
 # A trait for connectivity requirement
-needs_connectivity(::GraphMeasure) = false
-needs_connectivity(::Betweenness{ProximitWeighted}) = true
 needs_connectivity(::EdgeBetweenness{ProximitWeighted}) = true
 needs_connectivity(::EigMax) = true
 needs_connectivity(::ConnectedHabitat) = true

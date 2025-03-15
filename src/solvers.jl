@@ -62,14 +62,12 @@ LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
 
 # In `init!` we allocate all large dense arrays 
 function init!(
-    gp::GridPrecalculations,
     solver::Solver,
+    gp::GridPrecalculations,
     p::Problem,
     rast::RasterStack;
     verbose=false,
 )
-    # Initialise the whole grid
-    grid = Grid(p, rast; prune=false)
     # Initialise the workspace
     precalculate!(gp, grid; verbose)
 end
@@ -162,23 +160,9 @@ function _init_dense!(
     return (; Z, Zⁱ, workspaces, permuted_workspaces, free_energy_distances, expected_costs, proximities, outputs, grid, subgrids)
 end
 
-# RSP is not used for ConnectivityMeasure, so the solver isn't used
 function solve!(
-    workspace::NamedTuple,
-    s::MatrixSolver,
-    cm::ConnectivityMeasure,
-    p::AbstractProblem;
-    verbose=false
-)
-    g = workspace.g
-    return map(graph_measures(p), workspace.outputs) do gm, output
-        compute(gm, p; workspace..., output, verbose)
-    end
-end
-function solve!(
-    ws::NamedTuple,
     solver::MatrixSolver,
-    cm::FundamentalMeasure,
+    gp::GridPrecalculations,
     p::Problem;
     verbose=false,
 )
@@ -195,9 +179,8 @@ function solve!(
     return _merge_to_stack(_maybe_raster(ws1.outputs, sg1))
 end
 function solve!(
-    ws::NamedTuple,
     solver::Union{VectorSolver,LinearSolver},
-    cm,
+    gp::GridPrecalculations,
     p::Problem;
     verbose=false,
 )
@@ -239,56 +222,6 @@ function solve!(
         end
     end
     return _merge_to_stack(_maybe_raster(ws1.outputs, ws.grid))
-end
-
-function _solve!(workspace, solver, cm, dt::NamedTuple{DT}, gms::NamedTuple{GMS}, p; verbose) where {DT,GMS}
-    (; grid, Pref, W, Z, outputs) = workspace
-    # GridRSP is just a wrapper now, we can remove it later
-    grsp = GridRSP(grid, cm.θ, Pref, W, Z)
-    # Map over both distance transformations and graph measures
-    nested = map(values(dt), DT) do dt, k
-        cm1 = ConstructionBase.setproperties(cm, (; distance_transformation=dt))
-        hastrait(needs_proximity, gms) &&
-            _setproximities!(workspace.proximities, workspace.expected_costs, cm1, p, grsp)
-        # Rebuild the problem with a connectivity measure
-        # holding a single distance transformation, in case its used
-        p1 = ConstructionBase.setproperties(p, (; connectivity_measure=cm1))
-        map(gms, outputs) do gm, os
-            if needs_connectivity(gm)
-                compute(gm, p1, grsp; workspace..., output=os[k])
-            else
-                nothing
-            end
-        end
-    end |> NamedTuple{DT}
-    # Map over graph measures that don't need connectivity
-    flat = map(gms, outputs) do gm, output
-        if needs_connectivity(gm)
-            nothing
-        else
-            compute(gm, p, grsp; workspace..., output)
-        end
-    end
-    # Combine nested and flat results
-    return map(GMS) do k
-        f = flat[k]
-        if isnothing(f)
-            map(n -> n[k], nested)
-        else
-            f
-        end
-    end |> NamedTuple{GMS}
-end
-function _solve!(workspace, solver, cm, dt, gms::NamedTuple{GMS}, p; verbose) where {GMS}
-    (; grid, Pref, W, Z, outputs) = workspace
-    # GridRSP is just a wrapper now, we can remove it later
-    grsp = GridRSP(grid, cm.θ, Pref, W, Z)
-    hastrait(needs_proximity, gms) &&
-        _setproximities!(workspace.proximities, workspace.expected_costs, cm, p, grsp)
-    # Map over graph measures
-    map(p.graph_measures, outputs) do gm, output
-        compute(gm, p, grsp; workspace..., output)
-    end
 end
 
 function _update_targets!(a, g, i)

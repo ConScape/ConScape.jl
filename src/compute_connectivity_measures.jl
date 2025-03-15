@@ -1,7 +1,7 @@
 # TODO: the loop here doesn't decompose to single targets, so the full Z matrix seems to be needed.
 # this is a problem for memory use in e.g. BatchProblem, D may be large fraction of 
 # the available memory per node on the cluster (~3gb per core)
-function compute(::RandomWalk, g::Grid)
+function compute(::HittingTime, g::RandomWalkGridPrecalculations)
     (; P, C) = g
     PC = sum(P .* C; dims=2)
     IP = I - P
@@ -29,93 +29,48 @@ function compute(::RandomWalk, g::Grid)
 end
 
 function compute(
-    ::RandomShortestPath{ExpexctedCost}, 
-    gp::RandomisedShortestPathGridPrecalculations, 
-    targets::AbstractVector,
+    ::ExpectedCost, 
+    gp::RandomisedShortestPathTargetPrecalculations, 
 )
-    (; W, C, CW, Z, A, A_init, workspace1, workspace2) = gp
+    (; CW, Z, IW_init, workspaces) = gp
+    workspace1, workspace2 = workspaces
+    # Solve: IW \ (C .* W * Z)
     B = mul!(workspace1, CW, Z)
-    C̄ = ldiv!(solver, A_init, B; B_copy=copy!(workspace2, B))
+    C̄ = ldiv!(solver, IW_init, B; B_copy=copy!(workspace2, B))
+    # TODO comment why we divide by Z
     C̄ ./= Z
+    # Clean up NaNs
     replace!(C̄, NaN => Inf)
-    dˢ = view(workspace2, 1, :)
-    for j in axes(Z, 2)
-        dˢ[j] = C̄[targets[j], j]
-    end
-    C̄ .-= dˢ'
-    return copy(C̄)
+    # Subtract the cost at the target
+    C̄ .-= C̄[target.node, 1]
+    return C̄
 end
-function compute(
-    cm::RandomShortestPath{FreeEnergyDistance}, 
-    gp::RandomisedShortestPathGridPrecalculations, 
-    target::Target,
-)
+function compute(cm::FreeEnergyDistance, gp::RandomisedShortestPathTargetPrecalculations)
     θ = movement(cm).θ
-    (; survival_probability, free_energy_distances_buffer) = gp
-    free_energy_distances .= -log.(max.(zero(eltype(Z)), survival_probability)) ./ θ
-    return free_energy_distances
+    (; survival_probability, workspaces) = gp
+    fed = pop!(workspaces) 
+    return fed .= -log.(max.(zero(eltype(Z)), survival_probability)) ./ θ
 end
-function compute(
-    ::SurvivalProbability{<:RandomShortestPath}, 
-    gp::RandomisedShortestPathGridPrecalculations, 
-    targets::AbstractVector
-) 
-    Z .* inv.((Z[i, j] for (j, i) in enumerate(targets)))'
-end
-function compute(
-    ::SurvivalProbability{<:RandomShortestPath}, 
-    gp::RandomisedShortestPathGridPrecalculations, 
-    target::Int
-) 
-    Z ./ Z[target, 1]
-end
-function compute(
-    cm::PowerMeanProximity{<:RandomShortestPath}, 
-    gp::RandomisedShortestPathGridPrecalculations, 
-    target::Target, 
-)
-    θ = movement(cm).θ
+function compute(::PowerMeanProximity, gp::RandomisedShortestPathTargetPrecalculations)
+    θ = movement(gp).θ
     (; survival_probability) = gp
-    return survival_probability .^ (1 / θ)
+    pmp = pop!(gp.workspaces)
+    return pmp .= survival_probability .^ (1 / θ)
+end
+function compute(::SurvivalProbability, gp::RandomisedShortestPathTargetPrecalculations) 
+    sp = pop!(gp.workspaces)
+    return sp .= Z ./ Z[target, 1]
 end
 
-function mean_kl_divergence(grsp::Union{GridRSP,NamedTuple}, free_energy_distances, expected_costs;
-    workspaces=(similar(grsp.Z),), kw...
-)
-    g = grsp.g
-    fed_exp = workspaces[1] .= free_energy_distances .- expected_costs
-    return g.qs' * fed_exp * g.qt * grsp.θ
-end
-
-function compute(
-    ::KullbackLeiblerDivergence{<:LeastCost}, 
-    gp::LeastCostGridPrecalculations,
-    precomputed::NamedTuple,
-)
-    cost_weighted_digraph = get(() -> SimpleWeightedDiGraph(C), precomputed, :cost_weighted_digraph)
-    from = Array{Int}(undef, n)
-    kl_div = Array{Float64}(undef, n)
-    div = workspace1
-    for i in g.targetnodes
-        div[i, :] .= least_cost_kl_divergence(C, grsp.Pref, i; cost_weighted_digraph, from, kl_div, kw...)
-    end
-    # Why is it q wighted here but not per target?
-    return g.qs' * div * g.qt
-end
-function compute(
-    ::KullbackLeiblerDivergence{<:LeastCost}, 
-    gp::LeastCostPrecalculations,
-    target::Integer;
-)
-    (; C, Pref, cost_weighted_digraph, dsp) = gp
-    n = size(C, 1)
-    from = Array{Int}(undef, n)
-    output = Array{Float64}(undef, n)
+# Mean Kullback-Leibler Divergence
+function compute(::KullbackLeiblerDivergence, gp::LeastCostTargetPrecalculations)
+    (; Pref, cost_weighted_digraph, target) = gp
+    from, to, output = gp.workspaces
 
     # Calculate shortest paths
-    dsp = dijkstra_shortest_paths(cost_weighted_digraph, target)
+    dsp = dijkstra_shortest_paths(cost_weighted_digraph, target.node)
     parents = dsp.parents
-    parents[targetnode] = targetnode
+    parents[target.node] = target.node
 
     # Initialise arrays
     fill!(output, 0)
@@ -128,9 +83,7 @@ function compute(
         for i in 1:n
             fromᵢ, toᵢ = from[i], to[i]
             notdone |= (fromᵢ != toᵢ)
-            if fromᵢ == toᵢ
-                continue
-            end
+            fromᵢ == toᵢ && continue
             v = Pref[fromᵢ, toᵢ]
             output[i] += -log(v)
             from[i] = parents[toᵢ]
@@ -138,26 +91,20 @@ function compute(
         if !notdone
             break
         end
-        from, to = to, from # Pointer swap (yes but why?)
+        from, to = to, from
     end
-    return output
+    # qs' * output * qt
+    return sum(output1 .*= g.qs) * g.qt[target.node]
 end
-function compute(
-    ::KullbackLeiblerDivergence{<:RandomWalk}, 
-    gp::LeastCostPrecalculations,
-    target::Integer;
-)
-    # Trivially returns zero
+function compute(::KullbackLeiblerDivergence, gp::RandomWalkTargetPrecalculations)
+    # Trivially returns zero ?
     return 0.0
 end
-function compute(
-    cm::KullbackLeiblerDivergence{<:RandomShortestPath}, 
-    gp::RandomisedShortestPathPrecalculations,
-)
-    g = gp.g
+function compute(cm::KullbackLeiblerDivergence, gp::RandomisedShortestPathTargetPrecalculations)
+    g = grid(gp)
     θ = movement(cm).θ
-    (; free_energy_distances, expected_costs, workspace) = gp
-    fed_exp = workspace .= free_energy_distances .- expected_costs
-    # Returns a scalar
-    return g.qs' * fed_exp * g.qt * θ
+    (; target, free_energy_distances, expected_costs, workspaces) = gp
+    diff = workspace .= free_energy_distances .- expected_costs
+    # qs' * diff * qt * θ
+    return sum(diff .*= g.qs) * g.qt[target.node] * θ
 end

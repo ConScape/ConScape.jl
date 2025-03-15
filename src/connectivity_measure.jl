@@ -66,6 +66,7 @@ Allows integration of mortality with movement.
 """
 struct AbsorbingRandomWalk <: AbsorbingMovement end
 
+abstract type Measure end
 
 """
     SourceTargetMeasure 
@@ -76,32 +77,30 @@ These characterize distance, proximity or path distribution between source and t
 
 These produce a dense fundamental matrix, but may return a summary of it such as the mean.
 """
-abstract type SourceTargetMeasure{M} end
+abstract type SourceTargetMeasure <: Measure end
 
-abstract type PathDistributionMeasure{M} <: SourceTargetMeasure{M} end
+abstract type PathDistributionMeasure <: SourceTargetMeasure end
 
-abstract type ConnectivityMeasure{M} <: SourceTargetMeasure{M} end
-abstract type FundamentalMeasure{M} <: ConnectivityMeasure{M} end
-abstract type DistanceMeasure{M} <: FundamentalMeasure{M} end
+abstract type ConnectivityMeasure <: SourceTargetMeasure end
+abstract type FundamentalMeasure <: ConnectivityMeasure end
+abstract type DistanceMeasure <: FundamentalMeasure end
 
-@kwdef struct ExpectedCost{DT} <: DistanceMeasure{M}
+@kwdef struct ExpectedCost{DT} <: DistanceMeasure
     distance_transformation::DT
 end
-@kwdef struct FreeEnergyDistance{DT} <: DistanceMeasure{M}
+@kwdef struct FreeEnergyDistance{DT} <: DistanceMeasure
     distance_transformation::DT
 end
-@kwdef struct PowerMeanProximity <: FundamentalMeasure{M} end
+struct PowerMeanProximity <: FundamentalMeasure end
 # TODO: look at theta use for SurvivalProbability, it should be 1
-@kwdef struct SurvivalProbability <: FundamentalMeasure{M} end
-@kwdef struct KullbackLeiblerDivergence{M<:ArrivingMovementMode,F} <: PathDistributionMeasure 
-    movement::M
-    summary::F=mean
-end
+struct SurvivalProbability <: FundamentalMeasure end
+struct KullbackLeiblerDivergence <: PathDistributionMeasure end
+struct HittingTime <: DistanceMeaure end
 
 keywords(cm::ConnectivityMeasure) = _keywords(cm)
 
 distance_transformation(cm::FundamentalMeasure) = nothing
 distance_transformation(cm::DistanceMeasure) = cm.distance_transformation
 
-returntrait(::ConnectivityMeasure) = ReturnsDense()
-returntrait(::KullbackLeiblerDivergence) = ReturnsDense()
+returntrait(::ConnectivityMeasure) = SumDenseSpatial()
+returntrait(::KullbackLeiblerDivergence) = SumScalar()
