@@ -98,8 +98,6 @@ function _init_dense!(
     reuse_output=false,
 )
     verbose && println("Retreiving measures...")
-    subgrids = split_subgraphs(grid)
-    g = first(subgrids)
     gms = graph_measures(p)
     cf = connectivity_function(p)
     verbose && println("Defining sparse arrays...")

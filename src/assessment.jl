@@ -128,7 +128,8 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
     grid_sizes = vec(_estimate_grid_sizes(p, bool_rast; window_ranges))
 
     # Organise stats for each window into vectors
-    window_mask = map(s -> prod(s) > 0, grid_sizes)
+    # Windows must have more than one source and more than one target
+    window_mask = map(s -> s[1] > 1 && s[2] > 1, grid_sizes)
     non_empty_indices = eachindex(window_mask)[window_mask]
 
     # Calculate global stats
