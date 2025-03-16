@@ -1,11 +1,12 @@
 # This file is a work in progress...
 abstract type AbstractWindowedProblem{P} <: AbstractProblem end
 
-costs(p::AbstractWindowedProblem) = costs(p.problem)
-prune(p::AbstractWindowedProblem) = prune(p.problem)
 buffer(p::AbstractWindowedProblem) = p.buffer
 buffer(p::AbstractProblem) = 0
 grain(::AbstractProblem) = nothing
+problem(p::AbstractWindowedProblem) = p.problem
+costfunction(p::AbstractWindowedProblem) = costfunction(problem(p))
+solver(p::AbstractWindowedProblem) = solver(problem(p))
 
 """
     WindowedProblem(problem::AbstractProblem; size, centers, θ)
@@ -56,7 +57,7 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
     timed=false,
     verbose::Bool=false,
 )
-    (; rast, window_workspaces, window_ranges, selected_window_indices, sorted_indices) = workspace
+    (; rast, window_ranges, selected_window_indices, sorted_indices) = workspace
     # Test outputs just return the inputs after window masking 
     if test_windows
         output_stacks = map(selected_window_indices) do i
@@ -71,10 +72,6 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
         end
    end
 
-    ch = Channel{NamedTuple}(length(window_workspaces))
-    for ws in window_workspaces
-        put!(ch, ws)
-    end
     # Set up channels for threading
     # Define a runner for threaded/non-threaded operation
     function run(i, iw)
@@ -84,22 +81,19 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
         # verbose && println("Solving window $i $window ")
         window_rast = _get_window_with_zeroed_buffer(view, p, rast, window)
         # Initialise the window using stored memory
-        verbose && println("Getting workspace from channel...")
-        workspace = take!(ch)
         verbose && println("Initialising window from size $(size(window_rast)), from ranges $window...")
-        workspace_initialised = init!(workspace, p.problem, window_rast; verbose)
+        window_precalc = init(problem(p), window_rast; verbose)
         # Solve for the window
         verbose && println("Solving window $window...")
-        grid = workspace_initialised.grid
         elapsed = @elapsed begin
-            output = if prod(target_size(grid)) > 0
-                solve!(workspace_initialised, p.problem)
+            output = if prod(sparse_size(grid(window_precalc))) > 0
+                solve!(window_precalc)
             else
-                missing
+                @show target_size(grid(window_precalc))
+                error()
+                # missing
             end
         end
-        # Return the workspace to the channel
-        put!(ch, workspace)
         # Garbage collect for this window
         GC.gc()
         return output, elapsed
@@ -149,19 +143,7 @@ function init!(workspace::NamedTuple, p::WindowedProblem, rast::RasterStack;
     sorted_indices = last.(sort!(prod.(grid_sizes[selected_window_indices]) .=> selected_window_indices; rev=true))
     length(sorted_indices) > 0 || return missing
    
-    n = min(length(selected_window_indices), p.threaded ? Threads.nthreads() : 1)
-    window_workspaces = Vector{NamedTuple}(undef, n)
-    if haskey(workspace, :window_workspaces)
-        Threads.@threads for i in 1:n
-            window_workspaces[i] = init!(workspace.window_workspaces[i], p.problem; verbose)
-        end
-    else
-        largest_rast = _get_window_with_zeroed_buffer(view, p, rast, window_ranges[first(sorted_indices)])
-        Threads.@threads for i in 1:n
-            window_workspaces[i] = init(p.problem, largest_rast; verbose)
-        end
-    end
-    return (; rast, window_workspaces, grid_sizes, window_ranges, selected_window_indices, sorted_indices)
+    return (; rast, grid_sizes, window_ranges, selected_window_indices, sorted_indices)
 end
 
 function _max_estimated_grid_size(p::AbstractWindowedProblem, rast; kw...)
@@ -439,12 +421,12 @@ function _get_window_with_zeroed_buffer!(dest, p::AbstractWindowedProblem, rast:
     # Reshape and rebuild to resuse memory
     data = (
         affinities=_reshape(parent(parent(dest.affinities)), size(source)),
-        qualities=_reshape(parent(parent(dest.qualities)), size(source)),
+        source_qualities=_reshape(parent(parent(dest.source_qualities)), size(source)),
         target_qualities=parent(parent(dest.target_qualities)),
     )
     dest = rebuild(dest; data, dims=dims(source))
     # Update values
-    dest.qualities .= source.qualities
+    dest.source_qualities .= source.source_qualities
     dest.affinities .= source.affinities
 
     return _with_sparse_targets(p, source, dest)
@@ -478,7 +460,7 @@ _valid_sources(f, p, rast::AbstractRasterStack) =
     _valid_sources(f, p, rast, axes(rast))
 function _valid_sources(f, p, rast::AbstractRasterStack, source_ranges::Tuple)
     # Get a window view
-    window = view(rast.qualities, source_ranges...)
+    window = view(rast.source_qualities, source_ranges...)
     # If there are non-NaN cells above zero, keep the window
     # TODO allow users to change this condition?
     return f(_isvalid.(window))

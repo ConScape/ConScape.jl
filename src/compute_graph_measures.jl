@@ -15,44 +15,32 @@ VectorSolver/LinearSolver.
 """
 function compute end
 
-const Targets = @NamedTuple{spatialid::CartesianIndex{2},targetid::Int,targetnode::Int}
-
-# We specialise on returntrait
-function compute(measures::NamedTuple, gp::GridPrecalculations)
-    # Generate outputs for each graph measure
-    outputs = map(measure -> allocate_output(measure, gp), measures)
-    # Loop over targets
-    for (i, t) in enumerate(targetnodes(gp))
-        # Specify target indices
-        target = Target(g.id_to_grid_coordinate_list[i], t, i)
-        # Precalculate for this target and graph measures
-        target_precalculations = init(gp, target)
-        # Compute everything for this target and graph measures
-        # We use a reduction so we can accumulate stored outputs as it runs
-        foreach(measures, outputs) do (measure, output)
-            # Compute a measure for this target
-            v = compute(measure, target_precalculations)
-            # Write values to output depending on returntrait
-            output = _update!(output, measure, v, target)
+function solve!(gi::GridInit)
+    # Loop over unnconnected subgraphs (there may be only one)
+    for subgrid_id in eachindex(subgrids(gi))
+        # Intitalise sparse matrices and precalculate e.g. LU factorizations
+        subgrid_precalc = init(gi, subgrid_id)
+        # Then loop over targets
+        for target_id in target_ids(subgrid_precalc)
+            # Precalculate for this target and graph measures
+            target_precalc = init(subgrid_precalc, target_id)
+            # Compute everything for this target and graph measures
+            foreach(graph_measures(gi), outputs(gi)) do measure, output
+                # Compute a measure for this target
+                v = compute(measure, target_precalc)
+                # Write values to output object
+                update_output!(output, measure, v, target_id)
+            end
         end
     end
 
-    return outputs
+    return outputs(gi)
 end
-
-# Here we update single target results to the output object
-# How that works exactly depends on the returntrait of each graph measure
-_update!(output, gm, v, target) = _update!(output, returntrait(gm), v, target) 
-_update!(output, ::AssignDenseSpatial, v::Number, target) = output[target.spatialid] = v
-_update!(output, ::SumDenseSpatial, v::AbstractMatrix, target) = output .+= v
-_update!(output, ::SumScalar, v::AbstractMatrix, target) = output + v
-# Not sure this one makes sense
-_update!(output, ::AssignSparse, v::AbstactVector, target) = output[:, target.targetid] = v
 
 # LeastCost
 function compute(gm::Betweenness, tp::LeastCostTargetPrecalculations)
     # Calculate distances
-    targetid = tp.target.targetid
+    targetid = tp.target.id
     (; cost_weighted_digraph, workspace) = tp
     shorted_paths = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, targetid)
     shortest_paths_en = Graphs.enumerate_paths(shorted_paths)
@@ -80,7 +68,7 @@ end
 # RandomWalk 
 function compute(::EdgeBetweenness{Weighting}, tp::RandomWalkTargetPrecalculations) where Weighting
     nodebet = compute(Betweenness(Weighting()), tp)
-    return nodebet * pref[t.spatialid]
+    return nodebet * pref[t.spatial]
 end
 function compute(::Betweenness{QualityWeighted}, tp::RandomWalkTargetPrecalculations)
     Z, H, qˢ, qᵗ, p, workspace = tp.fundamental, tp.hitting_time, tp.source_quality, tp.target_quality, tp.stationary_distribution, tp.workspaces[1]
@@ -96,19 +84,19 @@ function compute(::Betweenness{ProximityWeighted}, tp::RandomWalkTargetPrecalcul
 end
 
 # TODO this only works for simmetrical Z
-_betweenness!(workspace, Z, H, p, t::Targets) =
-    workspace .= view(Z, :, 1) .- view(Z, :, t)' .+ H .* p[t]
+_betweenness!(workspace, Z, H, p, t::TargetID) =
+    workspace .= view(Z, :, 1) .- view(Z, :, t.node)' .+ H .* p[t]
 
-apply_weight!(k, ::Unweigthed, tp::TargetPrecalculations) = k
+apply_weight!(k, ::Unweighted, tp::TargetPrecalculations) = k
 apply_weight!(k, ::QualityAndProximityWeighted, tp::TargetPrecalculations) =
-    k .*= source_qualities(tp) .* target_qualities(pt)[tp.targets.targetnode]
+    k .*= source_qualities(tp) .* target_qualities(pt)[tp.target.node]
 
 # RandomShortestPath
 
 # Betweenness: TODO move code here from RSP and rewrite per-target
 function compute(::Betweenness{QualityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
     g = grid(tp)
-    targetnode = tp.target.targetnode
+    targetnode = tp.target.node
     (; Z, qˢ, Zⁱ) = tp
     workspace1, workspace2 = tp.workspaces
     qᵗ = g.target_qualities[targetnode]
@@ -128,13 +116,13 @@ function compute(::EdgeBetweenness{QualityWeighted}, tp::RandomisedShortestPathT
     # Zrows = ldiv!(solver(tp), IWadj_factorization, b; B_copy=copy!(workspace2, B))'
     (; Z, Zⁱ, Zrows, qˢ) = tp
     workspace1, workspace2 = tp.workspaces
-    qᵗ = g.target_qualities[target.targetnode]
+    qᵗ = g.target_qualities[target.node]
 
     qˢZⁱqᵗ = workspace1 .= qˢ .* Zⁱ .* qᵗ
     # QZⁱᵀZ = qˢZⁱqᵗ' / A
     QZⁱᵀZ = ldiv!(solver(tp), Aadj_factorization, qˢZⁱqᵗ; B_copy=copy!(workspace2, qˢZⁱqᵗ))'
 
-    RHS = workspace3 .= QZⁱᵀZ .- Zrows .* sum(qˢ) .* qᵗ .* Zⁱ[t.targetnode, 1]
+    RHS = workspace3 .= QZⁱᵀZ .- Zrows .* sum(qˢ) .* qᵗ .* Zⁱ[target.node, 1]
     return _combine_edge_betweenness(W, Z, RHS, target)
 end
 function compute(::EdgeBetweenness{QualityAndProximityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
@@ -142,13 +130,13 @@ function compute(::EdgeBetweenness{QualityAndProximityWeighted}, tp::RandomisedS
     workspace1, workspace2 = tp.workspaces
     # MᵀZ = MZⁱ' / A
     MᵀZ = ldiv!(solver(tp), IWadj_init, MZⁱ; copy=copy!(workspace1, MZⁱ))'
-    k̂diagZⁱ = sum(MZⁱ) * Zⁱ[target.targetnode, 1]
+    k̂diagZⁱ = sum(MZⁱ) * Zⁱ[target.node, 1]
     MᵀZ_minus_diag = workspace2' .=  MᵀZ .- k̂diagZⁱ .* Zrows'
 
     return _combine_edge_betweenness(W, Z, MᵀZ_minus_diag, target)
 end
 function compute(::Betweenness{QualityAndProximityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
-    # MZⁱ = workspace2 .= M .* Zⁱ
+    # MZⁱ = workspace2 .= landscape_matrix .* Zⁱ
     (; Z, MZⁱ, Zⁱ) = tp
     workspace1 = tp.workspaces
 
@@ -157,9 +145,9 @@ function compute(::Betweenness{QualityAndProximityWeighted}, tp::RandomisedShort
     # If any of the values of KZⁱ is above one then there is a risk of overflow,
     # so we scale the matrix and apply a scale factor
     λ = max(1.0, maximum(MZⁱ))
-    MZⁱλ = let workwspace .= MZⁱ
+    MZⁱλ = workwspace .= MZⁱ
     # TODO: comment what is this for
-    MZⁱλ[target.targetnode, 1] -= sum(MZⁱ) / λ * Zⁱ[target.targetnode, 1]
+    MZⁱλ[target.node, 1] -= sum(MZⁱ) / λ * Zⁱ[target.node, 1]
     # Normalise before the solve
     MZⁱλ ./= λ
     # Solve: ZKZⁱt = (I - W)' \ KZⁱ
@@ -170,7 +158,7 @@ function compute(::Betweenness{QualityAndProximityWeighted}, tp::RandomisedShort
 end
 
 function _combine_edge_betweenness(W, Z, X, target)
-    t = target.targetnode
+    t = target.node
     edge_betweennesses = spzeros(size(W, 1))
     for i in axes(W, 1)
         x = W[i, t]
@@ -183,9 +171,10 @@ end
 # ConnectedHabitat 
 compute(::ConnectedHabitat, tp::TargetPrecalculations) = tp.landscape_matrix
 
+# Sensitivity
 function compute(gm::Sensitivity, tp::RandomisedShortestPathTargetPrecalculations)
-    target_sensitivity = if gm.context <: Union{Affinity,Cost,CostAndAffinitySensitivityContext} 
-        S_e_aff, S_e_cost = sensitivity(cm, tp)
+    target_sensitivity = if context(gm) <: Union{Affinity,Cost,CostAndAffinitySensitivityContext} 
+        S_e_aff, S_e_cost = _sensitivity(cm, tp)
 
         if unitless 
             _scale!(S_e_aff, gm.context, tp)
@@ -197,53 +186,30 @@ function compute(gm::Sensitivity, tp::RandomisedShortestPathTargetPrecalculation
         elseif gm.context <: Cost
             sum(S_e_cost)
         elseif gm.context <: AffinityAndCost
-            diff_C_A = ConScape.mapnz(diff_C_A_fun, g.affinities)
+            diff_C_A = ConScape.mapnz(diff_C_A_fun, affinitymatrix(g))
             S_e_total = S_e_aff .+ S_e_cost .* diff_C_A
             sum(S_e_total)
         elseif gm.context <: CostAndAffinity
-            diff_A_C = ConScape.mapnz(diff_A_C_fun, g.affinities)
+            diff_A_C = ConScape.mapnz(diff_A_C_fun, affinitymatrix(g))
             S_e_total = S_e_aff .* diff_A_C .+ S_e_cost
             sum(S_e_total)
         end
     elseif gm.context <: Qualities
-        K = tp.proximiites
+        K = proximities(tp)
         KK = workspace2 .= K .+= transpose(K)
-        target_sensitivity = mul!(workspace3, K, g.target_qualities[target.spatialid])
+        target_sensitivity = mul!(workspace3, KK, target_quality_spatial(tp)[target.spatial])
         if unitless
-            target_sensitivity .* g.source_qualities[target.spatialid]
+            target_sensitivity .* source_quality_apatial(tp)[target.spatial]
         end
         target_sensitivity
     end
 
-    target_sensitivity * isnan(g.source_qualities[target.spatialid]) ? NaN : 1.0
+    target_sensitivity * isnan(source_quality_spatial(g)[target.spatial]) ? NaN : 1.0
 end
 
-_diff_CA_fun(::MinusLog) = x -> -inv(x)
-_diff_AC_fun(::MinusLog) = x -> -(x)
-_diff_CA_fun(::Inv) = x -> -inv(x^2) # TODO fix
-_diff_AC_fun(::Inv) = x -> -inv(x^2)
-
-_diff_KD(x::ExpMinusAlpha) = -K .* x.α
-_diff_KD(::Inv) = -K .^ 2
-
-# TODO a more specific name
-_scale!(A, ::Union{Affinity,AffinityAndCost}, g) = A .*= g.affinities
-_scale!(A, ::Union{Cost,CostAndAffinity}, g) = A .*= g.costmatrix
-
-function sensitivity(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations)
-
-    A::SparseMatrixCSC,
-    C::SparseMatrixCSC,
-    θ::Real,
-    W::SparseMatrixCSC,
-    Z::AbstractMatrix,
-    CW::SparseMatrixCSC,
-    IW::SparseMatrixCSC,
-    Zⁱ::AbstractMatrix,
-    MZⁱ::AbstractMatrix,
-    Zrows
-
-        diff_K_D = _diff_KD(distance_transformation)
+function _sensitivity(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations)
+    (; A, C, W, M, Z, CW, IW, Zⁱ, MZⁱ, Zrows) = tp
+    diff_K_D = _diff_KD(distance_transformation(tp))
     # TODO convert all / \ to ldiv!
 
     # MZⁱ = workspace1 .= M .* Zⁱ 
@@ -252,11 +218,11 @@ function sensitivity(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculat
     C̄ᵣ = Y .* Zⁱ # Expected costs of REGULAR paths
     MᵀZ = MZⁱ' / IW
 
-    k̂diagZⁱ = sum(MZⁱ) .* Zⁱ[target.targetnode, 1]
+    k̂diagZⁱ = sum(MZⁱ) .* Zⁱ[target.node, 1]
 
     X3 = k̂diagZⁱ .* Zrows
 
-    k̂diagC̄Zⁱ = k̂diagZⁱ .* C̄ᵣ[target.targetnode, 1]
+    k̂diagC̄Zⁱ = k̂diagZⁱ .* C̄ᵣ[target.node, 1]
     X5 = ((K̂ .* C̄ᵣ)' - (K̂ᵀZ * CW) + (X3 * CW)) / IW - k̂diagC̄Zⁱ .* Zrows # "X1- X2 - X4"
     X3 .= K̂ᵀZ .- X3
 
@@ -273,7 +239,7 @@ function sensitivity(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculat
     kΣ_node = sum(kΣ, dims=2)
     Ae = sum(A, dims=2)
 
-    S_cost = kB + θ * kΣ#/θ
+    S_cost = kB + θ * kΣ
 
     Idx = W .> 0
     Aⁱ = mapnz(x -> inv(x), A)
@@ -281,8 +247,7 @@ function sensitivity(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculat
 
     return S_aff, S_cost
 end
-
-function sensitivity(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations)
+function _sensitivity(::PowerMeanProximity, tp::RandomisedShortestPathTargetPrecalculations)
     rowsums = sum(affinity(tp), dims=2)
     bet_edge_k = compute(EdgeBetweenness{QualityAndProximityWeighted}(), tp)
     bet_node_k = compute(Betweenness{QualityAndProximityWeighted}(), tp)
@@ -295,3 +260,15 @@ function sensitivity(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculat
 
     return S_aff, S_cost
 end
+
+_diff_CA_fun(::MinusLog) = x -> -inv(x)
+_diff_AC_fun(::MinusLog) = x -> -(x)
+_diff_CA_fun(::Inv) = x -> -inv(x^2) # TODO fix
+_diff_AC_fun(::Inv) = x -> -inv(x^2)
+
+_diff_KD(x::ExpMinusAlpha) = -K .* x.α
+_diff_KD(::Inv) = -K .^ 2
+
+# TODO a more specific name
+_scale!(A, ::Union{Affinity,AffinityAndCost}, g) = A .*= affinitymatrix(g)
+_scale!(A, ::Union{Cost,CostAndAffinity}, g) = A .*= costmatrix(g)

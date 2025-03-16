@@ -108,3 +108,10 @@ function compute(cm::KullbackLeiblerDivergence, gp::RandomisedShortestPathTarget
     # qs' * diff * qt * θ
     return sum(diff .*= g.qs) * g.qt[target.node] * θ
 end
+
+# What are these, how are they different to the RSP versions?
+# compute(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations) = first(bellman_ford(gp))
+# compute(::FreeEnergyDistance, tp::RandomisedShortestPathTargetPrecalculations) = last(bellman_ford(gp))
+
+bellman_ford(tp::RandomisedShortestPathTargetPrecalculations) =
+    first(bellman_ford(probabilitymatrix(tp), costmatrix(tp), theta(tp), target_id(tp), approx(tp)))

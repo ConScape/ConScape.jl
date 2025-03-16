@@ -1,10 +1,13 @@
+
+abstract type Measure end
+
 """
     GraphMeasure 
 
 Abstract supertype for graph measures.
 These are lazy definitions of conscape functions.
 """
-abstract type GraphMeasure end
+abstract type GraphMeasure <: Measure end
 
 abstract type SpatialMeasure <: GraphMeasure end
 abstract type PerturbationMeasure <: SpatialMeasure end
@@ -16,19 +19,19 @@ abstract type PerturbationMeasure <: SpatialMeasure end
 
 Measures of node and edge betweenness.
 """
-abstract type BetweennessMeasure <: SpatialMeasure end
+abstract type BetweennessMeasure{W} <: SpatialMeasure end
 
-abstract type BetweennessWeight end
+abstract type BetweennessWeighting end
 
 struct Unweighted <: BetweennessWeighting end
 struct QualityWeighted <: BetweennessWeighting end
 struct ProximityWeighted <: BetweennessWeighting end
 struct QualityAndProximityWeighted <: BetweennessWeighting end
 
-@kwdef struct Betweenness{W} <: BetweennessMeasure 
+@kwdef struct Betweenness{W} <: BetweennessMeasure{W}
     weighting::W
 end
-@kwdef struct EdgeBetweenness{W} <: BetweennessMeasure 
+@kwdef struct EdgeBetweenness{W} <: BetweennessMeasure{W}
     weighting::W
 end
 
@@ -51,7 +54,7 @@ abstract type LandscapeMeasure end
 struct LandscapeSum <: LandscapeMeasure end
 struct LandscapeEigen <: LandscapeMeasure end
 
-@kwdef struct Sensitivity{C<:SeensitivityContext,LM<:LandscapeMeasure} <: PerturbationMeasure
+@kwdef struct Sensitivity{C<:SensitivityContext,LM<:LandscapeMeasure} <: PerturbationMeasure
     context::C
     landscape_measure::LM
     unitless::Bool
@@ -70,107 +73,32 @@ end
     tol::T = 1e-14
 end
 
-# Map structs to function calls
-
-graph_function(::Betweenness{QualityAndProximityWeighted}) = betweenness_kweighted
-graph_function(::Betweenness{QualityWeighted}) = betweenness_qweighted
-graph_function(::ConnectedHabitat) = connected_habitat
-graph_function(::Criticality) = criticality
-graph_function(::EdgeBetweenness{QualityAndProximityWeighted}) = edge_betweenness_kweighted
-graph_function(::EdgeBetweenness{QualityWeighted}) = edge_betweenness_qweighted
-graph_function(::EigMax) = eigmax
-
-# Function keywords
-
-keywords(gm::GraphMeasure, p::AbstractProblem) =
-    (; _keywords(gm)..., solver=solver(p), _connectivity_keywords(gm, p)...)
-keywords(gm::ConnectedHabitat, p::AbstractProblem) =
-    (; _keywords(gm)..., approx=connectivity_measure(p).approx, solver=solver(p), _connectivity_keywords(gm, p)...)
-function _connectivity_keywords(gm::GraphMeasure, p::AbstractProblem)
-    cm = connectivity_measure(p)
-    if needs_connectivity(gm)
-        (;
-            _keywords(gm)...,
-            distance_transformation=distance_transformation(cm),
-            connectivity_function=connectivity_function(cm)
-        )
-    else
-        _keywords(gm)
-    end
-end
-
-# Traits
-
-"""
-    ReturnTrait
-
-Traits for preallocated return values of GraphMeasures.
-"""
-abstract type ReturnTrait end
-struct ReturnsDenseSpatial <: ReturnTrait end
-struct ReturnsSparse <: ReturnTrait end
-struct ReturnsDense <: ReturnTrait end
-struct ReturnsScalar <: ReturnTrait end
-struct ReturnsEigMaxTuple <: ReturnTrait end
-
-# These allow calculation of return allocations
-returntrait(::SpatialMeasure) = AssignDenseSpatial()
-returntrait(::SpatialMeasure) = SumDenseSpatial()
-returntrait(::EdgeBetweenness) = AssignSparse()
-returntrait(::EigMax) = ReturnsEigMaxTuple() # (n, m) -> n + m
-
-
-# A trait for connectivity requirement
-needs_connectivity(::EdgeBetweenness{ProximitWeighted}) = true
-needs_connectivity(::EigMax) = true
-needs_connectivity(::ConnectedHabitat) = true
-needs_connectivity(::Criticality) = true
-
-# Workspace allocation traits
-needs_inv(::GraphMeasure) = false
-needs_inv(::BetweennessMeasure) = true
-needs_Z(::GraphMeasure) = true
-needs_workspaces(::GraphMeasure) = 0
+# # Workspace allocation traits
+# needs_inv(::GraphMeasure) = false
+# needs_inv(::BetweennessMeasure) = true
+needs_workspaces(::Measure) = 0
 needs_workspaces(::BetweennessMeasure) = 1
-needs_workspaces(::EdgeBetweennessKweighted) = 2
-needs_workspaces(::EdgeBetweennessQweighted) = 3
-needs_permuted_workspaces(::GraphMeasure) = 0
-needs_permuted_workspaces(::EdgeBetweennessKweighted) = 1
-needs_proximity(::GraphMeasure) = false
-needs_proximity(::Union{BetweennessKweighted,EdgeBetweennessKweighted}) = true
-needs_expected_cost(::GraphMeasure) = false
-needs_expected_cost(::EdgeBetweennessKweighted) = true
-needs_expected_cost(::MeanKullbackLeiblerDivergence) = true
-needs_free_energy_distance(::GraphMeasure) = false
-needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
-needs_adjoint_init(::GraphMeasure) = true # TODO which dont?
-
-# Graph measure helpers
-
-# Count how many workspaces are needed for a problem
-function count_workspaces(p::AbstractProblem)
-    gms = graph_measures(p)
-    n = mapreduce(needs_workspaces, max, gms)
-    if hastrait(needs_expected_cost, gms) || connectivity_function(p) == ConScape.expected_cost
-        max(n, 2)
-    end
-end
-count_permuted_workspaces(p::AbstractProblem) =
-    mapreduce(needs_permuted_workspaces, max, graph_measures(p))
-
-# Preallocate the output for a graph measure, where needed
-allocate_output(gm::GraphMeasure, g::Grid) = 
-    allocate_output(returntrait(gm), gm::GraphMeasure, g)
-function allocate_output(::ReturnsDenseSpatial, gm::GraphMeasure, g::Grid)
-    A = fill(NaN, size(grid))
-    A[grid.id_to_grid_coordinate_list] .= 0.0
-    return A
-end
-allocate_output(::ReturnTrait, gm::GraphMeasure, g::Grid) = nothing
+needs_workspaces(::EdgeBetweenness{QualityAndProximityWeighted}) = 2
+needs_workspaces(::EdgeBetweenness{QualityWeighted}) = 3
+needs_proximity(::Measure) = false
+needs_proximity(::BetweennessMeasure{QualityAndProximityWeighted}) = true
+needs_expected_cost(::Measure) = false
+needs_expected_cost(::EdgeBetweenness{QualityAndProximityWeighted}) = true
+# needs_expected_cost(::KullbackLeiblerDivergence) = true
+# needs_free_energy_distance(::GraphMeasure) = false
+# needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
+# needs_adjoint_init(::GraphMeasure) = true # TODO which dont?
 
 # Trait aggregator
 hastrait(t, gms) = reduce(|, map(t, gms); init=false)
 
-# compute: run a graph function with the appropriate keywords
-compute(gm::GraphMeasure, p::AbstractProblem, g::Union{Grid,GridRSP}; kw...) =
-    graph_function(gm)(g; keywords(gm, p)..., kw...)
+# Graph measure helpers
+
+# Count how many workspaces are needed for a problem
+function nworkspaces(p::AbstractProblem)
+    gms = graph_measures(p)
+    n = mapreduce(needs_workspaces, max, gms)
+    if hastrait(needs_expected_cost, gms) || connectivity_measure(p) isa ExpectedCost
+        max(n, 2)
+    end
+end

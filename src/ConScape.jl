@@ -42,16 +42,17 @@ include("randomizedshortestpath.jl")
 include("transformations.jl")
 # Grid struct and methods
 include("grid.jl")
-# GridRSP (randomized shortest path) struct and methods
-include("gridrsp.jl")
-# IO
-include("io.jl")
 # Utilities
 include("utils.jl")
 # Problems
 include("graph_measure.jl")
 include("connectivity_measure.jl")
+include("movement_modes.jl")
 include("problem.jl")
+include("grid_precalculations.jl")
+include("return.jl")
+include("compute_graph_measures.jl")
+include("compute_connectivity_measures.jl")
 include("solvers.jl")
 include("windows.jl")
 include("assessment.jl")
