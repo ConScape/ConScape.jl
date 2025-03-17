@@ -1,4 +1,6 @@
-module ConScape
+module OldConScape
+
+    const ConScape = OldConScape
 
     using SparseArrays, LinearAlgebra
     using Graphs, Plots, SimpleWeightedGraphs, ProgressLogging, ArnoldiMethod
