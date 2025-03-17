@@ -237,7 +237,16 @@ function init(solver::LinearSolver, A::AbstractMatrix)
     end
 end
 
-function LinearAlgebra.ldiv!(s::LinearSolver, init, B; B_copy)
+function LinearAlgebra.ldiv!(p::Precalculations, init, B)
+    # Handle using a workspace instead of copying B
+    B_copy = take!(workspaces(p)) .= B
+    # Solve
+    X = ldiv!(solver(p), B, init, B_copy)
+    # Return the workspace to the pool
+    put!(workspaces(p), B_copy)
+    return X
+end
+function LinearAlgebra.ldiv!(s::LinearSolver, B, init, B_copy)
     # TODO: for now we define a Z matrix, but later modify ops 
     # to run column by column without materialising Z
     if isthreaded(s)
@@ -257,26 +266,19 @@ function LinearAlgebra.ldiv!(s::LinearSolver, init, B; B_copy)
     end
     return B
 end
-LinearAlgebra.ldiv!(::Union{MatrixSolver,Nothing}, (; F), B; B_copy=copy(B)) =
-    ldiv!(B, F, B_copy)
-# LinearAlgebra.ldiv!(solver::Solver, A::AbstractMatrix, B::AbstractMatrix; kw...) = 
-# ldiv!(solver, init(solver, A), B; kw...)
-function LinearAlgebra.ldiv!(s::VectorSolver, init, B; B_copy)
-    # for SparseArrays.UMFPACK._AqldivB_kernel!(Z, F, B, transposeoptype)
-    transposeoptype = SparseArrays.LibSuiteSparse.UMFPACK_A
-
-    # This is basically SparseArrays.UMFPACK._AqldivB_kernel!
-    # But we unroll it to avoid copies or allocation of B
+# LinearAlgebra.ldiv!(::Union{MatrixSolver,Nothing}, B, (; F), B_copy) =
+    # ldiv!(B, F, B_copy)
+function LinearAlgebra.ldiv!(s::VectorSolver, B, init, B_copy)
     if isthreaded(s)
         channel = init
         F = take!(channel)
         # Solve for the column
-        SparseArrays.UMFPACK.solve!(vec(B), F, vec(B_copy), transposeoptype)
+        ldiv!(B, F, B_copy)
         # Reuse the workspace 
         put!(channel, F)
     else
         F = init
-        SparseArrays.UMFPACK.solve!(vec(B), F, vec(B_copy), transposeoptype)
+        ldiv!(B, F, B_copy)
     end
     return B
 end

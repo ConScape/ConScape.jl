@@ -1,9 +1,8 @@
-
 struct GridInit{P,G,W,O} <: Precalculations
     problem::P
     grid::G
     subgrids::Vector{G}
-    workspaces::Vector{W}
+    workspaces::Workspaces{W}
     outputs::O
 end
 function GridInit(problem::Problem, rast::RasterStack; 
@@ -30,6 +29,27 @@ grid(gi::GridInit) = gi.grid
 subgrids(gi::GridInit) = gi.subgrids
 workspaces(gi::GridInit) = gi.workspaces
 outputs(gi::GridInit) = gi.outputs
+
+function solve!(gi::GridInit)
+    # Loop over unnconnected subgraphs (there may be only one)
+    for subgrid_id in eachindex(subgrids(gi))
+        # Intitalise sparse matrices and precalculate e.g. LU factorizations
+        subgrid_precalc = init(gi, subgrid_id)
+        # Then loop over targets
+        for target_id in target_ids(subgrid_precalc)
+            # Precalculate for this target and graph measures
+            target_precalc = init(subgrid_precalc, target_id)
+            # Compute everything for this target and graph measures
+            foreach(graph_measures(gi), outputs(gi)) do measure, output
+                # Compute a measure for this target
+                v = compute(measure, target_precalc)
+                # Write values to output object
+                update_output!(output, measure, v, target_precalc)
+            end
+        end
+    end
+    return RasterStack(_maybe_raster(outputs(gi), grid(gi)))
+end
 
 """
     GridPrecalculations
@@ -68,14 +88,15 @@ solve!(gp::GridPrecalculations, p::Problem; kw...) =
 
 Abstract type for precalculated variables at the level of single targets.
 """
-abstract type TargetPrecalculations end
+abstract type TargetPrecalculations <: Precalculations end
 
-grid_precalculations(tp::TargetPrecalculations) = tp.grid_precalculations
+grid_precalculations(tp::TargetPrecalculations) = getfield(tp, :grid_precalculations)
+target(tp::TargetPrecalculations) = getfield(tp, :target)
+storage(tp::TargetPrecalculations) = getfield(tp, :storage)
+
 grid(tp::TargetPrecalculations) = grid(grid_precalculations(tp))
 problem(tp::TargetPrecalculations) = problem(grid_precalculations(tp))
 workspaces(tp::TargetPrecalculations) = workspaces(grid_precalculations(tp))
-probability(tp::TargetPrecalculations) = probability(grid_precalculations(tp))
-fundamental_matrix(tp::TargetPrecalculations) = tp.fundamental_matrix
 
 Base.size(gp::TargetPrecalculations) = size(grid_precalculations(gp))
 DimensionalData.dims(gp::TargetPrecalculations) = dims(grid_precalculations(gp))
@@ -97,65 +118,97 @@ struct RandomisedShortestPathGridPrecalculations{P<:Problem,G,S,F,Sadj,Fadj,W} <
     IW_factorization::F
     IW_adj::Sadj
     IW_adj_factorization::Fadj
-    workspaces::Vector{W}
+    workspaces::Workspaces{W}
 end
 
 function init(mm::RandomisedShortestPath, problem::Problem, grid::Grid;
     workspaces=nothing, verbose=false,
 )
-    @show size(grid) sparse_size(grid)
     probability = _probabilities(affinitymatrix(grid))
     W = _W(probability, theta(mm), costmatrix(grid))
     IW = I - W
     IW_factorization = init(solver(problem), IW)
-    IW_adj, IW_adj_factorization = if solver(problem) isa VectorSolver
-        IWadj = IW'
+    if solver(problem) isa VectorSolver
+        IW_adj = IW'
         # Use adjoint factorization of A rather than recalculating for A'
-        IWadj_factorization = IW_factorization'
-        IWadj, IWadj_factorization
+        IW_adj_factorization = IW_factorization'
     else # LinearSolver
         # LinearSolve.jl cant handle the adjoint 
         # so we duplicate work and allocations
-        IWadj = sparse(A')
-        IWadj_factorization = init(solver, IWadj)
-        IWadj, IWadj_factorization
+        IW_adj = sparse(A')
+        IW_adj_factorization = init(solver, IWadj)
     end
     CW = costmatrix(grid) .* W
     workspaces = _allocate_workspaces!(workspaces, problem, grid)
+    @assert length(workspaces) == nsources(grid) == sparse_size(grid)[1]
 
     return RandomisedShortestPathGridPrecalculations(
         problem, grid, probability, W, IW, CW, IW_factorization, IW_adj, IW_adj_factorization, workspaces
     )
 end
 
-connectivity_measure(mm::RandomisedShortestPathGridPrecalculations) = connectivity_measure(problem(mm))
-diagvalue(mm::RandomisedShortestPathGridPrecalculations) = diagvalue(problem(mm))
-approx(mm::RandomisedShortestPathGridPrecalculations) = approx(problem(mm))
-theta(mm::RandomisedShortestPathGridPrecalculations) = theta(problem(mm))
-
 struct RandomisedShortestPathTargetPrecalculations{
-    GP<:RandomisedShortestPathGridPrecalculations,D<:AbstractMatrix
+    GP<:RandomisedShortestPathGridPrecalculations,S<:Dict{Symbol}
 } <: TargetPrecalculations
     grid_precalculations::GP
-    fundamental_matrix::D
-    proximities::D
-    landscape_matrix::D
+    storage::S
     target::TargetID
 end
 
-function init(
-    gp::RandomisedShortestPathGridPrecalculations, 
-    target::TargetID,
-)
-    println()
-    @show length(source_ids(gp)) target
-    workspace1, workspace2 = workspaces(gp)
-    @show length(workspace1) size(grid(gp)) sparse_size(grid(gp))
-    B = _rhs!(workspace1, length(source_ids(gp)), target)
-    B_copy = _rhs!(workspace2, length(source_ids(gp)), target)
-    fundamental_matrix = ldiv!(solver(gp), gp.IW, B; B_copy)
-    proximities = compute(connectivity_measure(gp), gp)
-    RandomisedShortestPathTargetPrecalculations(gp, fundamental_matrix, proximities, target)
+function init(gp::RandomisedShortestPathGridPrecalculations, target::TargetID)
+    free!(workspaces(gp))
+    return RandomisedShortestPathTargetPrecalculations(gp, storagedict(gp), target)
+end
+
+function Base.getproperty(tp::RandomisedShortestPathTargetPrecalculations, x::Symbol)
+    if x === :workspace
+        return take!(workspaces(tp))
+    elseif x === :qᵗ
+        return target_quality_vector(tp)[target(tp).id]
+    elseif x === :qˢ
+        return source_quality_vector(tp)
+    elseif x === :A
+        return affinitymatrix(tp)
+    elseif x === :C
+        return costmatrix(tp)
+    elseif hasproperty(grid_precalculations(tp), x)
+        return Base.getproperty(grid_precalculations(tp), x)
+    end
+
+    # Otherwise its a not part of precalculations.
+    # it may be stored from, or we may need to generate it
+    get!(storage(tp), x) do
+        if x === :Z
+            _fundamental_matrix(tp)
+        elseif x === :Zⁱ
+            _inv!(tp.workspace, tp.Z)
+        elseif x === :K
+            _proximities(tp)
+        elseif x === :M
+            (; qˢ, K, qᵗ, workspace) = tp
+            workspace .= qˢ .* K .* qᵗ
+        elseif x === :MZⁱ 
+            (; M, Zⁱ, workspace) = tp
+            workspace .= M .* Zⁱ 
+        elseif x === :Zrows
+            (; IW_adj_factorization) = tp
+            workspace1, workspace2 = workspaces(tp)
+            b = _rhs!(workspace1, nsources(gp), target)
+            b_copy = _rhs!(workspace2, nsources(gp), target)
+            ldiv!(solver(tp), b, IWadj_factorization, b_copy)'
+        else
+            error("Unknown property $x")
+        end
+    end
+end
+
+storagedict(p::Precalculations) = Dict{Symbol,typeof(first(workspaces(p)))}()
+
+function _fundamental_matrix(tp::RandomisedShortestPathTargetPrecalculations)
+    workspace1, workspace2 = workspaces(tp)
+    b = _rhs!(workspace1, nsources(tp), target(tp))
+    b_copy = _rhs!(workspace2, nsources(tp), target(tp))
+    return ldiv!(solver(tp), b, tp.IW_factorization, b_copy)
 end
 
 connectivity_measure(mm::RandomisedShortestPathTargetPrecalculations) = connectivity_measure(problem(mm))
@@ -173,25 +226,29 @@ struct LeastCostGridPrecalculations{P<:Problem,G<:Grid,S,W} <: GridPrecalculatio
     grid::G
     probability::S
     cost_weighted_digraph::SimpleWeightedDiGraph{Int,Float64}
-    workspaces::Vector{W}
+    workspaces::Workspaces{W}
 end
 
 function init(::LeastCost, problem::Problem, grid::Grid;
     workspaces=nothing, verbose=false,
 )
     probability = _Pref(affinitymatrix(grid))
-    cost_weighted_digraph = simpleweighteddigraph(costmatrix(grid))
+    cost_weighted_digraph = SimpleWeightedDigraph(costmatrix(grid))
     workspaces = _allocate_workspaces!(workspaces, problem, grid)
     LeastCostGridPrecalculations(problem, grid, probability, cost_weighted_digraph, workspaces)
 end
 
-struct LeastCostTargetPrecalculations{GP<:LeastCostGridPrecalculations} <: TargetPrecalculations
+struct LeastCostTargetPrecalculations{
+    GP<:LeastCostGridPrecalculations,S<:Dict{Symbol}
+} <: TargetPrecalculations
     grid_precalculations::GP
+    storage::S
     target::TargetID
 end
 
 function init(gp::LeastCostGridPrecalculations, target::TargetID)
-    LeastCostTargetPrecalculations(gp, target)
+    free!(workspaces(gp))
+    LeastCostTargetPrecalculations(gp, storagedict(tp), target)
 end
 
 """
@@ -199,41 +256,36 @@ end
 
 Stores precalculated variables for use in `RandomWalk`-based measures.
 """
-struct RandomWalkGridPrecalculations{P<:Problem,G<:Grid,S,W} <: GridPrecalculations
+struct RandomWalkGridPrecalculations{P<:Problem,G<:Grid,Pref,SD,W} <: GridPrecalculations
     problem::P
     grid::G
-    probability::S
-    workspaces::Vector{W}
+    probability::Pref
+    stationary_distrionution::SD
+    workspaces::Workspaces{W}
 end
 
 function init(::RandomWalk, problem::Problem, grid::Grid;
     workspaces=nothing, verbose=false,
 )
+    stationary_distribution = stationary_distribution(gp.Pref, solver(gp))
     probability = _probabilities(affinitymatrix(grid))
     workspaces = _allocate_workspaces!(workspaces, problem, grid)
-    RandomWalkGridPrecalculations(problem, grid, probability, workspaces)
+    RandomWalkGridPrecalculations(problem, grid, probability, stationary_distribution, workspaces)
 end
 
 struct RandomWalkTargetPrecalculations{
-    GP<:RandomWalkGridPrecalculations,D,SD
+    GP<:RandomWalkGridPrecalculations,S<:Dict{Symbol}
 } <: TargetPrecalculations
     grid_precalculations::GP
-    fundamental::D
-    hitting_time::D
-    stationary_distribution::SD
+    storage::S
     target::TargetID
 end
-function init(grid_precalculations::RandomWalkTargetPrecalculations, target::TargetID)
-    workspace1, workspace2 = workspaces(grid_precalculations)
-     # TODO make this single target, not square
-    fundamental_matrix = workspace1 .= inv(Matrix(I - P) .+ p')
-    hitting_time = workspace2 .= (diag(Z)' .- Z) ./ p'
+function init(gp::RandomWalkTargetPrecalculations, target::TargetID)
+    # TODO: calculate in getproperty
+    # fundamental_matrix = workspace1 .= inv(Matrix(I - gp.Pref) .+ p')
+    # hitting_time = workspace2 .= (diag(Z)' .- Z) ./ p'
     RandomWalkTargetPrecalculations(
-        grid_precalculations, 
-        fundamental_matrix, 
-        hitting_time, 
-        stationary_distribution, 
-        target,
+        grid_precalculations, storagedict(gp), storage, target,
     )
 end
 
@@ -249,12 +301,14 @@ function stationary_distribution(P::SparseMatrixCSC, solver::Solver)
     return ldiv!(solver, PI, v)
 end
 
-maybe_set_diagonal!(proximities, diagvalue::Nothing, targetnodes::AbstractVector) = nothing
-function maybe_set_diagonal!(proximities, diagvalue, targetnodes::AbstractVector)
+maybe_set_diagonal!(proximities, diagvalue::Nothing, targetnodes) = nothing
+function maybe_set_diagonal!(proximities, diagvalue::Number, targetnodes::AbstractVector)
     for (j, i) in enumerate(targetnodes)
         proximities[i, j] = diagvalue
     end
 end
+maybe_set_diagonal!(proximities, diagvalue::Number, targetnode::Int) = 
+    proximities[targetnode] = diagvalue
 
 # Fill a vector with zeros, and one for the target node
 function _rhs!(workspace, n::Int, target::TargetID)
@@ -287,30 +341,11 @@ function _inv!(Zⁱ, Z)
 end
 
 # This duplicats some logic from gridrsp
-function _proximities!(
-    expected_costs::AbstractMatrix,
-    gp::GridPrecalculations
-)
-    proximities = workspace1 
-    dt = distance_transformation(gp)
-    if isnothing(dt)
-        proximities .= inv(g.costfunction).(expected_costs)
-    else
-        proximities .= dt.(expected_costs)
-    end
-    maybe_set_diagonal!(proximities, diagvalue(gp), targetnodes(gp))
+function _proximities(tp::TargetPrecalculations)
+    proximities = compute(connectivity_measure(tp), tp)
+    proximities .= distance_transformation(tp).(proximities)
+    maybe_set_diagonal!(proximities, diagvalue(tp), target(tp).node)
     return proximities
-end
-
-function _allocate_workspaces!(::Nothing, problem::Problem, grid::Grid)
-    map(1:nworkspaces(problem)) do i
-        Vector{Float64}(undef, nsources(grid))
-    end
-end
-function _allocate_workspaces!(workspaces::Vector, problem::Problem, grid::Grid)
-    map(workspaces) do ws
-        resize!(ws, nsources(grid))
-    end
 end
 
 # This only makes sense if arrays are sorted large to small
@@ -326,3 +361,8 @@ function _reshape(A::Array, size::Tuple{Vararg{Int}})
         reshape(v, size)
     end
 end
+
+_allocate_workspaces!(::Nothing, problem::Problem, grid::Grid) =
+    Workspaces(nsources(grid), nworkspaces(problem) + 5)
+_allocate_workspaces!(workspaces::Workspaces, problem::Problem, grid::Grid) =
+    (resize!(free!(workspaces), nsources(grid)); workspaces)

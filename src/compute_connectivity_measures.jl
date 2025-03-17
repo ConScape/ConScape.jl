@@ -1,8 +1,8 @@
 # TODO: the loop here doesn't decompose to single targets, so the full Z matrix seems to be needed.
 # this is a problem for memory use in e.g. BatchProblem, D may be large fraction of 
 # the available memory per node on the cluster (~3gb per core)
-function compute(::HittingTime, g::RandomWalkGridPrecalculations)
-    (; P, C) = g
+function compute(::HittingTime, gp::RandomWalkGridPrecalculations)
+    (; P, C) = gp
     PC = sum(P .* C; dims=2)
     IP = I - P
     # TODO does this have to be square?
@@ -28,49 +28,39 @@ function compute(::HittingTime, g::RandomWalkGridPrecalculations)
     return D
 end
 
-function compute(
-    ::ExpectedCost, 
-    gp::RandomisedShortestPathTargetPrecalculations, 
-)
-    (; CW, Z, IW_init, workspaces) = gp
-    workspace1, workspace2 = workspaces
-    # Solve: IW \ (C .* W * Z)
-    B = mul!(workspace1, CW, Z)
-    C̄ = ldiv!(solver, IW_init, B; B_copy=copy!(workspace2, B))
-    # TODO comment why we divide by Z
-    C̄ ./= Z
-    # Clean up NaNs
-    replace!(C̄, NaN => Inf)
-    # Subtract the cost at the target
-    C̄ .-= C̄[target.node, 1]
+function compute(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations)
+    (; Z, Zⁱ, CW, IW_factorization, workspace) = tp
+    # Solve: IW \ ((C .* W) * Z)
+    b = mul!(workspace, CW, Z)
+    C̄ = ldiv!(tp, IW_factorization, b) .*= Zⁱ
+    # Subtract the cost at the target from all sources
+    C̄ .-= C̄[target(tp).node, 1]
     return C̄
 end
-function compute(cm::FreeEnergyDistance, gp::RandomisedShortestPathTargetPrecalculations)
-    θ = movement(cm).θ
-    (; survival_probability, workspaces) = gp
-    fed = pop!(workspaces) 
-    return fed .= -log.(max.(zero(eltype(Z)), survival_probability)) ./ θ
+function compute(::FreeEnergyDistance, tp::RandomisedShortestPathTargetPrecalculations)
+    θ = theta(tp)
+    (; survival_probability, workspace) = tp
+    return workspace .= -log.(max.(zero(eltype(Z)), survival_probability)) ./ θ
 end
-function compute(::PowerMeanProximity, gp::RandomisedShortestPathTargetPrecalculations)
-    θ = movement(gp).θ
-    (; survival_probability) = gp
-    pmp = pop!(gp.workspaces)
-    return pmp .= survival_probability .^ (1 / θ)
+function compute(::PowerMeanProximity, tp::RandomisedShortestPathTargetPrecalculations)
+    θ = theta(tp)
+    (; survival_probability, workspace) = tp
+    return workspace .= survival_probability .^ (1 / θ)
 end
-function compute(::SurvivalProbability, gp::RandomisedShortestPathTargetPrecalculations) 
-    sp = pop!(gp.workspaces)
-    return sp .= Z ./ Z[target, 1]
+function compute(::SurvivalProbability, tp::RandomisedShortestPathTargetPrecalculations) 
+    (; Z, workspace) = tp
+    return workspace .= Z ./ Z[target, 1]
 end
 
 # Mean Kullback-Leibler Divergence
-function compute(::KullbackLeiblerDivergence, gp::LeastCostTargetPrecalculations)
-    (; Pref, cost_weighted_digraph, target) = gp
-    from, to, output = gp.workspaces
+function compute(::KullbackLeiblerDivergence, tp::LeastCostTargetPrecalculations)
+    (; Pref, cost_weighted_digraph, qˢ, qᵗ) = tp
+    from, to, output = workspaces(tp)
 
     # Calculate shortest paths
-    dsp = dijkstra_shortest_paths(cost_weighted_digraph, target.node)
+    dsp = dijkstra_shortest_paths(cost_weighted_digraph, target(tp).node)
     parents = dsp.parents
-    parents[target.node] = target.node
+    parents[target(tp).node] = target(tp).node
 
     # Initialise arrays
     fill!(output, 0)
@@ -93,25 +83,23 @@ function compute(::KullbackLeiblerDivergence, gp::LeastCostTargetPrecalculations
         end
         from, to = to, from
     end
-    # qs' * output * qt
-    return sum(output1 .*= g.qs) * g.qt[target.node]
+    return sum(output .*= qˢ) * qᵗ # qs' * output * qt
 end
-function compute(::KullbackLeiblerDivergence, gp::RandomWalkTargetPrecalculations)
+function compute(::KullbackLeiblerDivergence, tp::RandomWalkTargetPrecalculations)
     # Trivially returns zero ?
     return 0.0
 end
-function compute(cm::KullbackLeiblerDivergence, gp::RandomisedShortestPathTargetPrecalculations)
-    g = grid(gp)
-    θ = movement(cm).θ
-    (; target, free_energy_distances, expected_costs, workspaces) = gp
+function compute(::KullbackLeiblerDivergence, tp::RandomisedShortestPathTargetPrecalculations)
+    θ = theta(tp)
+    (; free_energy_distances, expected_costs, qˢ, qᵗ, workspace) = tp
     diff = workspace .= free_energy_distances .- expected_costs
     # qs' * diff * qt * θ
-    return sum(diff .*= g.qs) * g.qt[target.node] * θ
+    return sum(diff .*= qˢ) * qᵗ * θ
 end
 
 # What are these, how are they different to the RSP versions?
-# compute(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations) = first(bellman_ford(gp))
-# compute(::FreeEnergyDistance, tp::RandomisedShortestPathTargetPrecalculations) = last(bellman_ford(gp))
+# compute(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations) = first(bellman_ford(tp))
+# compute(::FreeEnergyDistance, tp::RandomisedShortestPathTargetPrecalculations) = last(bellman_ford(tp))
 
 bellman_ford(tp::RandomisedShortestPathTargetPrecalculations) =
     first(bellman_ford(probabilitymatrix(tp), costmatrix(tp), theta(tp), target_id(tp), approx(tp)))

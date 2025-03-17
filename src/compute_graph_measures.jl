@@ -4,6 +4,9 @@ with computations all at the single target level and
 aggregation processes controlled with `returntrait`
 =#
 
+# ConnectedHabitat 
+compute(::ConnectedHabitat, tp::TargetPrecalculations) = tp.M
+
 """
     compute(::MovementMode, gm::GraphMeasure, g::GridPrecalculations[, target::Int)
 
@@ -15,145 +18,105 @@ VectorSolver/LinearSolver.
 """
 function compute end
 
-function solve!(gi::GridInit)
-    # Loop over unnconnected subgraphs (there may be only one)
-    for subgrid_id in eachindex(subgrids(gi))
-        # Intitalise sparse matrices and precalculate e.g. LU factorizations
-        subgrid_precalc = init(gi, subgrid_id)
-        # Then loop over targets
-        for target_id in target_ids(subgrid_precalc)
-            # Precalculate for this target and graph measures
-            target_precalc = init(subgrid_precalc, target_id)
-            # Compute everything for this target and graph measures
-            foreach(graph_measures(gi), outputs(gi)) do measure, output
-                # Compute a measure for this target
-                v = compute(measure, target_precalc)
-                # Write values to output object
-                update_output!(output, measure, v, target_id)
-            end
-        end
-    end
 
-    return outputs(gi)
-end
+# Betweenness
 
 # LeastCost
 function compute(gm::Betweenness, tp::LeastCostTargetPrecalculations)
     # Calculate distances
-    targetid = tp.target.id
-    (; cost_weighted_digraph, workspace) = tp
-    shorted_paths = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, targetid)
+    (; cost_weighted_digraph) = tp
+    shorted_paths = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, target(tp).spatial)
     shortest_paths_en = Graphs.enumerate_paths(shorted_paths)
 
     # And maybe transform them
     # TODO untangle this logic so apply_weight handles everythign
-    k = if isnothing(distance_transformation(tp))
-        workspace1 .= 1.0
+    K = if isnothing(distance_transformation(tp))
+        workspace1 .= 1.0 # TODO is this right? not dists?
     else
         workspace1 .= distance_transformation(cm).(shorted_paths.dists)
     end
-    apply_weight!(k, gm, tp)
+
+    _apply_weight!(K, gm, tp)
 
     # TODO what does all this do...
     shortest_paths_en[targetid] = [targetid]
     tgts = [repeat([i], length(dijk[i])) for i in (1:length(shorted_paths))]
     tgts = reduce(vcat, tgts)
     final_paths = reduce(vcat, final_paths)
-
     btw = sparse(final_paths, tgts, repeat([1], length(tgts)))
 
-    return btw * k
+    return btw * K
+end
+
+# _apply_weight!(K, ::Unweighted, tp::LeastCostTargetPrecalculations) = k
+_apply_weight!(K, ::ProximityWeighted, tp::LeastCostTargetPrecalculations) = K
+function _apply_weight!(K, ::QualityAndProximityWeighted, tp::LeastCostTargetPrecalculations)
+    (; qˢ, qᵗ) = tp
+    K .*= qˢ .* qᵗ
 end
 
 # RandomWalk 
 function compute(::EdgeBetweenness{Weighting}, tp::RandomWalkTargetPrecalculations) where Weighting
     nodebet = compute(Betweenness(Weighting()), tp)
-    return nodebet * pref[t.spatial]
+    return nodebet * pref[target(tp).spatial] # TODO get pref
 end
-function compute(::Betweenness{QualityWeighted}, tp::RandomWalkTargetPrecalculations)
-    Z, H, qˢ, qᵗ, p, workspace = tp.fundamental, tp.hitting_time, tp.source_quality, tp.target_quality, tp.stationary_distribution, tp.workspaces[1]
-    return qˢ' * _betweenness!(workspace, Z, H, p, t) * qᵗ
-end
-function compute(::Betweenness{QualityAndProximityWeighted}, tp::RandomWalkTargetPrecalculations)
-    Z, H, K, p, workspace = tp.probability, tp.cost, tp.fundamental, tp.hitting_time, tp.quality_weighted_proximity, tp.stationary_distribution, g.workspaces[1]
-    return sum(_betweenness!(workspace, Z, H, p, t) .* K)
-end
-function compute(::Betweenness{ProximityWeighted}, tp::RandomWalkTargetPrecalculations)
-    Z, H, K, p, workspace = tp.fundamental, tp.hitting_time, tp.proximity, tp.stationary_distribution, tp.workspaces[1]
-    return sum(_betweenness!(workspace, Z, H, p, t) .* K)
+function compute(bet::Betweenness, tp::RandomWalkTargetPrecalculations)
+    (; Z, H, p, workspace) = tp
+    node = target(tp).node
+    # TODO not square
+    workspace .= view(Z, :, 1) .- view(Z, :, node)' .+ H .* p[node]
+    _apply_weight!(workspace, wieghting(bet), tp)
 end
 
-# TODO this only works for simmetrical Z
-_betweenness!(workspace, Z, H, p, t::TargetID) =
-    workspace .= view(Z, :, 1) .- view(Z, :, t.node)' .+ H .* p[t]
-
-apply_weight!(k, ::Unweighted, tp::TargetPrecalculations) = k
-apply_weight!(k, ::QualityAndProximityWeighted, tp::TargetPrecalculations) =
-    k .*= source_qualities(tp) .* target_qualities(pt)[tp.target.node]
+# TODO: these should be the same for all movement modes
+_apply_weight!(ZZHp, ::Unweighted, tp::RandomWalkTargetPrecalculations) = sum(ZZHp)
+function _apply_weight!(ZZHp, ::QualityAndProximityWeighted, tp::RandomWalkTargetPrecalculations)
+    sum(ZZHp .*= tp.M)
+end
+function _apply_weight!(ZZHp, ::QualityWeighted, tp::RandomWalkTargetPrecalculations)
+    tp.qˢ' * ZZHp * tp.qᵗ
+end
+function _apply_weight!(ZZHp, ::ProximityWeighted, tp::RandomWalkTargetPrecalculations)
+    sum(ZZHp .*= tp.K)
+end
 
 # RandomShortestPath
-
-# Betweenness: TODO move code here from RSP and rewrite per-target
-function compute(::Betweenness{QualityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
-    g = grid(tp)
-    targetnode = tp.target.node
-    (; Z, qˢ, Zⁱ) = tp
-    workspace1, workspace2 = tp.workspaces
-    qᵗ = g.target_qualities[targetnode]
-
-    qˢZⁱqᵗ = workspace1 .= qˢ .* Zⁱ .* qᵗ
-
-    # TODO: explain why this is needed
-    qˢZⁱqᵗ[targetnode, 1] -= sum(qˢ) * qᵗ * Zⁱ[targetnode, 1]
-
-    ZqˢZⁱqᵗZt = ldiv!(solver(tp), Aadj_init, qˢZⁱqᵗ; B_copy=copy!(workspace2, qˢZⁱqᵗ))
-    ZqˢZⁱqᵗZt .*= Z
-
-    return ZqˢZⁱqᵗZt
-end
 function compute(::EdgeBetweenness{QualityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
-    g = grid(tp)
-    # Zrows = ldiv!(solver(tp), IWadj_factorization, b; B_copy=copy!(workspace2, B))'
-    (; Z, Zⁱ, Zrows, qˢ) = tp
-    workspace1, workspace2 = tp.workspaces
-    qᵗ = g.target_qualities[target.node]
-
+    (; Z, Zⁱ, Zrows, IW_adj_factorization, qˢ, qᵗ) = tp
+    workspace1, workspace2 = workspaces(tp)
     qˢZⁱqᵗ = workspace1 .= qˢ .* Zⁱ .* qᵗ
     # QZⁱᵀZ = qˢZⁱqᵗ' / A
-    QZⁱᵀZ = ldiv!(solver(tp), Aadj_factorization, qˢZⁱqᵗ; B_copy=copy!(workspace2, qˢZⁱqᵗ))'
-
-    RHS = workspace3 .= QZⁱᵀZ .- Zrows .* sum(qˢ) .* qᵗ .* Zⁱ[target.node, 1]
+    QZⁱᵀZ = ldiv!(tp, IW_adj_factorization, qˢZⁱqᵗ)'
+    RHS = workspace2 .= QZⁱᵀZ .- sum(qˢ) .* qᵗ .* Zⁱ[target.node, 1] .* Zrows 
     return _combine_edge_betweenness(W, Z, RHS, target)
 end
 function compute(::EdgeBetweenness{QualityAndProximityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
-    (; MZⁱ, Zrows) = tp # MZⁱ = workspace1 .= M .*= Zⁱ
-    workspace1, workspace2 = tp.workspaces
-    # MᵀZ = MZⁱ' / A
-    MᵀZ = ldiv!(solver(tp), IWadj_init, MZⁱ; copy=copy!(workspace1, MZⁱ))'
-    k̂diagZⁱ = sum(MZⁱ) * Zⁱ[target.node, 1]
-    MᵀZ_minus_diag = workspace2' .=  MᵀZ .- k̂diagZⁱ .* Zrows'
+    (; Z, Zⁱ, MZⁱ, Zrows, IW_adj_factorization, workspace) = tp
+    MᵀZ = ldiv!(tp, IW_adj_factorization, MZⁱ)' # MᵀZ = MZⁱ' / A
+    RHS = workspace .= MᵀZ .- sum(MZⁱ) * Zⁱ[target(tp).node, 1] .* Zrows
+    return _combine_edge_betweenness(W, Z, RHS, target)
+end
+function compute(::Betweenness{QualityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
+    (; Z, Zⁱ, qˢ, qᵗ, IW_adj_factorization, workspace) = tp
+    qˢZⁱqᵗ = workspace .= qˢ .* Zⁱ .* qᵗ
+    # TODO: explain why this is needed
+    qˢZⁱqᵗ[target(tp).node, 1] -= sum(qˢ) * qᵗ * Zⁱ[target(tp).node, 1]
+    ZqˢZⁱqᵗZt = ldiv!(tp, IW_adj_factorization, qˢZⁱqᵗ) .*= Z
 
-    return _combine_edge_betweenness(W, Z, MᵀZ_minus_diag, target)
+    return sum(ZqˢZⁱqᵗZt)
 end
 function compute(::Betweenness{QualityAndProximityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
-    # MZⁱ = workspace2 .= landscape_matrix .* Zⁱ
-    (; Z, MZⁱ, Zⁱ) = tp
-    workspace1 = tp.workspaces
-
-    # Divide the  by Z
+    (; Z, M, MZⁱ, Zⁱ, IW_adj_factorization, workspace) = tp
     # Find the scaling factor:
-    # If any of the values of KZⁱ is above one then there is a risk of overflow,
+    # If any of the values of MZⁱ is above one then there is a risk of overflow,
     # so we scale the matrix and apply a scale factor
     λ = max(1.0, maximum(MZⁱ))
-    MZⁱλ = workwspace .= MZⁱ
+    MZⁱλ = workspace .= MZⁱ .*= inv(λ)
     # TODO: comment what is this for
-    MZⁱλ[target.node, 1] -= sum(MZⁱ) / λ * Zⁱ[target.node, 1]
-    # Normalise before the solve
-    MZⁱλ ./= λ
-    # Solve: ZKZⁱt = (I - W)' \ KZⁱ
-    B_copy = copy!(workspace1, MZⁱλ)
-    ZMZⁱt = ldiv!(solver(tp), IWadj_init, MZⁱλ; B_copy) .* λ .* Z
-
+    MZⁱλ[target(tp).node, 1] = sum(MZⁱλ) * Zⁱ[target(tp).node, 1]
+    # Solve: ZMZⁱt = (I - W)' \ MZⁱ
+    ZMZⁱt = ldiv!(tp, IW_adj_factorization, MZⁱλ) .*= Z .* λ 
+    
     return sum(ZMZⁱt)
 end
 
@@ -168,53 +131,48 @@ function _combine_edge_betweenness(W, Z, X, target)
     end
 end
 
-# ConnectedHabitat 
-compute(::ConnectedHabitat, tp::TargetPrecalculations) = tp.landscape_matrix
-
 # Sensitivity
 function compute(gm::Sensitivity, tp::RandomisedShortestPathTargetPrecalculations)
-    target_sensitivity = if context(gm) <: Union{Affinity,Cost,CostAndAffinitySensitivityContext} 
-        S_e_aff, S_e_cost = _sensitivity(cm, tp)
+    if wrt(gm) <: Union{Affinity,Cost,CostAndAffinitySensitivityContext} 
+        S_e_aff, S_e_cost = _sensitivity(connectivity_measure(gm), tp)
 
         if unitless 
-            _scale!(S_e_aff, gm.context, tp)
-            _scale!(S_e_cost, gm.context, tp)
+            _scale!(S_e_aff, wrt(gm), tp)
+            _scale!(S_e_cost, wrt(gm), tp)
         end
-
-        if gm.context <: Affinity
+        target_sensitivity = if wrt(gm) <: Affinity
             sum(S_e_aff)
-        elseif gm.context <: Cost
+        elseif wrt(gm) <: Cost
             sum(S_e_cost)
-        elseif gm.context <: AffinityAndCost
+        elseif wrt(gm) <: AffinityAndCost
             diff_C_A = ConScape.mapnz(diff_C_A_fun, affinitymatrix(g))
             S_e_total = S_e_aff .+ S_e_cost .* diff_C_A
             sum(S_e_total)
-        elseif gm.context <: CostAndAffinity
+        elseif wrt(gm) <: CostAndAffinity
             diff_A_C = ConScape.mapnz(diff_A_C_fun, affinitymatrix(g))
             S_e_total = S_e_aff .* diff_A_C .+ S_e_cost
             sum(S_e_total)
         end
-    elseif gm.context <: Qualities
-        K = proximities(tp)
-        KK = workspace2 .= K .+= transpose(K)
-        target_sensitivity = mul!(workspace3, KK, target_quality_spatial(tp)[target.spatial])
+    elseif wrt(gm) <: Qualities
+        (; qˢ, qᵗ, K, workspace) = tp
+        # TODO make this single-target
+        target_sensitivity = workspace .= K .+ transpose(K) .*= qᵗ 
         if unitless
-            target_sensitivity .* source_quality_apatial(tp)[target.spatial]
+            target_sensitivity *= qˢ[target.node]
         end
-        target_sensitivity
     end
 
-    target_sensitivity * isnan(source_quality_spatial(g)[target.spatial]) ? NaN : 1.0
+    return target_sensitivity
 end
 
 function _sensitivity(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations)
-    (; A, C, W, M, Z, CW, IW, Zⁱ, MZⁱ, Zrows) = tp
-    diff_K_D = _diff_KD(distance_transformation(tp))
+    (; A, C, W, Z, CW, IW, Zⁱ, MZⁱ, Zrows, workspace) = tp
+    diff_KD = _diff_KD(distance_transformation(tp))
     # TODO convert all / \ to ldiv!
 
     # MZⁱ = workspace1 .= M .* Zⁱ 
     # k̂ᵢⱼ = kᵢⱼ/zᵢⱼ
-    Y = IW \ (CW * Z)
+    Y = ldiv(tp, IW, mul!(workspace, CW * Z))
     C̄ᵣ = Y .* Zⁱ # Expected costs of REGULAR paths
     MᵀZ = MZⁱ' / IW
 

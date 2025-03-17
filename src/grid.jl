@@ -1,5 +1,5 @@
 
-const TargetID = @NamedTuple{spatial::CartesianIndex{2},node::Int}
+const TargetID = @NamedTuple{spatial::CartesianIndex{2},id::Int,node::Int}
 const SourceID = CartesianIndex{2}
 
 abstract type Precalculations end
@@ -17,6 +17,10 @@ movement_mode(p::Precalculations) = movement_mode(problem(p))
 solver(p::Precalculations) = solver(problem(p))
 graph_measures(p::Precalculations) = graph_measures(problem(p))
 connectivity_measure(p::Precalculations) = connectivity_measure(problem(p))
+distance_transformation(p::Precalculations) = distance_transformation(problem(p))
+diagvalue(p::Precalculations) = diagvalue(problem(p))
+approx(p::Precalculations) = approx(problem(p))
+theta(p::Precalculations) = theta(problem(p))
 
 nsources(p::Precalculations) = length(source_ids(p))
 ntargets(p::Precalculations) = length(target_ids(p))
@@ -146,7 +150,7 @@ _target_spatial_ids(target_quality::Raster, source_spatial_ids::AbstractVector) 
     _target_spatial_ids(parent(target_quality), source_spatial_ids)
 function _target_spatial_ids(target_quality::SparseMatrixCSC, source_spatial_ids::AbstractVector)
     is, js, _ = findnz(target_quality)
-    return intersect(CartesianIndex.(is, js), source_spatial_ids)
+    return intersect!(CartesianIndex.(is, js), source_spatial_ids)
 end
 
 function _target_ids(target_quality_spatial::AbstractMatrix, source_spatial_ids::Vector{CartesianIndex{2}})
@@ -156,11 +160,9 @@ function _target_ids(target_quality_spatial::AbstractMatrix, source_spatial_ids:
     target_nodes = findall(source_spatial_ids) do id
         id in target_spatial_ids
     end
-    println()
-    @show length(source_spatial_ids) target_nodes 
     # Return Vector{NamedTuple} each with target.spatial and target.node
-    return map(target_spatial_ids, target_nodes) do spatial, node
-        (; spatial, node)
+    return map(target_spatial_ids, eachindex(target_nodes), target_nodes) do spatial, id, node
+        (; spatial, id, node)
     end
 end
 
@@ -251,105 +253,6 @@ function split_subgraphs(g::Grid)
             g.dims,
         )
     end
-end
-
-"""
-    largest_subgraph(g::Grid)::Grid
-
-Extract the largest fully connected subgraph of the `Grid`. The returned `Grid`
-will have the same size as the input `Grid` but only nodes associated with the
-largest subgraph of the affinities will be active.
-"""
-function largest_subgraph(g::Grid)
-    # Convert cost matrix to graph, todo: is `permute=false` needed
-    graph = SimpleWeightedDiGraph(g.costmatrix, permute=false)
-
-    # Find the subgraphs
-    scc = strongly_connected_components(graph)
-
-    # @info "cost graph contains $(length(scc)) strongly connected subgraphs"
-
-    # Find the largest subgraph
-    _, i = findmax(length, scc)
-
-    # extract node list and sort it
-    scci = sort(scc[i])
-
-    # ndiffnodes = size(g.costmatrix, 1) - length(scci)
-    # if ndiffnodes > 0
-    # @info "removing $ndiffnodes nodes from affinity and cost graphs"
-    # end
-
-    # Extract the adjacency matrix of the largest subgraph
-    affinitymatrix = g.affinitymatrix[scci, scci]
-    # affinities = convert(SparseMatrixCSC{Float64,Int}, graph[scci])
-
-    costmatrix = g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinitymatrix)
-    id_to_grid_coordinate_list = g.id_to_grid_coordinate_list[scci]
-    targetidx, targetnodes = _targetidx_and_nodes(g.target_qualities, id_to_grid_coordinate_list)
-    qs = [g.source_qualities[i] for i in id_to_grid_coordinate_list]
-    qt = [g.target_qualities[i] for i in id_to_grid_coordinate_list ∩ targetidx]
-    return Grid(
-        g.size,
-        g.costfunction,
-        costmatrix,
-        affinitymatrix,
-        id_to_grid_coordinate_list,
-        g.source_qualities,
-        g.target_qualities,
-        targetidx,
-        targetnodes,
-        qs,
-        qt,
-        g.dims,
-    )
-end
-
-"""
-    least_cost_distance(g::Grid)::Matrix{Float64}
-
-Compute the least cost distance from all the cells in the grid to all target cells.
-
-# Examples
-```jldoctests
-julia> affinities = [1/4 0 1/2 1/4
-                     1/4 0 1/2 1/4
-                     1/4 0 1/2 1/4
-                     1/4 0 1/2 1/4];
-
-julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities))
-[ Info: cost graph contains 6 strongly connected subgraphs
-[ Info: removing 8 nodes from affinity and cost graphs
-ConScape.Grid of size 4x4
-
-julia> ConScape.least_cost_distance(grid)
-8×8 Matrix{Float64}:
- 0.0       0.693147  1.38629   2.07944   0.693147  1.03972   1.73287   2.42602
- 0.693147  0.0       0.693147  1.38629   1.03972   0.693147  1.03972   1.73287
- 1.38629   0.693147  0.0       0.693147  1.73287   1.03972   0.693147  1.03972
- 2.07944   1.38629   0.693147  0.0       2.42602   1.73287   1.03972   0.693147
- 1.38629   1.73287   2.42602   3.11916   0.0       1.38629   2.77259   3.46574
- 1.73287   1.38629   1.73287   2.42602   1.38629   0.0       1.38629   2.77259
- 2.42602   1.73287   1.38629   1.73287   2.77259   1.38629   0.0       1.38629
- 3.11916   2.42602   1.73287   1.38629   3.46574   2.77259   1.38629   0.0
-```
-"""
-function least_cost_distance(g::Grid; θ::Nothing=nothing, approx::Bool=false)
-    # FIXME! This should be multithreaded. However, ProgressLogging currently
-    # does not support multithreading
-    if approx
-        throw(ArgumentError("no approximate algorithm is available for this distance function"))
-    end
-    targets = g.targetidx
-    @progress vec_of_vecs = [least_cost_distance(g, target) for target in targets]
-
-    return reduce(hcat, vec_of_vecs)
-end
-function least_cost_distance(g::Grid, target::CartesianIndex{2})
-    graph = SimpleWeightedDiGraph(g.costmatrix)
-    targetnode = findfirst(isequal(target), g.id_to_grid_coordinate_list)
-    distvec = dijkstra_shortest_paths(graph, targetnode).dists
-    return distvec
 end
 
 """

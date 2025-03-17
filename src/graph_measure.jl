@@ -1,4 +1,3 @@
-
 abstract type Measure end
 
 """
@@ -54,11 +53,15 @@ abstract type LandscapeMeasure end
 struct LandscapeSum <: LandscapeMeasure end
 struct LandscapeEigen <: LandscapeMeasure end
 
-@kwdef struct Sensitivity{C<:SensitivityContext,LM<:LandscapeMeasure} <: PerturbationMeasure
-    context::C
+@kwdef struct Sensitivity{W<:SensitivityContext,LM<:LandscapeMeasure} <: PerturbationMeasure
+    with_regards_to::W
     landscape_measure::LM
     unitless::Bool
 end
+
+wrt(gm::Sensitivity) = gm.with_regards_to
+unitless(gm::Sensitivity) = gm.unitless
+landscape_measure(gm::Sensitivity) = gm.landscape_measure
 
 # Others
 
@@ -73,32 +76,19 @@ end
     tol::T = 1e-14
 end
 
-# # Workspace allocation traits
-# needs_inv(::GraphMeasure) = false
-# needs_inv(::BetweennessMeasure) = true
-needs_workspaces(::Measure) = 0
-needs_workspaces(::BetweennessMeasure) = 1
-needs_workspaces(::EdgeBetweenness{QualityAndProximityWeighted}) = 2
-needs_workspaces(::EdgeBetweenness{QualityWeighted}) = 3
-needs_proximity(::Measure) = false
-needs_proximity(::BetweennessMeasure{QualityAndProximityWeighted}) = true
-needs_expected_cost(::Measure) = false
-needs_expected_cost(::EdgeBetweenness{QualityAndProximityWeighted}) = true
-# needs_expected_cost(::KullbackLeiblerDivergence) = true
-# needs_free_energy_distance(::GraphMeasure) = false
-# needs_free_energy_distance(::MeanKullbackLeiblerDivergence) = true
-# needs_adjoint_init(::GraphMeasure) = true # TODO which dont?
+# Return type traits
+returntrait(::SpatialMeasure) = AssignDenseSpatial()
+returntrait(::ConnectedHabitat) = SumDenseSpatial()
+returntrait(::EdgeBetweenness) = AssignSparse()
+
+# Workspace allocation traits
+needs_workspaces(::Measure) = 3
+needs_workspaces(::BetweennessMeasure) = 4
+needs_workspaces(::EdgeBetweenness{QualityAndProximityWeighted}) = 5
+needs_workspaces(::EdgeBetweenness{QualityWeighted}) = 6
 
 # Trait aggregator
 hastrait(t, gms) = reduce(|, map(t, gms); init=false)
 
-# Graph measure helpers
-
 # Count how many workspaces are needed for a problem
-function nworkspaces(p::AbstractProblem)
-    gms = graph_measures(p)
-    n = mapreduce(needs_workspaces, max, gms)
-    if hastrait(needs_expected_cost, gms) || connectivity_measure(p) isa ExpectedCost
-        max(n, 2)
-    end
-end
+nworkspaces(p::AbstractProblem) = mapreduce(needs_workspaces, max, graph_measures(p))

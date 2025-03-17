@@ -41,6 +41,8 @@ end
 
 movement_mode(p::Problem) = p.movement_mode
 connectivity_measure(p::Problem) = connectivity_measure(movement_mode(p))
+distance_transformation(p::Problem) = distance_transformation(movement_mode(p))
+diagvalue(p::Problem) = diagvalue(movement_mode(p))
 graph_measures(p::Problem) = p.graph_measures
 solver(p::Problem) = p.solver
 costfunction(p::Problem) = p.costfunction

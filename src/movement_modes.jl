@@ -47,8 +47,8 @@ RandomisedShortestPath(connectivity_measure::FundamentalMeasure; kw...) =
 
 connectivity_measure(mm::RandomisedShortestPath) = mm.connectivity_measure
 distance_transformation(mm::RandomisedShortestPath) = 
-    distance_transformation(connectivity_meausure(mm))
-diagvalue(mm::RandomisedShortestPath) = mm.connectivity_measure
+    distance_transformation(connectivity_measure(mm))
+diagvalue(mm::RandomisedShortestPath) = mm.diagvalue
 approx(mm::RandomisedShortestPath) = mm.approx
 theta(mm::RandomisedShortestPath) = mm.theta
 

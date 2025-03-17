@@ -31,14 +31,14 @@ to be run over the same windowed grids.
 end
 WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 
-# function Base.show(io, mime::MIME"text/plain", p::WindowedProblem)
-#     println(io, typeof(p))
-#     println(io, "centersize: ", p.centersize)
-#     println(io, "buffer:     ", p.buffer)
-#     println(io, "threaded:   ", p.threaded)
+function Base.show(io::IO, ::MIME"text/plain", p::WindowedProblem)
+    println(io, typeof(p))
+    println(io, "centersize: ", p.centersize)
+    println(io, "buffer:     ", p.buffer)
+    println(io, "threaded:   ", p.threaded)
 #     println(io, "problem:    ")
-#     show(io, mime, p.problem)
-# end
+    # show(io, mime, p.problem)
+end
 
 centersize(p::WindowedProblem) = p.centersize, p.centersize
 isthreaded(p::WindowedProblem) = p.threaded
@@ -95,7 +95,7 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
             end
         end
         # Garbage collect for this window
-        GC.gc()
+        # GC.gc()
         return output, elapsed
     end
     # Run the window problems
@@ -133,7 +133,7 @@ end
 
 init(p::WindowedProblem, rast::RasterStack; kw...) = init!((;), p, rast; kw...)
 function init!(workspace::NamedTuple, p::WindowedProblem, rast::RasterStack;
-    window_ranges=_window_ranges(p, rast),
+    window_ranges=window_ranges(p, rast),
     grid_sizes=nothing,
     selected_window_indices=nothing,
     verbose=true,
@@ -155,7 +155,7 @@ end
 
 # Calculate the maximum number of source and target values in any window
 function _estimate_grid_sizes(p::AbstractWindowedProblem, rast;
-    window_ranges=_window_ranges(p, rast)
+    window_ranges=window_ranges(p, rast)
 )
     # Calculate the maximum number of source and target values in any window
     return map(r -> _estimate_grid_size(p, rast, r), window_ranges)
@@ -329,7 +329,7 @@ end
 init(p::BatchProblem, rast::RasterStack, i::Int; verbose=false, kw...) =
     init!(init(p, rast; verbose, kw...), p, i::Int; verbose)
 function init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack; 
-    batch_ranges=_window_ranges(p, rast),
+    batch_ranges=window_ranges(p, rast),
     batch_indices=_select_indices(p, rast; window_ranges=batch_ranges),
     selected_window_indices=nothing,
     grid_sizes=nothing,
@@ -338,7 +338,7 @@ function init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack;
     return (; rast, batch_ranges, batch_indices, selected_window_indices, grid_sizes)
 end
 function init(p::BatchProblem{<:Problem}, rast::RasterStack;
-    batch_ranges=_window_ranges(p, rast),
+    batch_ranges=window_ranges(p, rast),
     batch_indices=_select_indices(p, rast; window_ranges=batch_ranges),
     kw...
 )
@@ -352,7 +352,7 @@ function init!(ws::NamedTuple, p::BatchProblem{<:WindowedProblem}, i::Int; verbo
     verbose && @show ranges
     batch_rast = rast[ranges...]
     # Get window ranges for batch i
-    window_ranges = _window_ranges(p.problem, batch_rast)
+    window_ranges = ConScape.window_ranges(p.problem, batch_rast)
     # Get grid sizes for batch i
     grid_sizes = isnothing(grid_sizes) ? _estimate_grid_sizes(p.problem, batch_rast; window_ranges) : grid_sizes[batch_indices[i]]
     selected_window_indices = isnothing(selected_window_indices) ? _select_indices(p.problem, batch_rast; window_ranges, grid_sizes) : selected_window_indices[batch_indices[i]]
@@ -378,7 +378,7 @@ function _write(p::BatchProblem, output::RasterStack{K}, ranges::Tuple; kw...) w
     )
 end
 
-batch_paths(p, x::Union{RasterStack,Tuple}; batch_ranges=_window_ranges(p, x)) = 
+batch_paths(p, x::Union{RasterStack,Tuple}; batch_ranges=window_ranges(p, x)) = 
     [_batch_path(p, rs) for rs in batch_ranges]
 
 function _batch_path(p, ranges::Tuple)
@@ -394,7 +394,7 @@ end
 # pruning may further remove some windows, but is too expensive to do here
 # Running `assess` before solving to do this perfectly.
 function _select_indices(p, rast;
-    window_ranges=_window_ranges(p, rast),
+    window_ranges=window_ranges(p, rast),
     grid_sizes=_estimate_grid_sizes(p, rast; window_ranges)
 )
     # Get the Bool mask of needed windows
@@ -403,9 +403,9 @@ function _select_indices(p, rast;
     return eachindex(mask)[vec(mask)]
 end
 
-_window_ranges(p::Union{BatchProblem,WindowedProblem}, rast::AbstractRasterStack) =
-    _window_ranges(p::Union{BatchProblem,WindowedProblem}, size(rast))
-function _window_ranges(p::Union{BatchProblem,WindowedProblem}, size::Tuple)
+window_ranges(p::Union{BatchProblem,WindowedProblem}, rast::AbstractRasterStack) =
+    window_ranges(p::Union{BatchProblem,WindowedProblem}, size(rast))
+function window_ranges(p::Union{BatchProblem,WindowedProblem}, size::Tuple)
     centersize = ConScape.centersize(p)
     buffer = ConScape.buffer(p)
     windowsize = 2buffer .+ centersize
