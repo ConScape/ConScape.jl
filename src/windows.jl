@@ -28,40 +28,82 @@ to be run over the same windowed grids.
     centersize::Int
     buffer::Int
     threaded::Bool = false
+    gc::Bool = true 
+    test_windows::Bool = false
+    mosaic_return::Bool = true
+    timed::Bool = false
 end
 WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 
-function Base.show(io::IO, ::MIME"text/plain", p::WindowedProblem)
-    println(io, typeof(p))
-    println(io, "centersize: ", p.centersize)
-    println(io, "buffer:     ", p.buffer)
-    println(io, "threaded:   ", p.threaded)
-#     println(io, "problem:    ")
-    # show(io, mime, p.problem)
-end
+# function Base.show(io::IO, ::MIME"text/plain", p::WindowedProblem)
+#     summary(io, p)
+#     println(io, "centersize: ", p.centersize)
+#     println(io, "buffer:     ", p.buffer)
+#     println(io, "threaded:   ", p.threaded)
+#     println(io, "gc:         ", p.gc)
+# end
 
 centersize(p::WindowedProblem) = p.centersize, p.centersize
 isthreaded(p::WindowedProblem) = p.threaded
 
-function solve(p::WindowedProblem, rast::RasterStack;
-    verbose=false, test_windows=false, mosaic_return=true, timed=false, kw...
+function init(p::WindowedProblem, rast::RasterStack; 
+    window_ranges=window_ranges(p, rast),
+    workspaces=nothing,
+    grid_sizes=nothing,
+    indices=nothing,
+    verbose=true,
+    kw...
 )
-    solve!(init(p, rast; verbose, kw...), p;
-        verbose, test_windows, mosaic_return, timed
+    window_ranges = vec(window_ranges)
+    # Estimate grid sizes. This is expensive, it us usually passed in from an Assessment
+    grid_sizes = isnothing(grid_sizes) ? _estimate_grid_sizes(p, rast; window_ranges) : grid_sizes |> vec
+    @assert length(window_ranges) == length(grid_sizes)
+
+    # Select and sort indices: we usually only run a subset of windows
+    indices = isnothing(indices) ? _select_indices(p, rast; window_ranges, grid_sizes) : indices
+    sorted_indices = last.(sort!(first.(grid_sizes[indices]) .=> indices; rev=true))
+    # Workspaces: allocate now to use ing GridInit for each window.
+    # We start with the largest possible workspace length
+    workspacelen = first(grid_sizes[first(sorted_indices)]) 
+    workspaces = _allocate_workspaces!(workspaces, problem(p), workspacelen)
+
+    return WindowedInit(
+        p, rast, grid_sizes, window_ranges, indices, sorted_indices, workspaces
     )
 end
-solve!(workspace::Missing, p::WindowedProblem; kw...) = missing
-function solve!(workspace::NamedTuple, p::WindowedProblem;
-    test_windows::Bool=false,
-    mosaic_return::Bool=true,
-    timed=false,
+
+solve(p::WindowedProblem, rast::RasterStack; verbose=false, kw...) =
+    solve(init(p, rast; verbose, kw...); verbose)
+
+struct WindowedInit{P,R} <: Precalculations
+    problem::P
+    rast::R
+    sparse_sizes::Vector{Tuple{Int,Int}}
+    ranges::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
+    indices::Vector{Int}
+    sorted_indices::Vector{Int}
+    workspaces::Workspaces{Vector{Float64}}
+end
+
+problem(wi::WindowedInit) = wi.problem
+workspace(wi::WindowedInit) = wi.workspaces
+
+function init(wi::WindowedInit, i::Int)
+    init(problem(problem(wi)), view(wi.rast, wi.window_ranges[i]...);
+        workspaces=wi.workspaces
+    )
+end
+function solve(wi::WindowedInit; 
     verbose::Bool=false,
+    mosaic_return=problem(wi).mosaic_return,
+    timed=problem(wi).timed,
 )
-    (; rast, window_ranges, selected_window_indices, sorted_indices) = workspace
+    (; rast, ranges, indices, sorted_indices) = wi
+    p = problem(wi)
     # Test outputs just return the inputs after window masking 
-    if test_windows
-        output_stacks = map(selected_window_indices) do i
-            _get_window_with_zeroed_buffer(view, p, rast, window_ranges[i])
+    if p.test_windows
+        output_stacks = map(indices) do i
+            _get_window_with_zeroed_buffer(view, p, rast, ranges[i])
         end
         return if mosaic_return
             Rasters.mosaic(sum, collect(skipmissing(output_stacks));
@@ -76,9 +118,8 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
     # Define a runner for threaded/non-threaded operation
     function run(i, iw)
         # Get a window range
-        window = window_ranges[iw]
+        window = ranges[iw]
         verbose && println("Running job $i - $iw for ranges $window and thread $(Threads.threadid())")
-        # verbose && println("Solving window $i $window ")
         window_rast = _get_window_with_zeroed_buffer(view, p, rast, window)
         # Initialise the window using stored memory
         verbose && println("Initialising window from size $(size(window_rast)), from ranges $window...")
@@ -86,16 +127,12 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
         # Solve for the window
         verbose && println("Solving window $window...")
         elapsed = @elapsed begin
-            output = if prod(sparse_size(grid(window_precalc))) > 0
-                solve!(window_precalc)
-            else
-                @show target_size(grid(window_precalc))
-                error()
-                # missing
-            end
+            output = solve(window_precalc)
         end
         # Garbage collect for this window
-        # GC.gc()
+        # Inneficient for few/small windows but
+        # often needed for many/large windows
+        p.gc && GC.gc()
         return output, elapsed
     end
     # Run the window problems
@@ -111,7 +148,7 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
         t = time()
         non_missing_output = collect(skipmissing(output_stacks))
         if length(non_missing_output) > 0
-            result = Rasters.mosaic(sum, non_missing_output; to=rast, missingval=0.0, verbose)
+            result = Rasters.mosaic(sum, non_missing_output; to=rast, missingval=NaN, verbose)
             mosaic_elapsed = time() - t
             if timed
                 (; result, window_elapsed, mosaic_elapsed)
@@ -128,22 +165,6 @@ function solve!(workspace::NamedTuple, p::WindowedProblem;
             output_stacks
         end
     end
-end
-
-
-init(p::WindowedProblem, rast::RasterStack; kw...) = init!((;), p, rast; kw...)
-function init!(workspace::NamedTuple, p::WindowedProblem, rast::RasterStack;
-    window_ranges=window_ranges(p, rast),
-    grid_sizes=nothing,
-    selected_window_indices=nothing,
-    verbose=true,
-)
-    grid_sizes = isnothing(grid_sizes) ? _estimate_grid_sizes(p, rast; window_ranges) : grid_sizes
-    selected_window_indices = isnothing(selected_window_indices) ? _select_indices(p, rast; window_ranges, grid_sizes) : selected_window_indices
-    sorted_indices = last.(sort!(prod.(grid_sizes[selected_window_indices]) .=> selected_window_indices; rev=true))
-    length(sorted_indices) > 0 || return missing
-   
-    return (; rast, grid_sizes, window_ranges, selected_window_indices, sorted_indices)
 end
 
 function _max_estimated_grid_size(p::AbstractWindowedProblem, rast; kw...)
@@ -250,8 +271,8 @@ mosaic(batch_problem; to=rast)
     problem::P
     buffer::Int
     centersize::Tuple{Int,Int}
-    datapath::String
     grain::Union{Nothing,Int} = nothing
+    datapath::String
     ext::String = ".tif"
 end
 function BatchProblem(problem::Problem;
@@ -287,99 +308,104 @@ function BatchProblem(problem::WindowedProblem;
     BatchProblem(; problem, buffer, centersize, kw...)
 end
 
-# function Base.show(io, mime::MIME"text/plain", p::BatchProblem)
-#     println(io, typeof(p))
+centersize(problem::BatchProblem) = problem.centersize
+
+solve(problem::BatchProblem, rast::RasterStack, i::Int...; verbose=false, kw...) =
+    solve(init(problem, rast; kw...), i...; verbose)
+
+# Initialise BatchProblem to a BatchInit
+function init(problem::BatchProblem, rast::RasterStack; 
+    batch_ranges=window_ranges(problem, rast),
+    batch_indices=_select_indices(problem, rast; window_ranges=batch_ranges),
+    kw...
+)
+    return BatchInit(; 
+        problem, 
+        rast, 
+        batch_ranges=vec(batch_ranges), 
+        batch_indices=vec(batch_indices),
+        kw...
+    )
+end
+
+# function Base.show(io, ::MIME"text/plain", p::BatchProblem)
+#     summary(io, p)
 #     println(io, "centersize: ", p.centersize)
 #     println(io, "buffer:     ", p.buffer)
 #     println(io, "datapath:   ", p.datapath)
 #     println(io, "ext:        ", p.ext)
 #     println(io, "grain:      ", p.grain)
-#     println(io, "problem:    ")
-#     show(io, mime, p.problem)
+#     summary(io, problem(p))
 # end
 
-centersize(p::BatchProblem) = p.centersize
-
-solve(p::BatchProblem, rast::RasterStack; verbose=false, kw...) =
-    solve!(init(p, rast; verbose, kw...), p; verbose)
-solve(p::BatchProblem, rast::RasterStack, i; verbose=false, kw...) =
-    solve!(init(p, rast; verbose, kw...), p, i; verbose)
-
-# Single batch job for running on clusters
-function solve!(ws::NamedTuple, p::BatchProblem; verbose=false, kw...)
-    for i in eachindex(ws.batch_indices)
-        solve!(ws, p, i; verbose)
-    end
+@kwdef struct BatchInit{P<:AbstractProblem,R<:RasterStack} <: Precalculations
+    problem::P
+    rast::R
+    batch_ranges::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
+    batch_indices::Vector{Int}
+    window_indices::Union{Nothing,Vector{Vector{Int}}} = nothing
+    sparse_sizes::Union{Nothing,Vector{Vector{Tuple{Int,Int}}}} = nothing
 end
-function solve!(ws::NamedTuple, p::BatchProblem, i::Int; verbose=false)
-    output = solve!(init!(ws, p, i).child_workspace, p.problem; verbose) # Store the output rasters for this job to disk and return the fiee path
-    iw = ws.batch_indices[i]
-    ranges = ws.batch_ranges[iw]
+
+problem(wi::BatchInit) = wi.problem
+
+# Initialise a job from a BatchInit to WindowedInit for WindowedProblem
+function init(bi::BatchInit{<:BatchProblem{<:WindowedProblem}}, i::Int; kw...)
+    checkbounds(Bool, bi.batch_indices, i) || 
+        throw(ArgumentError("Invalid batch index $i, must be between 1 and $(length(bi.batch_indices))"))
+    # Subset the raster for the range
+    rast = view(bi.rast, bi.batch_ranges[bi.batch_indices[i]]...)
+    indices = isnothing(bi.window_indices) ? nothing : bi.window_indices[bi.batch_indices[i]]
+    sparse_sizes = isnothing(bi.sparse_sizes) ? nothing : bi.sparse_sizes[bi.batch_indices[i]]
+    return init(problem(problem(bi)), rast; indices, sparse_sizes)
+end
+# Or to GridInit for Problem
+function init(bi::BatchInit{<:BatchProblem{<:Problem}}, i::Int; kw...)
+    problem_rast = bi.rast[bi.batch_ranges[bi.batch_indices[i]]...]
+    return GridInit(problem(problem(bi)), problem_rast)
+end
+
+# Solve a single batch job (there is no method to solve all jobs)
+function solve(bi::BatchInit, i::Int; verbose=false)
+    verbose && "Initialising window memory..."
+    inner_init = init(bi, i)
+    ib = bi.batch_indices[i]
+    ranges = bi.batch_ranges[ib]
+    verbose && "Running batch $i for window $ib over ranges $ranges..."
+    output = solve(inner_init; verbose)
+     # Store the output raster/s for this job to disk and return the file path
     return if ismissing(output)
-        println("Warning: output was empty for job $i at window $iw over ranges $ranges")
+        @warn "Output was empty for job $i at window $ib over ranges $ranges"
         missing
     else
         # Clear out some memory before writing
         GC.gc()
-        # Write raster to disk
-        _write(p, output, ranges; verbose)
+        verbose && "Writing finished raster to disk..."
+        _write(problem(bi), output, ranges; verbose)
     end
 end
-
-init(p::BatchProblem, rast::RasterStack, i::Int; verbose=false, kw...) =
-    init!(init(p, rast; verbose, kw...), p, i::Int; verbose)
-function init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack; 
-    batch_ranges=window_ranges(p, rast),
-    batch_indices=_select_indices(p, rast; window_ranges=batch_ranges),
-    selected_window_indices=nothing,
-    grid_sizes=nothing,
-    kw...
-)
-    return (; rast, batch_ranges, batch_indices, selected_window_indices, grid_sizes)
-end
-function init(p::BatchProblem{<:Problem}, rast::RasterStack;
-    batch_ranges=window_ranges(p, rast),
-    batch_indices=_select_indices(p, rast; window_ranges=batch_ranges),
-    kw...
-)
-    return (; rast, batch_ranges, batch_indices)
+# Solve all batches. 
+# Not the main intent of `BatchProblem` but here as a convenience.
+function solve(bi::BatchInit; verbose=false)
+    [solve(bi, i; verbose) for i in eachindex(bi.batch_indices)]
 end
 
-function init!(ws::NamedTuple, p::BatchProblem{<:WindowedProblem}, i::Int; verbose=false)
-    (; rast, batch_ranges, batch_indices, selected_window_indices, grid_sizes) = ws
-    # Get the raster data for job i
-    ranges = batch_ranges[batch_indices[i]]
-    verbose && @show ranges
-    batch_rast = rast[ranges...]
-    # Get window ranges for batch i
-    window_ranges = ConScape.window_ranges(p.problem, batch_rast)
-    # Get grid sizes for batch i
-    grid_sizes = isnothing(grid_sizes) ? _estimate_grid_sizes(p.problem, batch_rast; window_ranges) : grid_sizes[batch_indices[i]]
-    selected_window_indices = isnothing(selected_window_indices) ? _select_indices(p.problem, batch_rast; window_ranges, grid_sizes) : selected_window_indices[batch_indices[i]]
-    # Initialise the containted WindowedProblem
-    child_workspace = init(p.problem, batch_rast; verbose, grid_sizes, selected_window_indices, window_ranges)
-    return merge(ws, (; child_workspace, batch=i))
-end
-function init!(ws::NamedTuple, p::BatchProblem{<:Problem}, i::Int; verbose=false)
-    (; rast, batch_ranges, batch_indices) = ws
-    # Get the raster data for job i
-    ranges = batch_ranges[batch_indices[i]]
-    verbose && @show ranges
-    # Materialise the window, but with sparse targets
-    batch_rast = _get_window_with_zeroed_buffer(getindex, p, rast, ranges)
-    child_workspace = init(p.problem, batch_rast; verbose)
-    return merge(ws, (; child_workspace, batch=i))
-end
+"""
+    batch_paths(p::BatchProblem, x::RasterStack)
+    batch_paths(p::BatchProblem, size::Tuple{Int,Int})
+    batch_paths(p::BatchInit)
 
-function _write(p::BatchProblem, output::RasterStack{K}, ranges::Tuple; kw...) where {K}
-    dir = mkpath(_batch_path(p, ranges))
-    return Rasters.write(joinpath(dir, ""), output;
-        ext=p.ext, force=true, verbose=false, kw...
-    )
-end
+Get a `Vector` of `String` folder paths for each batch.
 
-batch_paths(p, x::Union{RasterStack,Tuple}; batch_ranges=window_ranges(p, x)) = 
+Note this will include paths for all possible windows,
+even those that will not run as batch jobs.
+
+To get only paths that will be written too disk, use 
+`batch_paths(bi)[bi.batch_indices]` where `bi` is a `BatchInit`.
+"""
+batch_paths(p::BatchProblem, x::Union{RasterStack,Tuple{Int,Int}}; batch_ranges=window_ranges(p, x)) = 
     [_batch_path(p, rs) for rs in batch_ranges]
+batch_paths(bi::BatchInit) = [_batch_path(p, rs) for rs in bi.batch_ranges]
 
 function _batch_path(p, ranges::Tuple)
     corners = map(first, ranges)
@@ -387,6 +413,13 @@ function _batch_path(p, ranges::Tuple)
     return joinpath(p.datapath, dirname)
 end
 
+# Write the output to disk with Rasters
+function _write(p::BatchProblem, output::RasterStack{K}, ranges::Tuple; kw...) where {K}
+    dir = mkpath(_batch_path(p, ranges))
+    return Rasters.write(joinpath(dir, ""), output;
+        ext=p.ext, force=true, kw...
+    )
+end
 
 ### Shared utilities
 
@@ -484,3 +517,10 @@ _isvalid(x) = !isnan(x) && x > zero(x)
 _isvalid(x::Bool) = x
 
 _resolution(rast) = abs(step(lookup(rast, X)))
+
+function Rasters.mosaic(p::BatchProblem, rast::RasterStack; filename=nothing, lazy=true, force=false, progress=true)
+    paths = filter(isdir, batch_paths(p, rast))
+    isempty(paths) && error("No directories exist to mosaic, have any batches been run?")
+    stacks = [RasterStack(path; lazy=true) for path in paths]
+    return mosaic(sum, stacks; filename, lazy, force, progress, missingval=NaN)
+end

@@ -205,11 +205,12 @@ end
 _maybe_raster(x) = x
 _maybe_raster(x::Raster) = x
 _maybe_raster(x::T) where T<:Number = Raster(fill(x), (); missingval=T(NaN))
-_maybe_raster(mat::Raster, g) = mat
+
+_maybe_raster(mat::Raster, g::Grid) = mat
 _maybe_raster(mat::AbstractMatrix, g::Grid) =
     _maybe_raster(mat, dims(g))
 _maybe_raster(mats::NamedTuple, g::Grid) =
     map(mat -> _maybe_raster(mat, g), mats)
-_maybe_raster(mat::AbstractMatrix, ::Nothing) = mat
-_maybe_raster(mat::AbstractMatrix{T}, dims::Tuple) where T =
+_maybe_raster(x, _) = x
+_maybe_raster(mat::Matrix{T}, dims::Tuple) where T =
     Raster(mat, dims; missingval=T(NaN))
