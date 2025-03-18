@@ -36,8 +36,9 @@ Assumes partial knowledge and immortality.
 - `diagvalue`: the value to use for the diagonal of the proximity matrix
 - `approx`: whether to use an approximate algorithm
 """
-@kwdef struct RandomisedShortestPath{CM<:FundamentalMeasure,T<:Union{Real,Nothing},DV} <: ArrivingMovement
+@kwdef struct RandomisedShortestPath{CM<:FundamentalMeasure,DT,T<:Union{Real,Nothing},DV} <: ArrivingMovement
     connectivity_measure::CM
+    distance_transformation::DT = nothing
     theta::T
     diagvalue::DV = nothing
     approx::Bool = false
@@ -46,8 +47,7 @@ RandomisedShortestPath(connectivity_measure::FundamentalMeasure; kw...) =
     RandomisedShortestPath(; connectivity_measure, kw...)
 
 connectivity_measure(mm::RandomisedShortestPath) = mm.connectivity_measure
-distance_transformation(mm::RandomisedShortestPath) = 
-    distance_transformation(connectivity_measure(mm))
+distance_transformation(mm::RandomisedShortestPath) = mm.distance_transformation
 diagvalue(mm::RandomisedShortestPath) = mm.diagvalue
 approx(mm::RandomisedShortestPath) = mm.approx
 theta(mm::RandomisedShortestPath) = mm.theta

@@ -27,7 +27,6 @@ function compute(::HittingTime, gp::RandomWalkGridPrecalculations)
     # Returns large dense matrix
     return D
 end
-
 function compute(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations)
     (; Z, Zⁱ, CW, IW_factorization, workspace) = tp
     # Solve: IW \ ((C .* W) * Z)
@@ -39,19 +38,18 @@ function compute(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations
 end
 function compute(::FreeEnergyDistance, tp::RandomisedShortestPathTargetPrecalculations)
     θ = theta(tp)
-    (; survival_probability, workspace) = tp
-    return workspace .= -log.(max.(zero(eltype(Z)), survival_probability)) ./ θ
+    (; survival_probabilities, workspace) = tp
+    return workspace .= -log.(max.(0, survival_probabilities)) ./ θ
 end
 function compute(::PowerMeanProximity, tp::RandomisedShortestPathTargetPrecalculations)
     θ = theta(tp)
-    (; survival_probability, workspace) = tp
-    return workspace .= survival_probability .^ (1 / θ)
+    (; survival_probabilities, workspace) = tp
+    return workspace .= survival_probabilities .^ (1 / θ)
 end
 function compute(::SurvivalProbability, tp::RandomisedShortestPathTargetPrecalculations) 
     (; Z, workspace) = tp
-    return workspace .= Z ./ Z[target, 1]
+    return workspace .= Z ./ Z[target(tp).node, 1]
 end
-
 # Mean Kullback-Leibler Divergence
 function compute(::KullbackLeiblerDivergence, tp::LeastCostTargetPrecalculations)
     (; Pref, cost_weighted_digraph, qˢ, qᵗ) = tp

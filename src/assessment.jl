@@ -80,7 +80,7 @@ that holds another `AbstractWindowedProblem`.
 end
 
 function Base.show(io::IO, mime::MIME"text/plain", a::ProblemAssessment)
-    println(io, "NestedAssessment")
+    summary(io, a)
     println(io)
     println(io, "Shape: $(a.shape)")
     println(io, "Number of jobs: $(a.njobs)")
@@ -110,19 +110,19 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
     kw...
 )
     # Define the ranges of each window
-    window_ranges = _window_ranges(p, rast)
+    window_ranges = ConScape.window_ranges(p, rast)
 
     # Convert everything to Bool at the batch level so window assessments are fast
     inner_targets = view(rast.target_qualities, target_ranges...)
     warnings = AssessmentWarnings(
-        any(isnan, rast.qualities),
+        any(isnan, rast.source_qualities),
         any(isnan, inner_targets),
     )
     inner_target_bools = isnothing(inner_target_bools) ? _isvalid.(inner_targets) : inner_target_bools
-    qualities = _isvalid.(rast.qualities)
+    source_qualities = _isvalid.(rast.source_qualities)
     target_qualities = falses(size(rast))
     target_qualities[target_ranges...] .= inner_target_bools
-    bool_rast = RasterStack((; qualities, target_qualities), dims(rast))
+    bool_rast = RasterStack((; source_qualities, target_qualities), dims(rast))
 
     # Calculate window sizes and allocations
     grid_sizes = vec(_estimate_grid_sizes(p, bool_rast; window_ranges))
@@ -145,7 +145,7 @@ function assess(
     kw...
 )
     # Calculate outer window ranges
-    window_ranges = _window_ranges(p, rast)
+    window_ranges = ConScape.window_ranges(p, rast)
     verbose && println("Assessing $(length(window_ranges)) jobs")
 
     # Define a vector for all assessment data
@@ -167,7 +167,7 @@ function assess(
             )
         end
         # We only need qualities for the assessment
-        window_rast = rast[(:qualities, :target_qualities)][rs...]
+        window_rast = rast[(:source_qualities, :target_qualities)][rs...]
         target_ranges = _target_ranges(p, window_rast)
         # Convert targets to bool as early as possible
         inner_targets = view(window_rast.target_qualities, target_ranges...)
@@ -227,23 +227,29 @@ end
 
 # Accept ProblemAssessment as an argument to solve and init 
 # To used instead of keywords
-solve(p::BatchProblem, rast::RasterStack, a::ProblemAssessment, i::Int...; verbose=false) =
-    solve!(init(p, rast, a), p, i...; verbose)
+solve(p::BatchProblem, rast::RasterStack, a::ProblemAssessment, i::Int; kw...) =
+    solve(p, rast, i; _assessment_keywords(p, rast, a)..., kw...)
    
-function init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack, a::NestedAssessment, i::Int...; kw...) 
-    batch_ranges = _window_ranges(p, rast)
-    grid_sizes = map(a.assessments) do a_w
-        a_w.grid_sizes
-    end
-    selected_window_indices = map(a.assessments) do a_w
-        a_w.indices
-    end
-    init(p, rast, i...; 
-        batch_ranges,
-        batch_indices=a.indices,
-        grid_sizes,
-        selected_window_indices,
-    )
-end
+init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack, a::NestedAssessment, i::Int...; kw...) =
+    init(p, rast, i...; _assessment_keywords(p, rast, a)..., kw...)
 init(p::BatchProblem{<:Problem}, rast::RasterStack, a::WindowAssessment, i::Int...; kw...) =
     init(p, rast, i...; batch_indices=a.indices)
+function init(p::WindowedProblem{<:Problem}, rast::RasterStack, a::WindowAssessment; kw...)
+    WindowInit(p, rast; grid_sizes, window_indices=a.indices, kw...)
+end
+
+# Keywords to pass from an Assessment to `init` or `solve`
+# We don't use the `Assesment` directly to allow manual manipulation
+# of the batch via keywords.
+function _assessment_keywords(::BatchProblem, rast, a::WindowAssessment)
+    return (; batch_indices=a.indices)
+end
+function _assessment_keywords(p::BatchProblem, rast, a::NestedAssessment)
+    sparse_sizes = map(a.assessments) do a_w
+        a_w.grid_sizes
+    end
+    window_indices = map(a.assessments) do a_w
+        a_w.indices
+    end
+    return (; batch_indices=a.indices, window_indices, sparse_sizes)
+end

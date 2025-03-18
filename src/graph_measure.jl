@@ -55,8 +55,8 @@ struct LandscapeEigen <: LandscapeMeasure end
 
 @kwdef struct Sensitivity{W<:SensitivityContext,LM<:LandscapeMeasure} <: PerturbationMeasure
     with_regards_to::W
-    landscape_measure::LM
-    unitless::Bool
+    landscape_measure::LM = LandscapeSum()
+    unitless::Bool = false
 end
 
 wrt(gm::Sensitivity) = gm.with_regards_to
@@ -77,18 +77,20 @@ end
 end
 
 # Return type traits
-returntrait(::SpatialMeasure) = AssignDenseSpatial()
+# returntrait(::SpatialMeasure) = AssignDenseSpatial()
 returntrait(::ConnectedHabitat) = SumDenseSpatial()
+returntrait(::Betweenness) = SumDenseSpatial()
 returntrait(::EdgeBetweenness) = AssignSparse()
 
+
 # Workspace allocation traits
-needs_workspaces(::Measure) = 3
-needs_workspaces(::BetweennessMeasure) = 4
-needs_workspaces(::EdgeBetweenness{QualityAndProximityWeighted}) = 5
-needs_workspaces(::EdgeBetweenness{QualityWeighted}) = 6
+needs_workspaces(::Measure) = 1
+needs_workspaces(::BetweennessMeasure) = 2
+needs_workspaces(::EdgeBetweenness{QualityAndProximityWeighted}) = 3
+needs_workspaces(::EdgeBetweenness{QualityWeighted}) = 4
 
 # Trait aggregator
 hastrait(t, gms) = reduce(|, map(t, gms); init=false)
 
 # Count how many workspaces are needed for a problem
-nworkspaces(p::AbstractProblem) = mapreduce(needs_workspaces, max, graph_measures(p))
+nworkspaces(p::AbstractProblem) = mapreduce(needs_workspaces, +, graph_measures(p))

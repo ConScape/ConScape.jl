@@ -13,6 +13,22 @@ using Rasters.DimensionalData
 import CommonSolve
 import CommonSolve: solve, init
 
+export RandomisedShortestPath, LeastCost, RandomWalk
+
+export ExpectedCost, FreeEnergyDistance, SurvivalProbability, PowerMeanProximity, KullbackLeiblerDivergence
+
+export Betweenness, EdgeBetweenness, ConnectedHabitat, Criticality, EigMax, Sensitivity
+
+export QualityWeighted, QualityAndProximityWeighted, ProximityWeighted
+
+export VectorSolver, LinearSolver
+
+export MinusLog, MinusLogAlpha, Inv, OddsFor, OddsAgainst, ExpMinus, ExpMinusAlpha
+
+export solve, init, assess
+
+export WindowedProblem, BatchProblem
+
 """
     Solver
 

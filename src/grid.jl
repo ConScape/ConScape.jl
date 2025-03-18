@@ -132,13 +132,13 @@ target_ids(g::Grid) = g.target_ids
 
 Base.size(g::Grid) = g.size
 function Base.show(io::IO, ::MIME"text/plain", g::Grid)
-    print(io, summary(g), " of size ", g.nrows, "x", g.ncols)
+    print(io, summary(g), " of size ", g.size)
 end
 
 DimensionalData.dims(g::Grid) = g.dims
 
 _prepare_qualities(A::AbstractMatrix) = _no_nan_f64.(_unwrap_raster(A))
-_no_nan_f64(x) = isnan(x) ? 0.0 : Float64(x)
+_no_nan_f64(x) = Float64(x) # == isnan(x) ? 0.0 : Float64(x)
 _unwrap_raster(R::Raster) = parent(R)
 _unwrap_raster(R::AbstractMatrix) = R
 

@@ -82,78 +82,74 @@ end
 
 # RandomShortestPath
 function compute(::EdgeBetweenness{QualityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
-    (; Z, Zⁱ, Zrows, IW_adj_factorization, qˢ, qᵗ) = tp
-    workspace1, workspace2 = workspaces(tp)
-    qˢZⁱqᵗ = workspace1 .= qˢ .* Zⁱ .* qᵗ
+    (; Z, Zⁱ, Zrows, QZⁱ, W, IW_adj_factorization, qˢ, qᵗ, workspace) = tp
     # QZⁱᵀZ = qˢZⁱqᵗ' / A
-    QZⁱᵀZ = ldiv!(tp, IW_adj_factorization, qˢZⁱqᵗ)'
-    RHS = workspace2 .= QZⁱᵀZ .- sum(qˢ) .* qᵗ .* Zⁱ[target.node, 1] .* Zrows 
-    return _combine_edge_betweenness(W, Z, RHS, target)
+    QZⁱᵀZ = ldiv!(tp, IW_adj_factorization, QZⁱ)
+    RHS = workspace .= QZⁱᵀZ .- sum(qˢ) .* qᵗ .* Zⁱ[target(tp).node, 1] .* Zrows
+    return _combine_edge_betweenness(W, Z, RHS, target(tp))
 end
 function compute(::EdgeBetweenness{QualityAndProximityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
-    (; Z, Zⁱ, MZⁱ, Zrows, IW_adj_factorization, workspace) = tp
-    MᵀZ = ldiv!(tp, IW_adj_factorization, MZⁱ)' # MᵀZ = MZⁱ' / A
+    (; W, Z, Zⁱ, MZⁱ, Zrows, IW_adj_factorization, workspace) = tp
+    MᵀZ = ldiv!(tp, IW_adj_factorization, MZⁱ) # MᵀZ = MZⁱ' / A
     RHS = workspace .= MᵀZ .- sum(MZⁱ) * Zⁱ[target(tp).node, 1] .* Zrows
-    return _combine_edge_betweenness(W, Z, RHS, target)
+    return _combine_edge_betweenness(W, Z, RHS, target(tp))
 end
 function compute(::Betweenness{QualityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
-    (; Z, Zⁱ, qˢ, qᵗ, IW_adj_factorization, workspace) = tp
-    qˢZⁱqᵗ = workspace .= qˢ .* Zⁱ .* qᵗ
-    # TODO: explain why this is needed
-    qˢZⁱqᵗ[target(tp).node, 1] -= sum(qˢ) * qᵗ * Zⁱ[target(tp).node, 1]
-    ZqˢZⁱqᵗZt = ldiv!(tp, IW_adj_factorization, qˢZⁱqᵗ) .*= Z
+    (; Z, Zⁱ, QZⁱ, qˢ, qᵗ, IW_adj_factorization, workspace) = tp
 
-    return sum(ZqˢZⁱqᵗZt)
+    QZⁱt = workspace .= QZⁱ
+    # TODO: explain what this subtraction does
+    QZⁱt[target(tp).node, 1] -= sum(qˢ) * qᵗ * Zⁱ[target(tp).node, 1]
+    # Solve (I - W)' \ QZⁱ, then multiply by Z
+    return ldiv!(tp, IW_adj_factorization, QZⁱt) .*= Z
 end
 function compute(::Betweenness{QualityAndProximityWeighted}, tp::RandomisedShortestPathTargetPrecalculations)
-    (; Z, M, MZⁱ, Zⁱ, IW_adj_factorization, workspace) = tp
+    (; Z, MZⁱ, M, Zⁱ, IW_adj_factorization, workspace) = tp
     # Find the scaling factor:
     # If any of the values of MZⁱ is above one then there is a risk of overflow,
-    # so we scale the matrix and apply a scale factor
-    λ = max(1.0, maximum(MZⁱ))
-    MZⁱλ = workspace .= MZⁱ .*= inv(λ)
-    # TODO: comment what is this for
-    MZⁱλ[target(tp).node, 1] = sum(MZⁱλ) * Zⁱ[target(tp).node, 1]
-    # Solve: ZMZⁱt = (I - W)' \ MZⁱ
-    ZMZⁱt = ldiv!(tp, IW_adj_factorization, MZⁱλ) .*= Z .* λ 
-    
-    return sum(ZMZⁱt)
+    λ = max(1.0, maximum(M))
+    # Scale MZⁱ with λ
+    MZⁱλ = workspace .= MZⁱ ./ λ
+    # TODO: explain what this subtraction does
+    MZⁱλ[target(tp).node] -= sum(M) / λ .* Zⁱ[target(tp).node]
+    # Solve (I - W)' \ MZⁱλ, then multiply by Z and λ scaling
+    return ldiv!(tp, IW_adj_factorization, MZⁱλ) .*= λ .* Z
 end
 
-function _combine_edge_betweenness(W, Z, X, target)
-    t = target.node
+function _combine_edge_betweenness(W, Z, X, t::TargetID)
     edge_betweennesses = spzeros(size(W, 1))
     for i in axes(W, 1)
-        x = W[i, t]
-        if x > 0 
-            edge_betweennesses[i] = x * Z[j, t] * X[i, 1]
+        w = W[i, t.node]
+        if w > 0 
+            edge_betweennesses[i] = w * Z[t.node] * X[i]
         end
     end
+    return edge_betweennesses
 end
 
 # Sensitivity
 function compute(gm::Sensitivity, tp::RandomisedShortestPathTargetPrecalculations)
-    if wrt(gm) <: Union{Affinity,Cost,CostAndAffinitySensitivityContext} 
-        S_e_aff, S_e_cost = _sensitivity(connectivity_measure(gm), tp)
+    if wrt(gm) isa Union{Affinity,Cost,CostAndAffinitySensitivityContext} 
+        S_e_aff, S_e_cost = _sensitivity(connectivity_measure(tp), tp)
 
         if unitless 
             _scale!(S_e_aff, wrt(gm), tp)
             _scale!(S_e_cost, wrt(gm), tp)
         end
-        target_sensitivity = if wrt(gm) <: Affinity
+        target_sensitivity = if wrt(gm) isa Affinity
             sum(S_e_aff)
-        elseif wrt(gm) <: Cost
+        elseif wrt(gm) isa Cost
             sum(S_e_cost)
-        elseif wrt(gm) <: AffinityAndCost
+        elseif wrt(gm) isa AffinityAndCost
             diff_C_A = ConScape.mapnz(diff_C_A_fun, affinitymatrix(g))
             S_e_total = S_e_aff .+ S_e_cost .* diff_C_A
             sum(S_e_total)
-        elseif wrt(gm) <: CostAndAffinity
+        elseif wrt(gm) isa CostAndAffinity
             diff_A_C = ConScape.mapnz(diff_A_C_fun, affinitymatrix(g))
             S_e_total = S_e_aff .* diff_A_C .+ S_e_cost
             sum(S_e_total)
         end
-    elseif wrt(gm) <: Qualities
+    elseif wrt(gm) isa Qualities
         (; qˢ, qᵗ, K, workspace) = tp
         # TODO make this single-target
         target_sensitivity = workspace .= K .+ transpose(K) .*= qᵗ 
@@ -166,8 +162,8 @@ function compute(gm::Sensitivity, tp::RandomisedShortestPathTargetPrecalculation
 end
 
 function _sensitivity(::ExpectedCost, tp::RandomisedShortestPathTargetPrecalculations)
-    (; A, C, W, Z, CW, IW, Zⁱ, MZⁱ, Zrows, workspace) = tp
-    diff_KD = _diff_KD(distance_transformation(tp))
+    (; A, C, W, K, Z, CW, IW, Zⁱ, MZⁱ, Zrows, workspace) = tp
+    diff_KD = _diff_KD(K, distance_transformation(tp))
     # TODO convert all / \ to ldiv!
 
     # MZⁱ = workspace1 .= M .* Zⁱ 
@@ -213,8 +209,8 @@ function _sensitivity(::PowerMeanProximity, tp::RandomisedShortestPathTargetPrec
     Idx = A .> 0
     Aⁱ = mapnz(inv, A)
 
-    S_e_cost = -bet_edge_k
-    S_e_aff = (bet_edge_k .* Aⁱ .- (bet_node_k ./ rowsums) .* Idx) .* θ
+    S_cost = -bet_edge_k
+    S_aff = (bet_edge_k .* Aⁱ .- (bet_node_k ./ rowsums) .* Idx) .* θ
 
     return S_aff, S_cost
 end

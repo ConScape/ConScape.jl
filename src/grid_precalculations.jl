@@ -30,7 +30,7 @@ subgrids(gi::GridInit) = gi.subgrids
 workspaces(gi::GridInit) = gi.workspaces
 outputs(gi::GridInit) = gi.outputs
 
-function solve!(gi::GridInit)
+function solve(gi::GridInit; kw...)
     # Loop over unnconnected subgraphs (there may be only one)
     for subgrid_id in eachindex(subgrids(gi))
         # Intitalise sparse matrices and precalculate e.g. LU factorizations
@@ -48,7 +48,13 @@ function solve!(gi::GridInit)
             end
         end
     end
-    return RasterStack(_maybe_raster(outputs(gi), grid(gi)))
+    out = _maybe_raster(outputs(gi), grid(gi))
+
+    if all(map(o -> o isa Raster, out))
+        return RasterStack(out)
+    else
+        return out
+    end
 end
 
 """
@@ -72,16 +78,6 @@ DimensionalData.dims(gp::GridPrecalculations) = dims(grid(gp))
 
 init(mm::MovementMode, problem::Problem, rast::RasterStack; kw...) = 
     init(mm, problem, GridInit(problem, rast); kw...)
-# Allow updating a precalculated grid with a new grid.
-# Basically this reuses workspace vectors
-init!(gp::GridPrecalculations, rast::RasterStack; kw...) =
-    init!(gp, GridInit(problem, rast); kw...)
-init!(gp::GridPrecalculations, grid::Grid) = 
-    init(movement_mode(gp), problem(gp), grid; workspaces=workspaces(gp))
-
-# Solve defers to specific solver methods in solvers.jl
-solve!(gp::GridPrecalculations, p::Problem; kw...) =
-    solve!(solver(p), gp, p; kw...)
 
 """
     TargetPrecalculations
@@ -135,8 +131,8 @@ function init(mm::RandomisedShortestPath, problem::Problem, grid::Grid;
     else # LinearSolver
         # LinearSolve.jl cant handle the adjoint 
         # so we duplicate work and allocations
-        IW_adj = sparse(A')
-        IW_adj_factorization = init(solver, IWadj)
+        IW_adj = sparse(IW')
+        IW_adj_factorization = init(solver(problem), IW_adj)
     end
     CW = costmatrix(grid) .* W
     workspaces = _allocate_workspaces!(workspaces, problem, grid)
@@ -182,6 +178,9 @@ function Base.getproperty(tp::RandomisedShortestPathTargetPrecalculations, x::Sy
             _fundamental_matrix(tp)
         elseif x === :Zⁱ
             _inv!(tp.workspace, tp.Z)
+        elseif x === :QZⁱ
+            (; qˢ, Zⁱ, qᵗ, workspace) = tp
+            workspace .= qˢ .* Zⁱ .* qᵗ
         elseif x === :K
             _proximities(tp)
         elseif x === :M
@@ -192,10 +191,18 @@ function Base.getproperty(tp::RandomisedShortestPathTargetPrecalculations, x::Sy
             workspace .= M .* Zⁱ 
         elseif x === :Zrows
             (; IW_adj_factorization) = tp
-            workspace1, workspace2 = workspaces(tp)
-            b = _rhs!(workspace1, nsources(gp), target)
-            b_copy = _rhs!(workspace2, nsources(gp), target)
-            ldiv!(solver(tp), b, IWadj_factorization, b_copy)'
+            b, b_copy = workspaces(tp)
+            _rhs!(b, nsources(tp), target(tp))
+            _rhs!(b_copy, nsources(tp), target(tp))
+            ldiv!(solver(tp), b, IW_adj_factorization, b_copy)
+        elseif x === :expected_costs
+            compute(ExpectedCost(), tp)
+        elseif x === :free_energy_distances
+            compute(FreeEnergyDistance(), tp)
+        elseif x === :survival_probabilities
+            compute(SurvivalProbability(), tp)
+        elseif x === :power_mean_proximities
+            compute(PowerMeanProximity(), tp)
         else
             error("Unknown property $x")
         end
@@ -343,7 +350,10 @@ end
 # This duplicats some logic from gridrsp
 function _proximities(tp::TargetPrecalculations)
     proximities = compute(connectivity_measure(tp), tp)
-    proximities .= distance_transformation(tp).(proximities)
+    dt = distance_transformation(tp)
+    if !isnothing(dt)
+        proximities .= dt.(proximities)
+    end
     maybe_set_diagonal!(proximities, diagvalue(tp), target(tp).node)
     return proximities
 end
@@ -362,7 +372,9 @@ function _reshape(A::Array, size::Tuple{Vararg{Int}})
     end
 end
 
-_allocate_workspaces!(::Nothing, problem::Problem, grid::Grid) =
-    Workspaces(nsources(grid), nworkspaces(problem) + 5)
-_allocate_workspaces!(workspaces::Workspaces, problem::Problem, grid::Grid) =
-    (resize!(free!(workspaces), nsources(grid)); workspaces)
+_allocate_workspaces!(x, problem::Problem, grid::Grid) =
+    _allocate_workspaces!(x, problem, nsources(grid))
+_allocate_workspaces!(x::Nothing, problem::Problem, length::Int) =
+    Workspaces(length, nworkspaces(problem) + 20)
+_allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
+    (resize!(free!(workspaces), length); workspaces)
