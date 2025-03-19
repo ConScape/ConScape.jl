@@ -13,7 +13,7 @@ source_qualities = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "qual
 source_qualities[(affinities .> 0) .& isnan.(source_qualities)] .= 1e-20
 rast = RasterStack((; affinities, source_qualities, target_qualities=source_qualities))
 
-graph_measures = (;
+measures = (;
     # betq=ConScape.BetweennessQweighted(),
     betk=Betweenness(QualityAndProximityWeighted()),
     ch=ConnectedHabitat(),
@@ -28,7 +28,7 @@ movement_mode = RandomisedShortestPath(ExpectedCost();
 expected_layers = (:betk, :ch)
 
 solver = ConScape.VectorSolver()
-problem = ConScape.Problem(; graph_measures, movement_mode, solver);
+problem = ConScape.Problem(; measures, movement_mode, solver);
 solve(problem, rast; verbose=true)
 
 @testset "target mosaicing matches original" begin
@@ -79,7 +79,7 @@ end
     # Use a higher alpha to catch differences
     distance_transformation = x -> exp(-x / 50)
     movement_mode = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
-    problem = ConScape.Problem(; graph_measures, movement_mode, solver);
+    problem = ConScape.Problem(; measures, movement_mode, solver);
 
     kw = (; buffer=10, centersize=5)
     windowed_problem = WindowedProblem(problem; kw...)

@@ -1,10 +1,34 @@
 abstract type Measure end
 
 """
+    SourceTargetMeasure 
+
+Abstract supertype for source-target measures.
+
+These characterize distance, proximity or path distribution between source and target pixels.
+
+These produce a dense fundamental matrix, but may return a summary of it such as the mean.
+"""
+abstract type SourceTargetMeasure <: Measure end
+
+abstract type PathDistributionMeasure <: SourceTargetMeasure end
+
+abstract type ConnectivityMeasure <: SourceTargetMeasure end
+abstract type FundamentalMeasure <: ConnectivityMeasure end
+abstract type DistanceMeasure <: FundamentalMeasure end
+
+struct ExpectedCost <: DistanceMeasure end
+struct FreeEnergyDistance <: DistanceMeasure end
+struct PowerMeanProximity <: FundamentalMeasure end
+# TODO: look at theta use for SurvivalProbability, it should be 1
+struct SurvivalProbability <: FundamentalMeasure end
+struct KullbackLeiblerDivergence <: PathDistributionMeasure end
+struct HittingTime <: DistanceMeasure end
+
+"""
     GraphMeasure 
 
 Abstract supertype for graph measures.
-These are lazy definitions of conscape functions.
 """
 abstract type GraphMeasure <: Measure end
 
@@ -66,6 +90,7 @@ landscape_measure(gm::Sensitivity) = gm.landscape_measure
 # Others
 
 struct ConnectedHabitat <: SpatialMeasure end
+
 @kwdef struct Criticality{AV,QT,QS} <: PerturbationMeasure
     avalue::AV = floatmin()
     qˢvalue::QS = 0.0
@@ -81,6 +106,8 @@ end
 returntrait(::ConnectedHabitat) = SumDenseSpatial()
 returntrait(::Betweenness) = SumDenseSpatial()
 returntrait(::EdgeBetweenness) = AssignSparse()
+returntrait(::ConnectivityMeasure) = SumDenseSpatial()
+returntrait(::KullbackLeiblerDivergence) = SumScalar()
 
 
 # Workspace allocation traits
@@ -88,9 +115,8 @@ needs_workspaces(::Measure) = 1
 needs_workspaces(::BetweennessMeasure) = 2
 needs_workspaces(::EdgeBetweenness{QualityAndProximityWeighted}) = 3
 needs_workspaces(::EdgeBetweenness{QualityWeighted}) = 4
+# Count how many workspaces are needed for a problem
+nworkspaces(p::AbstractProblem) = mapreduce(needs_workspaces, +, measures(p))
 
 # Trait aggregator
 hastrait(t, gms) = reduce(|, map(t, gms); init=false)
-
-# Count how many workspaces are needed for a problem
-nworkspaces(p::AbstractProblem) = mapreduce(needs_workspaces, +, graph_measures(p))

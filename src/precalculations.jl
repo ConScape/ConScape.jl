@@ -15,7 +15,7 @@ function GridInit(problem::Problem, rast::RasterStack;
     subgrids = split_subgraphs(grid)
     workspaces = _allocate_workspaces!(workspaces, problem, grid)
     # Generate outputs for each graph measure
-    outputs = map(measure -> allocate_output(measure, grid), graph_measures(problem))
+    outputs = map(measure -> allocate_output(measure, grid), measures(problem))
     GridInit(problem, grid, subgrids, workspaces, outputs)
 end
 
@@ -40,7 +40,7 @@ function solve(gi::GridInit; kw...)
             # Precalculate for this target and graph measures
             target_precalc = init(subgrid_precalc, target_id)
             # Compute everything for this target and graph measures
-            foreach(graph_measures(gi), outputs(gi)) do measure, output
+            foreach(measures(gi), outputs(gi)) do measure, output
                 # Compute a measure for this target
                 v = compute(measure, target_precalc)
                 # Write values to output object
@@ -333,18 +333,10 @@ function _probabilities(A::SparseMatrixCSC)
 end
 
 function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
-    n = LinearAlgebra.checksquare(Pref)
+    LinearAlgebra.checksquare(Pref)
     W = Pref .* exp.((-).(θ) .* C)
     replace!(W.nzval, NaN => 0.0)
     return W
-end
-
-_inv(Z) = _inv!(similar(Z), Z)
-function _inv!(Zⁱ, Z)
-    broadcast!(Zⁱ, Z) do x
-        x = inv(x)
-        isfinite(x) ? x : floatmax(eltype(Z))
-    end
 end
 
 # This duplicats some logic from gridrsp
@@ -378,3 +370,21 @@ _allocate_workspaces!(x::Nothing, problem::Problem, length::Int) =
     Workspaces(length, nworkspaces(problem) + 20)
 _allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
     (resize!(free!(workspaces), length); workspaces)
+
+# TODO use this
+function _check_z(s, Z, W, g)
+    # Check that values in Z are not too small:
+    if hasproperty(s, :check) && s.check && minimum(Z) * minimum(nonzeros(g.costmatrix .* W)) == 0
+        @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
+    end
+end
+
+_inv(Z) = _inv!(similar(Z), Z)
+function _inv!(Zⁱ, Z)
+    broadcast!(Zⁱ, Z) do x
+        x = inv(x)
+        isfinite(x) ? x : floatmax(eltype(Z))
+    end
+end
+
+_Pref(A::SparseMatrixCSC) = Diagonal(inv.(vec(sum(A, dims=2)))) * A

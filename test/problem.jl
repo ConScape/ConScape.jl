@@ -1,4 +1,3 @@
-nothing
 using ConScape, Test, SparseArrays, LinearAlgebra
 using Rasters, ArchGDAL
 using ConScape.LinearSolve
@@ -15,7 +14,7 @@ source_qualities = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "qual
 source_qualities[(affinities .> 0) .& isnan.(source_qualities)] .= 1e-20
 rast = RasterStack((; affinities, source_qualities, target_qualities=source_qualities))
 
-graph_measures = graph_measures = (;
+measures = (;
     ch=ConnectedHabitat(),
     betq=Betweenness(QualityWeighted()),
     betk=Betweenness(QualityAndProximityWeighted()),
@@ -33,67 +32,68 @@ rsp_exp_minus = RandomisedShortestPath(ConScape.ExpectedCost(); distance_transfo
 
 solver = ConScape.VectorSolver()
 
-# Precalc
-problem = ConScape.Problem(; graph_measures, movement_mode=rsp_exp_minus, solver);
-gridinit = init(problem, rast)
-subinit = ConScape.init(gridinit, 1)
-subgrid1 = ConScape.grid(subinit)
-ConScape.sparse_size(gridinit.grid)
-ConScape.sparse_size(gridinit.subgrids[1])
+@testset "Compare with old conscape" begin
+    problem = ConScape.Problem(; measures, movement_mode=rsp_exp_minus, solver);
+    gridinit = init(problem, rast)
+    subinit = ConScape.init(gridinit, 1)
+    subgrid1 = ConScape.grid(subinit)
+    ConScape.sparse_size(gridinit.grid)
+    ConScape.sparse_size(gridinit.subgrids[1])
 
-affinities_sparse = OldConScape.graph_matrix_from_raster(parent(affinities))
-test_g = OldConScape.Grid(size(affinities)...;
-    affinities=affinities_sparse,
-    qualities=parent(source_qualities)
-)
-test_grsp = OldConScape.GridRSP(test_g; θ)
-qs = [test_grsp.g.source_qualities[i] for i in test_grsp.g.id_to_grid_coordinate_list]
-qt = [test_grsp.g.target_qualities[i] for i in test_grsp.g.id_to_grid_coordinate_list ∩ OldConScape._targetidx_and_nodes(test_g)[1]]
-target_1 = ConScape.init(subinit, ConScape.target_ids(subinit)[1])
+    affinities_sparse = OldConScape.graph_matrix_from_raster(parent(affinities))
+    test_g = OldConScape.Grid(size(affinities)...;
+        affinities=affinities_sparse,
+        qualities=parent(source_qualities)
+    )
+    test_grsp = OldConScape.GridRSP(test_g; θ)
+    qs = [test_grsp.g.source_qualities[i] for i in test_grsp.g.id_to_grid_coordinate_list]
+    qt = [test_grsp.g.target_qualities[i] for i in test_grsp.g.id_to_grid_coordinate_list ∩ OldConScape._targetidx_and_nodes(test_g)[1]]
+    target_1 = ConScape.init(subinit, ConScape.target_ids(subinit)[1])
 
-@test qs == ConScape.source_quality_vector(subinit)
-@test qt == ConScape.target_quality_vector(subinit)
-@test all(test_g.target_qualities .=== ConScape.target_quality_spatial(subinit))
-@test all(test_g.source_qualities .=== ConScape.source_quality_spatial(subinit))
-@test test_grsp.W == subinit.W == target_1.W
-@test I - test_grsp.W == subinit.IW == target_1.IW
-@test test_grsp.Pref == subinit.probability == target_1.probability
-@test test_g.costmatrix == subgrid1.costmatrix == target_1.C
-@test test_g.costmatrix .* test_grsp.W == subinit.CW == target_1.CW
-@test test_g.affinities == subgrid1.affinitymatrix
-@test test_g.id_to_grid_coordinate_list == subgrid1.source_ids == ConScape.source_ids(target_1)
-@test (test_g.nrows, test_g.ncols) == size(subgrid1) == size(target_1)
-@test all(test_g.source_qualities .=== subgrid1.source_quality_spatial)
-@test all(test_g.target_qualities .=== subgrid1.target_quality_spatial)
+    @test qs == ConScape.source_quality_vector(subinit)
+    @test qt == ConScape.target_quality_vector(subinit)
+    @test all(test_g.target_qualities .=== ConScape.target_quality_spatial(subinit))
+    @test all(test_g.source_qualities .=== ConScape.source_quality_spatial(subinit))
+    @test test_grsp.W == subinit.W == target_1.W
+    @test I - test_grsp.W == subinit.IW == target_1.IW
+    @test test_grsp.Pref == subinit.probability == target_1.probability
+    @test test_g.costmatrix == subgrid1.costmatrix == target_1.C
+    @test test_g.costmatrix .* test_grsp.W == subinit.CW == target_1.CW
+    @test test_g.affinities == subgrid1.affinitymatrix
+    @test test_g.id_to_grid_coordinate_list == subgrid1.source_ids == ConScape.source_ids(target_1)
+    @test (test_g.nrows, test_g.ncols) == size(subgrid1) == size(target_1)
+    @test all(test_g.source_qualities .=== subgrid1.source_quality_spatial)
+    @test all(test_g.target_qualities .=== subgrid1.target_quality_spatial)
 
-# Dense variables
-ec = OldConScape.expected_cost(test_grsp)
-fed = OldConScape.free_energy_distance(test_grsp)
-sp = OldConScape.survival_probability(test_grsp)
-pmp = OldConScape.power_mean_proximity(test_grsp)
-Zⁱ = inv.(test_grsp.Z)
-Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Zⁱ)) # To prevent Inf*0 later...
-QZⁱ = qs .* Zⁱ .* qt'
-K = ConScape.ExpMinus().(ec)
-M = qs .* K .* qt'
-MZⁱ = M .* Zⁱ
-betk = zeros(size(test_g))
+    # Dense variables
+    ec = OldConScape.expected_cost(test_grsp)
+    fed = OldConScape.free_energy_distance(test_grsp)
+    sp = OldConScape.survival_probability(test_grsp)
+    pmp = OldConScape.power_mean_proximity(test_grsp)
+    ch = OldConScape.connected_habitat(test_grsp)
+    Zⁱ = inv.(test_grsp.Z)
+    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Zⁱ)) # To prevent Inf*0 later...
+    QZⁱ = qs .* Zⁱ .* qt'
+    K = ConScape.ExpMinus().(ec)
+    M = qs .* K .* qt'
+    MZⁱ = M .* Zⁱ
 
-for i in axes(test_grsp.Z, 2)
-    target_i = ConScape.init(subinit, ConScape.target_ids(subinit)[i])
-    @test target_i.Z == test_grsp.Z[:, i]
-    @test all(isapprox.(target_i.K, K[:, i]))
-    @test all(isapprox.(target_i.M, M[:, i]))
-    @test all(isapprox.(target_i.MZⁱ, MZⁱ[:, i]))
-    @test all(isapprox.(target_i.Zⁱ, Zⁱ[:, i]))
-    @test all(isapprox.(target_i.QZⁱ, QZⁱ[:, i]))
-    @test all(isapprox.(target_i.QZⁱ, QZⁱ[:, i]))
-    @test all(isapprox.(target_i.expected_costs,  ec[:, i]))
-    @test all(isapprox.(target_i.free_energy_distances, fed[:, i]; atol=1e-10))
-    @test all(isapprox.(target_i.survival_probabilities, sp[:, i]; atol=1e-10))
-    @test all(isapprox.(target_i.power_mean_proximities, pmp[:, i]; atol=1e-10))
-    @test target_i.qˢ == qs 
-    @test target_i.qᵗ == qt[i]
+    for i in axes(test_grsp.Z, 2)
+        target_i = ConScape.init(subinit, ConScape.target_ids(subinit)[i])
+        @test target_i.Z == test_grsp.Z[:, i]
+        @test all(isapprox.(target_i.K, K[:, i]))
+        @test all(isapprox.(target_i.M, M[:, i]))
+        @test all(isapprox.(target_i.MZⁱ, MZⁱ[:, i]))
+        @test all(isapprox.(target_i.Zⁱ, Zⁱ[:, i]))
+        @test all(isapprox.(target_i.QZⁱ, QZⁱ[:, i]))
+        @test all(isapprox.(target_i.QZⁱ, QZⁱ[:, i]))
+        @test all(isapprox.(target_i.expected_costs,  ec[:, i]))
+        @test all(isapprox.(target_i.free_energy_distances, fed[:, i]; atol=1e-10))
+        @test all(isapprox.(target_i.survival_probabilities, sp[:, i]; atol=1e-10))
+        @test all(isapprox.(target_i.power_mean_proximities, pmp[:, i]; atol=1e-10))
+        @test target_i.qˢ == qs 
+        @test target_i.qᵗ == qt[i]
+    end
 end
 
 expected_layers = (
@@ -106,7 +106,6 @@ expected_layers = (
     # :mlcd,
     # :eigmax_nodist, :eigmax_one, :eigmax_exp50, 
 )
-affinities_sparse = ConScape.graph_matrix_from_raster(affinities)
 
 solvers = (
     ConScape.VectorSolver(),
@@ -120,10 +119,10 @@ for solver in solvers
 @testset "$solver" begin
     println("\n Testing with solver: ", solver)
     # Basic Problem
-    problem_nodist = ConScape.Problem(; graph_measures, movement_mode=rsp_nodist, solver);
-    problem_one = ConScape.Problem(; graph_measures, movement_mode=rsp_one, solver);
-    problem_exp_50 = ConScape.Problem(; graph_measures, movement_mode=rsp_exp_50, solver);
-    problem_exp_minus = ConScape.Problem(; graph_measures, movement_mode=rsp_exp_minus, solver);
+    problem_nodist = ConScape.Problem(; measures, movement_mode=rsp_nodist, solver);
+    problem_one = ConScape.Problem(; measures, movement_mode=rsp_one, solver);
+    problem_exp_50 = ConScape.Problem(; measures, movement_mode=rsp_exp_50, solver);
+    problem_exp_minus = ConScape.Problem(; measures, movement_mode=rsp_exp_minus, solver);
     gridinit = init(problem_nodist, rast)
     @time result_nodist = ConScape.solve(problem_nodist, rast);
     @time result_one = ConScape.solve(problem_one, rast);
@@ -143,7 +142,6 @@ for solver in solvers
     # end
     @testset "q-weighted" begin
         @test result_nodist.betq isa Raster
-        plot(result_nodist.betq)
         @test isapprox(result_nodist.betq[21:23, 21:23], [
             1930.1334372152335  256.91061166392745 2866.2998374065373
             4911.996715311025  1835.991238248377    720.755518530375
@@ -176,13 +174,13 @@ for solver in solvers
     @testset "connected_habitat" begin
         @test result_nodist.ch isa Raster{Float64}
         @test size(result_nodist.ch) == size(gridinit)
-        # TODO we need some real tests here
+        @test all(isapprox.(result_exp_minus.ch, replace(ch, NaN => 0.0)))
     end
 end
 
 end
 
-# graph_measures = graph_measures = (;
+# measures = (;
 #     ch=ConnectedHabitat(),
 #     betq=Betweenness(QualityWeighted()),
 #     betk=Betweenness(QualityAndProximityWeighted()),
@@ -221,7 +219,7 @@ end
 #     println("\n Testing with solver: ", solver)
 #     # Basic Problem
 #     problem = ConScape.Problem(; 
-#         graph_measures, movement_mode, solver,
+#         measures, movement_mode, solver,
 #     )
 #     @time workspace = init(problem, rast);
 #     Z = copy(workspace.Z)
