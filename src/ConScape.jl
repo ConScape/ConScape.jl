@@ -55,5 +55,6 @@ include("solvers.jl")
 include("compute_measures.jl")
 include("windows.jl")
 include("assessment.jl")
+include("sims.jl")
 
 end
