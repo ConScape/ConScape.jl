@@ -75,7 +75,7 @@ end
 solve(p::WindowedProblem, rast::RasterStack; verbose=false, kw...) =
     solve(init(p, rast; verbose, kw...); verbose)
 
-struct WindowedInit{P,R} <: Precalculations
+struct WindowedInit{P,R} <: Initialisation
     problem::P
     rast::R
     sparse_sizes::Vector{Tuple{Int,Int}}
@@ -271,7 +271,6 @@ mosaic(batch_problem; to=rast)
     problem::P
     buffer::Int
     centersize::Tuple{Int,Int}
-    grain::Union{Nothing,Int} = nothing
     datapath::String
     ext::String = ".tif"
 end
@@ -338,7 +337,7 @@ end
 #     summary(io, problem(p))
 # end
 
-@kwdef struct BatchInit{P<:AbstractProblem,R<:RasterStack} <: Precalculations
+@kwdef struct BatchInit{P<:AbstractProblem,R<:RasterStack} <: Initialisation
     problem::P
     rast::R
     batch_ranges::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
@@ -350,13 +349,15 @@ end
 problem(wi::BatchInit) = wi.problem
 
 # Initialise a job from a BatchInit to WindowedInit for WindowedProblem
-function init(bi::BatchInit{<:BatchProblem{<:WindowedProblem}}, i::Int; kw...)
+function init(bi::BatchInit{<:BatchProblem{<:WindowedProblem}}, i::Int; 
+    indices=isnothing(bi.window_indices) ? nothing : bi.window_indices[bi.batch_indices[i]],
+    sparse_sizes=isnothing(bi.sparse_sizes) ? nothing : bi.sparse_sizes[bi.batch_indices[i]],
+    kw...
+)
     checkbounds(Bool, bi.batch_indices, i) || 
         throw(ArgumentError("Invalid batch index $i, must be between 1 and $(length(bi.batch_indices))"))
     # Subset the raster for the range
     rast = view(bi.rast, bi.batch_ranges[bi.batch_indices[i]]...)
-    indices = isnothing(bi.window_indices) ? nothing : bi.window_indices[bi.batch_indices[i]]
-    sparse_sizes = isnothing(bi.sparse_sizes) ? nothing : bi.sparse_sizes[bi.batch_indices[i]]
     return init(problem(problem(bi)), rast; indices, sparse_sizes)
 end
 # Or to GridInit for Problem

@@ -2,36 +2,34 @@
 const TargetID = @NamedTuple{spatial::CartesianIndex{2},id::Int,node::Int}
 const SourceID = CartesianIndex{2}
 
-abstract type Precalculations end
+abstract type Initialisation end
+costfunction(p::Initialisation) = costfunction(grid(p))
+costmatrix(p::Initialisation) = costmatrix(grid(p))
+affinitymatrix(p::Initialisation) = affinitymatrix(grid(p))
+source_quality_vector(p::Initialisation) = source_quality_vector(grid(p))
+target_quality_vector(p::Initialisation) = target_quality_vector(grid(p))
+source_quality_spatial(p::Initialisation) = source_quality_spatial(grid(p))
+target_quality_spatial(p::Initialisation) = target_quality_spatial(grid(p))
+source_ids(p::Initialisation) = source_ids(grid(p))
+target_ids(p::Initialisation) = target_ids(grid(p))
+movement_mode(p::Initialisation) = movement_mode(problem(p))
+solver(p::Initialisation) = solver(problem(p))
+measures(p::Initialisation) = measures(problem(p))
+proximity_measure(p::Initialisation) = proximity_measure(problem(p))
+distance_transformation(p::Initialisation) = distance_transformation(problem(p))
+diagvalue(p::Initialisation) = diagvalue(problem(p))
+approx(p::Initialisation) = approx(problem(p))
+theta(p::Initialisation) = theta(problem(p))
 
-costfunction(p::Precalculations) = costfunction(grid(p))
-costmatrix(p::Precalculations) = costmatrix(grid(p))
-affinitymatrix(p::Precalculations) = affinitymatrix(grid(p))
-source_quality_vector(p::Precalculations) = source_quality_vector(grid(p))
-target_quality_vector(p::Precalculations) = target_quality_vector(grid(p))
-source_quality_spatial(p::Precalculations) = source_quality_spatial(grid(p))
-target_quality_spatial(p::Precalculations) = target_quality_spatial(grid(p))
-source_ids(p::Precalculations) = source_ids(grid(p))
-target_ids(p::Precalculations) = target_ids(grid(p))
-movement_mode(p::Precalculations) = movement_mode(problem(p))
-solver(p::Precalculations) = solver(problem(p))
-measures(p::Precalculations) = measures(problem(p))
-connectivity_measure(p::Precalculations) = connectivity_measure(problem(p))
-distance_transformation(p::Precalculations) = distance_transformation(problem(p))
-diagvalue(p::Precalculations) = diagvalue(problem(p))
-approx(p::Precalculations) = approx(problem(p))
-theta(p::Precalculations) = theta(problem(p))
+nsources(p::Initialisation) = length(source_ids(p))
+ntargets(p::Initialisation) = length(target_ids(p))
+sparse_size(p::Initialisation) = nsources(p), ntargets(p) 
 
-nsources(p::Precalculations) = length(source_ids(p))
-ntargets(p::Precalculations) = length(target_ids(p))
-sparse_size(p::Precalculations) = nsources(p), ntargets(p) 
-
-Base.size(p::Precalculations) = Base.size(grid(p))
-DimensionalData.dims(p::Precalculations) = DimendalData.dims(grid(p))
+Base.size(p::Initialisation) = Base.size(grid(p))
+DimensionalData.dims(p::Initialisation) = dims(grid(p))
 
 """
-    Grid(nrows::Integer,
-         ncols::Integer;
+    Grid(size::Tuple{Int,Int};
          affinitymatrix=nothing,
          qualities::Matrix=ones(nrows, ncols),
          source_qualities::Matrix=qualities,
@@ -47,7 +45,7 @@ a `costs` function that maps the `affinitymatrix` matrix to a `costs` matrix.
 Alternatively, it is possible to supply a matrix to `costs` directly. If `prune=true` (the default), 
 the affinity and cost matrices will be pruned to exclude unreachable nodes.
 """
-struct Grid{D<:Union{Tuple,Nothing},F<:Union{Nothing,Transformation},SQ,TQ} <: Precalculations
+struct Grid{D<:Union{Tuple,Nothing},F<:Union{Nothing,Transformation},SQ,TQ} <: Initialisation
     size::Tuple{Int,Int}
     costfunction::F
     costmatrix::SparseMatrixCSC{Float64,Int}
@@ -60,18 +58,25 @@ struct Grid{D<:Union{Tuple,Nothing},F<:Union{Nothing,Transformation},SQ,TQ} <: P
     target_ids::Vector{TargetID}
     dims::D
 end
+Grid(nrows::Int, ncols::Int; kw...) = Grid((nrows, ncols); kw...)
 function Grid(size::Tuple{Int,Int};
     affinitymatrix::SparseMatrixCSC{Float64,Int},
-    source_qualities::AbstractMatrix,
-    target_qualities::AbstractMatrix=source_qualities,
-    costfunction::Transformation=MinusLog(),
+    qualities::AbstractMatrix=ones(size),
+    source_qualities::AbstractMatrix=qualities,
+    target_qualities::AbstractMatrix=qualities,
+    costfunction::Union{Transformation,Nothing}=MinusLog(),
+    costmatrix=mapnz(costfunction, affinitymatrix),
     check=false,
+    prune=true,
 )
     if prod(size) != LinearAlgebra.checksquare(affinitymatrix)
-        n = size(affinitymatrix, 1)
+        n = Base.size(affinitymatrix, 1)
         throw(ArgumentError("grid size $size is incompatible with size of affinity matrix ($n, $n)"))
     end
-    costmatrix = mapnz(costfunction, affinitymatrix)
+    if prod(size) != LinearAlgebra.checksquare(costmatrix)
+        n = Base.size(costmatrix, 1)
+        throw(ArgumentError("grid size $size is incompatible with size of cost matrix ($n, $n)"))
+    end
 
     # This is too expensive to calculate for small target grids
     if check
@@ -90,7 +95,15 @@ function Grid(size::Tuple{Int,Int};
     target_quality_spatial = _prepare_qualities(target_qualities)
 
     # Initially just every node
+
+    # Prune
     source_ids = vec(collect(CartesianIndices(size)))
+    if prune
+        nonzerocells = findall(!isnan ∘ !iszero, vec(sum(affinitymatrix, dims=1)))
+        source_ids = source_ids[nonzerocells]
+        affinitymatrix = affinitymatrix[nonzerocells, nonzerocells]
+    end
+
     # Subset of source_ids with valid quality
     target_ids = _target_ids(target_qualities, source_ids)
     # Initially just all spatial source qualities
@@ -98,7 +111,7 @@ function Grid(size::Tuple{Int,Int};
     # Subset of spatial target qualities with valid quality
     target_quality_vector = [target_quality_spatial[t.spatial] for t in target_ids]
 
-    g = Grid(
+    return Grid(
         size,
         costfunction,
         costmatrix,
@@ -108,7 +121,6 @@ function Grid(size::Tuple{Int,Int};
         source_ids, target_ids,
         dims(source_qualities),
     )
-    return g
 end
 function Grid(rast::RasterStack;
     affinitymatrix=ConScape.graph_matrix_from_raster(rast.affinities),
@@ -166,23 +178,23 @@ function _target_ids(target_quality_spatial::AbstractMatrix, source_spatial_ids:
     end
 end
 
-function _fill_matrix(values, g::Precalculations)
+function _fill_matrix(values, g::Initialisation)
     matrix = fill(NaN, size(g))
     matrix[source_ids(g)] .= values
     return matrix
 end
 
-function Raster(values::AbstractVector, p::Precalculations; kwargs...)
+function Raster(values::AbstractVector, p::Initialisation; kwargs...)
     isnothing(dims(p)) && throw(ArgumentError("Grid dims are `nothing` - it was not initialised with a Raster"))
     return Raster(_fill_matrix(values, p), dims(p); kwargs...)
 end
 
-function outdegrees(p::Precalculations)
+function outdegrees(p::Initialisation)
     values = sum(affinitymatrix(p), dims=2)
     _maybe_raster(_fill_matrix(values, p), p)
 end
 
-function indegrees(p::Precalculations; kwargs...)
+function indegrees(p::Initialisation; kwargs...)
     values = sum(affinitymatrix(g), dims=1)
     _maybe_raster(_fill_matrix(values, p), p)
 end
@@ -275,8 +287,8 @@ end
 Creates a sparse matrix of target qualities for the landmarks based on merging npix pixels into the center pixel.
 """
 function coarse_graining(g, npix)
-    coarse_graining(g.target_qualities, npix;
-        id_to_grid_coordinate_list=g.id_to_grid_coordinate_list
+    coarse_graining(g.target_quality_spatial, npix;
+        source_ids=source_ids(g)
     )
 end
 coarse_graining(rast::AbstractRaster, npix; kw...) =
@@ -288,7 +300,7 @@ function coarse_graining(rast::AbstractRasterStack, npix; kw...)
     return Base.setindex(rast, target_qualities, :target_qualities)
 end
 function coarse_graining(M::AbstractMatrix, npix;
-    id_to_grid_coordinate_list=_id_gc_list(size(M)...)
+    source_ids=_id_gc_list(size(M)...)
 )
     nrows, ncols = size(M)
     getrows = (floor(Int, npix / 2)+1):npix:(nrows-ceil(Int, npix / 2)+1)
@@ -298,7 +310,7 @@ function coarse_graining(M::AbstractMatrix, npix;
         [
         findfirst(
             isequal(CartesianIndex(ij)),
-            id_to_grid_coordinate_list
+            source_ids
         ) for ij in coarse_target_rc
     ]
     )

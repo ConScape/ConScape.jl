@@ -93,7 +93,7 @@ end
 
 # ldiv!
 # The main reason to have solvers is to provide methods for ldiv!
-function LinearAlgebra.ldiv!(p::Precalculations, init, B)
+function LinearAlgebra.ldiv!(p::Initialisation, init, B)
     # Handle using a workspace instead of copying B
     B_copy = take!(workspaces(p)) .= B
     # Solve

@@ -13,15 +13,14 @@ abstract type SourceTargetMeasure <: Measure end
 
 abstract type PathDistributionMeasure <: SourceTargetMeasure end
 
-abstract type ConnectivityMeasure <: SourceTargetMeasure end
-abstract type FundamentalMeasure <: ConnectivityMeasure end
-abstract type DistanceMeasure <: FundamentalMeasure end
+abstract type ProximityMeasure <: SourceTargetMeasure end
+abstract type DistanceMeasure <: SourceTargetMeasure end
 
 struct ExpectedCost <: DistanceMeasure end
 struct FreeEnergyDistance <: DistanceMeasure end
-struct PowerMeanProximity <: FundamentalMeasure end
+struct PowerMeanProximity <: ProximityMeasure end
 # TODO: look at theta use for SurvivalProbability, it should be 1
-struct SurvivalProbability <: FundamentalMeasure end
+struct SurvivalProbability <: ProximityMeasure end
 struct KullbackLeiblerDivergence <: PathDistributionMeasure end
 struct HittingTime <: DistanceMeasure end
 
@@ -59,7 +58,6 @@ end
 end
 
 weighting(gm::BetweennessMeasure) = gm.weighting
-
 
 # Sensitivity
 
@@ -102,13 +100,12 @@ end
 end
 
 # Return type traits
-# returntrait(::SpatialMeasure) = AssignDenseSpatial()
 returntrait(::ConnectedHabitat) = SumDenseSpatial()
 returntrait(::Betweenness) = SumDenseSpatial()
 returntrait(::EdgeBetweenness) = AssignSparse()
-returntrait(::ConnectivityMeasure) = SumDenseSpatial()
+returntrait(::DistanceMeasure) = SumDenseSpatial()
+returntrait(::ProximityMeasure) = SumDenseSpatial()
 returntrait(::KullbackLeiblerDivergence) = SumScalar()
-
 
 # Workspace allocation traits
 needs_workspaces(::Measure) = 1
@@ -116,7 +113,8 @@ needs_workspaces(::BetweennessMeasure) = 2
 needs_workspaces(::EdgeBetweenness{QualityAndProximityWeighted}) = 3
 needs_workspaces(::EdgeBetweenness{QualityWeighted}) = 4
 # Count how many workspaces are needed for a problem
-nworkspaces(p::AbstractProblem) = mapreduce(needs_workspaces, +, measures(p))
+nworkspaces(p::AbstractProblem) =
+    isempty(measures(p)) ? 0 : mapreduce(needs_workspaces, +, measures(p))
 
 # Trait aggregator
 hastrait(t, gms) = reduce(|, map(t, gms); init=false)

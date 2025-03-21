@@ -7,6 +7,9 @@ These define the path distribution of all possible paths between source and targ
 """
 abstract type MovementMode end
 
+init(movement_mode::MovementMode, grid::Grid; kw...) =
+    init(Problem(; movement_mode), grid; kw...)
+
 """
     ArrivingMovement
 
@@ -36,17 +39,21 @@ Assumes partial knowledge and immortality.
 - `diagvalue`: the value to use for the diagonal of the proximity matrix
 - `approx`: whether to use an approximate algorithm
 """
-@kwdef struct RandomisedShortestPath{CM<:FundamentalMeasure,DT,T<:Union{Real,Nothing},DV} <: ArrivingMovement
-    connectivity_measure::CM
+@kwdef struct RandomisedShortestPath{
+    PM<:Union{DistanceMeasure,ProximityMeasure,Nothing},DT,T<:Union{Real,Nothing},DV
+} <: ArrivingMovement
+    proximity_measure::PM = ExpectedCost()
     distance_transformation::DT = nothing
-    theta::T
+    theta::T = nothing
     diagvalue::DV = nothing
     approx::Bool = false
 end
-RandomisedShortestPath(connectivity_measure::FundamentalMeasure; kw...) =
-    RandomisedShortestPath(; connectivity_measure, kw...)
+RandomisedShortestPath(proximity_measure; kw...) =
+    RandomisedShortestPath(; proximity_measure, kw...)
 
-connectivity_measure(mm::RandomisedShortestPath) = mm.connectivity_measure
+const RSP = RandomisedShortestPath
+
+proximity_measure(mm::RandomisedShortestPath) = mm.proximity_measure
 distance_transformation(mm::RandomisedShortestPath) = mm.distance_transformation
 diagvalue(mm::RandomisedShortestPath) = mm.diagvalue
 approx(mm::RandomisedShortestPath) = mm.approx

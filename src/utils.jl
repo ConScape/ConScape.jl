@@ -1,3 +1,16 @@
+const N4 = (( 0, -1, 1.0),
+            (-1,  0, 1.0),
+            ( 1,  0, 1.0),
+            ( 0,  1, 1.0))
+const N8 = ((-1, -1,  √2),
+            ( 0, -1, 1.0),
+            ( 1, -1,  √2),
+            (-1,  0, 1.0),
+            ( 1,  0, 1.0),
+            (-1,  1,  √2),
+            ( 0,  1, 1.0),
+            ( 1,  1,  √2))
+
 @enum AdjacencyWeight begin
     TargetWeight
     AverageWeight
@@ -78,28 +91,27 @@ Input:
     - node_list: list of nodes (either node_ids or coordinate-tuples) to be made impossible
 =#
 function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, impossible_affinity=1e-20)
-    # Find the indices of the coordinates in the id_to_grid_coordinate_list vector
-    node_list_idx = [findfirst(isequal(n), g.id_to_grid_coordinate_list) for n in node_list]
+    # Find the indices of the coordinates in the source_ids vector
+    node_list_idx = [findfirst(isequal(n), source_ids(g)) for n in node_list]
 
     # Copy affinities and qualities for modification
-    affinities       = copy(g.affinities)
-    source_qualities = copy(g.source_qualities)
-    target_qualities = copy(g.target_qualities)
+    affinitymatrix = copy(g.affinitymatrix)
+    source_qualities = copy(g.source_quality_spatial)
+    target_qualities = copy(g.target_quality_spatial)
 
     # Set (nonzero) values to impossible_affinity:
-    # Affinities
+    # affinitymatrix
     # FIXME! Row slicing of a sparse matrix is really inefficient
-    affinities[node_list_idx,:] = impossible_affinity*(affinities[node_list_idx,:] .> 0)
-    affinities[:,node_list_idx] = impossible_affinity*(affinities[:,node_list_idx] .> 0)
-    dropzeros!(affinities)
+    affinitymatrix[node_list_idx, :] = impossible_affinity * (affinitymatrix[node_list_idx, :] .> 0)
+    affinitymatrix[:, node_list_idx] = impossible_affinity * (affinitymatrix[:, node_list_idx] .> 0)
+    dropzeros!(affinitymatrix)
 
     # Qualities
     source_qualities[node_list] .= 0
     target_qualities[node_list] .= 0
 
-    # Generate a new Grid based on the modified affinities
-    costs = g.costfunction === nothing ? g.costmatrix : g.costfunction
-    return Grid(size(g)...; affinities, source_qualities, target_qualities, costs)
+    # Generate a new Grid based on the modified affinitymatrix
+    return Grid(size(g); affinitymatrix, source_qualities, target_qualities, g.costfunction, g.costmatrix)
 end
 
 """
@@ -124,14 +136,10 @@ function _keywords(o::T) where T
     return NamedTuple{fieldnames(T)}(vals) 
 end
 
-_maybe_raster(x) = x
-_maybe_raster(x::Raster) = x
-_maybe_raster(x::T) where T<:Number = Raster(fill(x), (); missingval=T(NaN))
-
-_maybe_raster(mat::Raster, g::Grid) = mat
-_maybe_raster(mat::AbstractMatrix, g::Grid) =
+_maybe_raster(mat::Raster, g::Initialisation) = mat
+_maybe_raster(mat::AbstractMatrix, g::Initialisation) =
     _maybe_raster(mat, dims(g))
-_maybe_raster(mats::NamedTuple, g::Grid) =
+_maybe_raster(mats::Union{Tuple,NamedTuple}, g::Initialisation) =
     map(mat -> _maybe_raster(mat, g), mats)
 _maybe_raster(x, _) = x
 _maybe_raster(mat::Matrix{T}, dims::Tuple) where T =
