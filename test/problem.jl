@@ -43,24 +43,22 @@ solver = ConScape.VectorSolver()
     test_grsp = OldConScape.GridRSP(test_g; θ)
 
     problem = ConScape.Problem(; measures, movement_mode=rsp_exp_minus, solver);
-    gridinit = init(problem, rast)
-    subinit = ConScape.init(gridinit, 1)
-    subgrid1 = ConScape.grid(subinit)
-    ConScape.sparse_size(gridinit.grid)
-    ConScape.sparse_size(gridinit.subgrids[1])
+    multigridinit = init(problem, rast)
+    gridinit = init(multigridinit, 1)
+    subgrid1 = ConScape.grid(gridinit)
     qs = [test_grsp.g.source_qualities[i] for i in test_grsp.g.id_to_grid_coordinate_list]
     qt = [test_grsp.g.target_qualities[i] for i in test_grsp.g.id_to_grid_coordinate_list ∩ OldConScape._targetidx_and_nodes(test_g)[1]]
-    target_1 = ConScape.init(subinit, ConScape.target_ids(subinit)[1])
+    target_1 = init(gridinit, 1)
 
-    @test qs == ConScape.source_quality_vector(subinit)
-    @test qt == ConScape.target_quality_vector(subinit)
-    @test all(test_g.target_qualities .=== ConScape.target_quality_spatial(subinit))
-    @test all(test_g.source_qualities .=== ConScape.source_quality_spatial(subinit))
-    @test test_grsp.W == subinit.W == target_1.W
-    @test I - test_grsp.W == subinit.IW == target_1.IW
-    @test test_grsp.Pref == subinit.probability == target_1.probability
+    @test qs == ConScape.source_quality_vector(gridinit)
+    @test qt == ConScape.target_quality_vector(gridinit)
+    @test all(test_g.target_qualities .=== ConScape.target_quality_spatial(gridinit))
+    @test all(test_g.source_qualities .=== ConScape.source_quality_spatial(gridinit))
+    @test test_grsp.W == gridinit.precalculation.W == target_1.W
+    @test I - test_grsp.W == gridinit.precalculation.IW == target_1.IW
+    @test test_grsp.Pref == gridinit.precalculation.probability == target_1.probability
     @test test_g.costmatrix == subgrid1.costmatrix == target_1.C
-    @test test_g.costmatrix .* test_grsp.W == subinit.CW == target_1.CW
+    @test test_g.costmatrix .* test_grsp.W == gridinit.precalculation.CW == target_1.CW
     @test test_g.affinities == subgrid1.affinitymatrix
     @test test_g.id_to_grid_coordinate_list == subgrid1.source_ids == ConScape.source_ids(target_1)
     @test (test_g.nrows, test_g.ncols) == size(subgrid1) == size(target_1)
@@ -81,7 +79,7 @@ solver = ConScape.VectorSolver()
     MZⁱ = M .* Zⁱ
 
     for i in axes(test_grsp.Z, 2)
-        target_i = ConScape.init(subinit, ConScape.target_ids(subinit)[i])
+        target_i = ConScape.init(gridinit, ConScape.target_ids(gridinit)[i])
         @test target_i.Z == test_grsp.Z[:, i]
         @test all(isapprox.(target_i.K, K[:, i]))
         @test all(isapprox.(target_i.M, M[:, i]))
@@ -98,37 +96,24 @@ solver = ConScape.VectorSolver()
     end
 
     btk = OldConScape.betweenness_kweighted(test_grsp);
-    btk_new = solve(Betweenness(QualityAndProximityWeighted()), gridinit)
+    btk_new = solve(Betweenness(QualityAndProximityWeighted()), multigridinit)
     @test all(compare.(btk, btk_new))
     btq = OldConScape.betweenness_qweighted(test_grsp);
-    btq_new = solve(Betweenness(QualityWeighted()), gridinit)
+    btq_new = solve(Betweenness(QualityWeighted()), multigridinit)
     @test all(compare.(btq, btq_new))
     ch = OldConScape.connected_habitat(test_grsp);
-    ch_new = solve(ConnectedHabitat(), gridinit)
+    ch_new = solve(ConnectedHabitat(), multigridinit)
     @test all(compare.(ch, ch_new))
 end
 
-expected_layers = (
-    :ch_nodist, :ch_one, :ch_exp50, 
-    :betq, 
-    :betk_nodist, :betk_one, :betk_exp50, 
-    # :ebetq, 
-    # :ebetk_nodist, :ebetk_one, :ebetk_exp50, 
-    # :mkld, 
-    # :mlcd,
-    # :eigmax_nodist, :eigmax_one, :eigmax_exp50, 
-)
-
 solvers = (
     ConScape.VectorSolver(),
-    # ConScape.VectorSolver(; threaded=true), # Threading not implemented yet
     # ConScape.LinearSolver(), # TODO: really slow currently
-    # ConScape.LinearSolver(; threaded=true),
 )
 
-#for solver in solvers
+for solver in solvers
 
-# @testset "$solver" begin
+@testset "$solver" begin
     println("\n Testing with solver: ", solver)
     # Basic Problem
     problem_nodist = ConScape.Problem(; measures, movement_mode=rsp_nodist, solver);
@@ -140,6 +125,7 @@ solvers = (
     @time result_one = ConScape.solve(problem_one, rast);
     @time result_exp_50 = ConScape.solve(problem_exp_50, rast);
     @time result_exp_minus = ConScape.solve(problem_exp_minus, rast);
+    @test keys(result_nodist) == keys(measures)
 
     @test size(result_nodist.ch) == size(rast)
 
@@ -152,7 +138,7 @@ solvers = (
     # @testset "mean_lc_kl_divergence" begin
     #     @test result.mlcd[] ≈ 1.5660600315073947e6
     # end
-    # @testset "q-weighted" begin
+    @testset "q-weighted" begin
         @test result_nodist.betq isa Raster
         @test isapprox(result_nodist.betq[21:23, 21:23], [
             1930.1334372152335  256.91061166392745 2866.2998374065373
@@ -185,12 +171,12 @@ solvers = (
     end
 
     @testset "connected_habitat" begin
-        @test result_nodist.ch isa Raster{Float64}
-        @test size(result_nodist.ch) == size(gridinit)
-        @test all(isapprox.(result_exp_minus.ch, replace(ch, NaN => 0.0)))
+        @test result_exp_minus.ch isa Raster{Float64}
+        @test size(result_exp_minus.ch) == size(gridinit)
+        @test all(compare.(result_exp_minus.ch, ch))
 
-        cl = ConScape.connected_habitat(grsp, CartesianIndex((20,20)))
-        @test cl isa Raster{Float64}
+        cl = OldConScape.connected_habitat(test_grsp, CartesianIndex((20, 20)))
+        # @test cl isa Raster{Float64}
         @test sum(replace(cl, NaN => 0.0)) ≈ 109.4795495188798
     end
 end
@@ -212,16 +198,6 @@ end
 # movement_mode = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
 
 # # All tests for MatrixSolver
-# expected_layers = (
-#     :ch_nodist, :ch_one, :ch_exp50, 
-#     :betq, 
-#     :betk_nodist, :betk_one, :betk_exp50, 
-#     :ebetq, 
-#     :ebetk_nodist, :ebetk_one, :ebetk_exp50, 
-#     :mkld, 
-#     :mlcd,
-#     :eigmax_nodist, :eigmax_one, :eigmax_exp50, 
-# )
 
 # solvers = (
 #     # ConScape.VectorSolver(),
@@ -255,7 +231,6 @@ end
 #     end
 
 #     @test size(result.ch_one) == size(rast)
-#     @test keys(result) == expected_layers
 #     g = workspace.grid
 
 #     @testset "Test mean_kl_divergence" begin

@@ -14,7 +14,6 @@ function compute(
     (; P, C) = gi
     PC = sum(P .* C; dims=2)
     IP = I - P
-    # TODO does this have to be square?
     n = LinearAlgebra.checksquare(P)
     D = Array{eltype(P)}(undef, n, n)
     v = zeros(n)
@@ -125,13 +124,8 @@ function compute(gm::Betweenness, ti::TargetInit{<:LeastCost})
     final_paths = reduce(vcat, final_paths)
     btw = sparse(final_paths, tgts, repeat([1], length(tgts)))
 
-    return _apply_weight!(btw, weighting(gm), ti)
+    return btw .*= _weight(weighting(gm), ti)
 end
-
-_apply_weight!(A, ::Unweighted, ti::TargetInit) = sum(A)
-_apply_weight!(A, ::ProximityWeighted, ti::TargetInit) = sum(A .*= ti.K)
-_apply_weight!(A, ::QualityAndProximityWeighted, ti::TargetInit) = sum(A .*= ti.M)
-_apply_weight!(A, ::QualityWeighted, ti::TargetInit) = sum(A .*= ti.qˢ' .* ti.qᵗ)
 
 # RandomWalk 
 function compute(
@@ -141,8 +135,7 @@ function compute(
 end
 function compute(bet::Betweenness, ti::TargetInit{<:RandomWalk})
     (; Z1, Z, H, p, workspace) = ti
-    btw = workspace .= Z1 .- Z .+ H .* p[target(ti).node]
-    _apply_weight!(btw, weighting(bet), ti)
+    return workspace .= Z1 .- Z .+ H .* p[target(ti).node] .* _weight(weighting(gm), ti)
 end
 
 # RandomShortestPath
@@ -157,38 +150,32 @@ end
 function compute(
     ::EdgeBetweenness{QualityAndProximityWeighted}, ti::TargetInit{<:RSP}
 )
-    (; W, Z, Zⁱ, MZⁱ, Zrows, IW_adj_factorization, workspace) = ti
-    MZⁱc = workspace .= MZⁱ
-    MᵀZ = ldiv!(ti, IW_adj_factorization, MZⁱc) # MᵀZ = MZⁱ' / A
-    RHS = workspace .= MᵀZ .- sum(MZⁱ) * Zⁱ[target(ti).node, 1] .* Zrows
+    (; W, Z, Zⁱ, M, Zrows, IW_adj_factorization, workspace) = ti
+    MZⁱ = workspace .= M .* Zⁱ
+    k = sum(MZⁱ)
+    MᵀZ = ldiv!(ti, IW_adj_factorization, MZⁱ) # MᵀZ = MZⁱ' / A
+    RHS = workspace .= MᵀZ .- k * Zⁱ[target(ti).node, 1] .* Zrows
     return _combine_edge_betweenness(W, Z, RHS, target(ti))
 end
-function compute(
-    ::Betweenness{QualityWeighted}, ti::TargetInit{<:RSP}
-)
-    (; Z, Zⁱ, QZⁱ, qˢ, qᵗ, IW_adj_factorization, workspace) = ti
-
-    QZⁱt = workspace .= QZⁱ
-    # TODO: explain what this subtraction does
-    QZⁱt[target(ti).node, 1] -= sum(qˢ) * qᵗ * Zⁱ[target(ti).node, 1]
-    # Solve (I - W)' \ QZⁱ, then multiply by Z
-    return ldiv!(ti, IW_adj_factorization, QZⁱt) .*= Z
-end
-function compute(
-    ::Betweenness{QualityAndProximityWeighted}, ti::TargetInit{<:RSP}
-)
-    (; Z, MZⁱ, M, Zⁱ, IW_adj_factorization, workspace) = ti
+function compute(m::Betweenness, ti::TargetInit{<:RSP})
+    (; Z, Zⁱ, IW_adj_factorization, workspace) = ti
     # Find the scaling factor:
     # If any of the values of MZⁱ is above one then there is a risk of overflow,
-    λ = max(1.0, maximum(M))
-    MZⁱt = workspace .= MZⁱ
+    X = _weight(weighting(m), ti)
+    λ = max(1.0, maximum(X))
+    XZⁱt = workspace .= X .* Zⁱ
     # TODO: explain what this subtraction does
-    MZⁱt[target(ti).node] -= sum(M) * Zⁱ[target(ti).node]
+    XZⁱt[target(ti).node] -= Zⁱ[target(ti).node] * sum(X)
     # Scale MZⁱ with λ
-    MZⁱtλ = MZⁱt .*= inv(λ)
+    XZⁱtλ = XZⁱt .*= inv(λ)
     # Solve (I - W)' \ MZⁱλ, then multiply by Z and λ scaling
-    return ldiv!(ti, IW_adj_factorization, MZⁱtλ) .*= λ .* Z
+    return ldiv!(ti, IW_adj_factorization, XZⁱtλ) .*= λ .* Z
 end
+
+_weight(::Unweighted, ti::TargetInit) = 1
+_weight(::ProximityWeighted, ti::TargetInit) = ti.K
+_weight(::QualityAndProximityWeighted, ti::TargetInit) = ti.M
+_weight(::QualityWeighted, ti::TargetInit) = ti.Q
 
 function _combine_edge_betweenness(W, Z, X, t::TargetID)
     edge_betweennesses = spzeros(size(W, 1))

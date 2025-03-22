@@ -1,4 +1,3 @@
-
 using ConScape, Test, SparseArrays, OldConScape
 using Rasters, ArchGDAL, Plots
 
@@ -47,19 +46,6 @@ _tempdir = mkdir(tempname())
 
 #     @testset "mean_lc_kl_divergence" begin
 #         @test_broken ConScape.mean_lc_kl_divergence(grsp) ≈ 1.5660600315073947e6
-#     end
-
-#     @testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
-#         nn in (ConScape.N4, ConScape.N8),
-#             w in (ConScape.TargetWeight, ConScape.AverageWeight),
-#                 mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
-#                     # No need to test this on sno_100 and doesn't deepend on θ
-#                     # FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
-#                     @test ConScape.graph_matrix_from_raster(
-#                         affinity_raster,
-#                         neighbors=nn,
-#                         weight=w,
-#                         matrix_type=mt) isa ConScape.SparseMatrixCSC
 #     end
 
 #     @testset "Test betweenness" begin
@@ -128,7 +114,22 @@ _tempdir = mkdir(tempname())
 #     end
 # end
 
+affinity_raster = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "affinities_$landscape.asc")), NaN)); dims=X)
+@testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
+    nn in (ConScape.N4, ConScape.N8),
+        w in (ConScape.TargetWeight, ConScape.AverageWeight),
+            mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
+                # No need to test this on sno_100 and doesn't deepend on θ
+                # FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
+                @test ConScape.graph_matrix_from_raster(
+                    affinity_raster,
+                    neighbors=nn,
+                    weight=w,
+                    matrix_type=mt) isa ConScape.SparseMatrixCSC
+end
+
 # Tests with non-standard landcapes
+
 @testset "graph splitting" begin
     l1 = [1/4 0 1/4 1/4
           1/4 0 1/4 1/4
@@ -160,7 +161,7 @@ _tempdir = mkdir(tempname())
     g2.costmatrix
 end
 
-# @testset "least cost distance" begin
+@testset "least cost distance" begin
     r = [1/4 0 1/2 1/4
          1/4 0 1/2 1/4
          1/4 0 1/2 1/4
@@ -170,9 +171,8 @@ end
     c = copy(a)
     c.nzval .= 1/2
 
-    # @testset "_cost: $_cost, op: $op, prune: $prune" for
-        # (_cost, op) in ((ConScape.MinusLog(), <), (c, ==)),
-            # prune in (true, false)
+    @testset "_cost: $_cost, op: $op, prune: $prune" for
+        (_cost, op) in ((ConScape.MinusLog(), <), (c, ==)), prune in (true, false)
 
         g = ConScape.Grid(size(r), affinitymatrix=a, costmatrix=c)
         lc = solve(ExpectedCost(), LeastCost(), g)
@@ -182,15 +182,15 @@ end
         # if prune
             # pruned landscape has size (4, 2)
             # @test op(lc[(1 - 1)*4 + 4, 8], lc[(2 - 1)*4 + 3, 8])
-        else
+        # else
             # full landscape has size (4, 4)
             @test op(lc[(3 - 1)*4 + 4, 16], lc[(4 - 1)*4 + 3, 16])
-        end
+        # end
     end
 
 end
 
-# @testset "Distances and proximities" begin
+@testset "Distances and proximities" begin
     l = [1 1
          1 1]
 
@@ -222,6 +222,7 @@ end
         fed=FreeEnergyDistance(),
         ec=ExpectedCost(),
         sp=SurvivalProbability(),
+        pmp=PowerMeanProximity(),
     )
      
     problem = ConScape.Problem(;
@@ -229,36 +230,33 @@ end
         movement_mode=RandomisedShortestPath(ExpectedCost(); theta=2.0),
     )
 
-    results = solve(problem, grid)
+    # Need to use `GridInit` directly to skip `MultiGridInit` initialisation
+    results = solve(ConScape.GridInit(problem, grid))
+    results.fed
 
-    @test free_energy_grsp ≈ [
+    @test results.fed ≈ [
       0.0       1.34197   1.34197   2.34197
       1.34197   0.0       2.34197   1.34197
       1.34197   2.34197   0.0       1.34197
       2.34197   1.34197   1.34197   0.0     ] atol=1e-4
-    @test result.fed ≈ free_energy_grsp
 
-    @test excepted_cost_grsp ≈ [
+    @test results.ec ≈ [
       0.0      1.01848  1.01848  2.01848
       1.01848  0.0      2.01848  1.01848
       1.01848  2.01848  0.0      1.01848
       2.01848  1.01848  1.01848  0.0 ] atol=1e-4
-    @test results.ec ≈ excepted_cost_grsp
 
-    survival_probability_grsp = ConScape.survival_probability(grsp)
-    @test survival_probability_grsp ≈ [
+    @test results.sp ≈ [
       1.0         0.0682931   0.0682931   0.00924246
       0.0682931   1.0         0.00924246  0.0682931
       0.0682931   0.00924246  1.0         0.0682931
       0.00924246  0.0682931   0.0682931   1.0    ] atol=1e-4
-    @test results.sp ≈ survival_probability_grsp
 
-    @test power_mean_proximity_grsp ≈ [
+    @test results.pmp ≈ [
       1.0        0.261329   0.261329   0.0961377
       0.261329   1.0        0.0961377  0.261329
       0.261329   0.0961377  1.0        0.261329
       0.0961377  0.261329   0.261329   1.0      ] atol=1e-4
-    @test results.pmp ≈ power_mean_proximity_grsp
 end
 
 @testset "custom scaling function in k-weighted betweenness" begin
@@ -274,7 +272,6 @@ end
 end
 
 @testset "least cost kl divergence" begin
-
     C = sparse([0.0 1 0 0 0
                 1.0 0 9 3 0
                 0.0 9 0 0 5

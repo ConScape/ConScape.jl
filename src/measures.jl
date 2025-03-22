@@ -103,8 +103,8 @@ end
 returntrait(::ConnectedHabitat) = SumDenseSpatial()
 returntrait(::Betweenness) = SumDenseSpatial()
 returntrait(::EdgeBetweenness) = AssignSparse()
-returntrait(::DistanceMeasure) = SumDenseSpatial()
-returntrait(::ProximityMeasure) = SumDenseSpatial()
+returntrait(::DistanceMeasure) = AssignSparse()
+returntrait(::ProximityMeasure) = AssignSparse()
 returntrait(::KullbackLeiblerDivergence) = SumScalar()
 
 # Workspace allocation traits

@@ -14,9 +14,9 @@ source_qualities[(affinities .> 0) .& isnan.(source_qualities)] .= 1e-20
 rast = RasterStack((; affinities, source_qualities, target_qualities=source_qualities))
 
 measures = (;
-    # betq=ConScape.BetweennessQweighted(),
     betk=Betweenness(QualityAndProximityWeighted()),
     ch=ConnectedHabitat(),
+    # betq=Betweenness(QualityWeighted()), # Doesn't work windowed
     # # TODO sens=ConScape.Sensitivity(),
     # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 )
@@ -25,7 +25,6 @@ distance_transformation = x -> exp(-x / 2)
 movement_mode = RandomisedShortestPath(ExpectedCost(); 
     theta=θ, distance_transformation
 )
-expected_layers = (:betk, :ch)
 
 solver = ConScape.VectorSolver()
 problem = ConScape.Problem(; measures, movement_mode, solver);
@@ -62,9 +61,6 @@ end
     rast_inner = ConScape._get_window_with_zeroed_buffer(windowed_problem, rast, axes(rast))
     @time wp_result = ConScape.solve(windowed_problem, rast)
     @time p_result = ConScape.solve(problem, rast_inner)
-    p_result
-    # plot(p_result)
-    # plot(wp_result)
     @test maplayers(p_result, wp_result) do P, WP
         broadcast(P, WP) do p, wp
             isnan(p) && isnan(wp) || isapprox(p, wp; atol=1e-4)
@@ -191,7 +187,7 @@ end
           keys(batch_result) == 
           keys(batch_jobs_result) == 
           keys(nested_jobs_result) == 
-          Tuple(sort(collect(expected_layers)))
+          keys(measures)
 
     # These may be approximate after mosaic order changes
     compare(a, b) = ismissing(a) && ismissing(b) || isnan(a) && isnan(b) || isapprox(a, b)

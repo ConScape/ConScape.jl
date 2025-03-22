@@ -363,7 +363,7 @@ end
 # Or to GridInit for Problem
 function init(bi::BatchInit{<:BatchProblem{<:Problem}}, i::Int; kw...)
     problem_rast = bi.rast[bi.batch_ranges[bi.batch_indices[i]]...]
-    return GridInit(problem(problem(bi)), problem_rast)
+    return init(problem(problem(bi)), problem_rast)
 end
 
 # Solve a single batch job (there is no method to solve all jobs)

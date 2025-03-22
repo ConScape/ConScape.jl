@@ -12,7 +12,7 @@ whole spatial problems are solved.
 subgraphs, generating a `GridInit` for each
 and solving it into the same output object.
 """
-struct MultiGridInit{P,G,SG,W,S,O} <: Initialisation
+struct MultiGridInit{P<:Problem,G<:Grid,SG<:Grid,W<:AbstractVector,S<:Dict,O} <: Initialisation
     problem::P
     grid::G
     subgrids::Vector{SG}
@@ -32,7 +32,7 @@ function MultiGridInit(problem::Problem, grid::Grid;
     workspaces = _allocate_workspaces!(workspaces, problem, grid)
     storage = _newstoragedict(workspaces)
     # Create a MultiGridInit without outputs
-    mgi = MultiGridInit(problem, grid, subgrids, workspaces, nothing)
+    mgi = MultiGridInit(problem, grid, subgrids, workspaces, storage, nothing)
     # Generate outputs for each graph measure, the first subgraph is the largest
     outputs = allocate_output(problem, mgi)
     # Now create a MultiGridInit with outputs
@@ -44,6 +44,7 @@ grid(mgi::MultiGridInit) = mgi.grid
 subgrids(mgi::MultiGridInit) = mgi.subgrids
 workspaces(mgi::MultiGridInit) = mgi.workspaces
 outputs(mgi::MultiGridInit) = mgi.outputs
+storage(mgi::MultiGridInit) = mgi.storage
 
 """
     GridInit
@@ -54,7 +55,7 @@ in `solve` and `compute` methods.
 As we often iterate over single targets it is necessary to precalculate
 and store expensive variables such as sparse factorization once for all targets.
 """
-struct GridInit{MM,P<:Problem{MM},G<:Grid,O,W,S,Pr} <: Initialisation
+struct GridInit{MM,P<:Problem{MM},G<:Grid,O<:Union{NamedTuple,Tuple},W<:AbstractArray,S<:Dict,Pr} <: Initialisation
     problem::P
     grid::G
     outputs::O
@@ -65,19 +66,24 @@ end
 function GridInit(problem::Problem, grid::Grid;
     outputs=allocate_output(problem, grid),
     workspaces=nothing, 
+    storage=nothing,
     verbose=false,
 )
     workspaces = _allocate_workspaces!(workspaces, problem, grid)
+    if isnothing(storage) 
+        storage = _newstoragedict(workspaces)
+    end
     @assert length(workspaces) == nsources(grid) == sparse_size(grid)[1]
-    precalculation = precalculate(problem, grid)
+    precalculation = gridinit_precalculation(problem, grid)
 
-    return GridInit(
-        problem, grid, outputs, workspaces, storage, precalculation
-    )
+    return GridInit(problem, grid, outputs, workspaces, storage, precalculation)
 end
 function GridInit(mgi::MultiGridInit, subgrid_id::Int; kw...)
-    GridInit(mgi, subgrid_id; 
-        workspaces=workspaces(mgi), outputs=outputs(mgi), kw...
+    GridInit(problem(mgi), subgrids(mgi)[subgrid_id]; 
+        workspaces=workspaces(mgi),
+        outputs=outputs(mgi), 
+        storage=storage(mgi), 
+        kw...
     )
 end
 
@@ -117,17 +123,16 @@ For target dense vectors:
 `Z`, `Zⁱ`, `QZⁱ`, `K`, `M`, `MZⁱ`, `Zrows`,
 `expected_costs`, `free_energy_distances`, `survival_probabilities`, `power_mean_proximities`,
 """
-struct TargetInit{MM,GI<:GridInit{MM},O} <: Initialisation
+struct TargetInit{MM,GI<:GridInit{MM}} <: Initialisation
     gridinit::GI
     target::TargetID
+    function TargetInit(gi::GI, target::TargetID) where GI<:GridInit{MM} where MM
+        free!(workspaces(gi))
+        empty!(storage(gi))
+        new{MM,GI}(gi, target)
+    end
 end
-function TargetInit(gi::GridInit, target::TargetID)
-    free!(workspaces(gi))
-    empty!(storage(gi))
-    return target_init_type(gi)(gi, outputs(gi), target)
-end
-TargetInit(gi::GridInit, target::Int) =
-    TargetInit(gi, target_ids(gi)[target])
+TargetInit(gi::GridInit, target::Int) = TargetInit(gi, target_ids(gi)[target])
 
 gridinit(tp::TargetInit) = getfield(tp, :gridinit)
 target(tp::TargetInit) = getfield(tp, :target)
@@ -157,15 +162,15 @@ function Base.getproperty(tp::TargetInit, x::Symbol)
         return affinitymatrix(tp)
     elseif x === :C
         return costmatrix(tp)
-    elseif hasproperty(gridinit(tp), x)
-        return Base.getproperty(gridinit(tp), x)
+    elseif hasproperty(gridinit(tp).precalculation, x)
+        return Base.getproperty(gridinit(tp).precalculation, x)
     end
     # Defer to `get_or_compute` for all other properties
     # We wrap the output in a `ReadOnlyArray` to prevent bugs.
     return get_or_compute(tp, x)
 end
 
-function precalculate(problem::Problem{<:RSP}, grid::Grid)
+function gridinit_precalculation(problem::Problem{<:RSP}, grid::Grid)
     probability = _probabilitymatrix(affinitymatrix(grid))
     W = _W(probability, theta(problem), costmatrix(grid))
     IW = I - W
@@ -184,12 +189,12 @@ function precalculate(problem::Problem{<:RSP}, grid::Grid)
 
     return (; probability, W, IW, CW, IW_factorization, IW_adj, IW_adj_factorization)
 end
-function precalculate(::Problem{<:LeastCost}, grid::Grid)
+function gridinit_precalculation(::Problem{<:LeastCost}, grid::Grid)
     probability = _probabilitymatrix(affinitymatrix(grid))
     cost_weighted_digraph = SimpleWeightedDiGraph(costmatrix(grid))
     (; probability, cost_weighted_digraph)
 end
-function precalculation(problem::Problem{<:RandomWalk}, grid::Grid)
+function gridinit_precalculation(problem::Problem{<:RandomWalk}, grid::Grid)
     stationary_distribution = _stationary_distribution(grid.Pref, solver(problem))
     probability = _probabilitymatrix(affinitymatrix(grid))
     return (; probability, stationary_distribution)
@@ -200,13 +205,16 @@ end
     if haskey(st, x)
         return st[x]
     end
-    output = if x === :Z
+    output = if x === :Z # "fundamental matrix"
         _fundamentalmatrix(tp)
-    elseif x === :Zⁱ
+    elseif x === :Zⁱ # elementwise inverse of Z
         _inv!(tp.workspace, tp.Z)
-    elseif x === :QZⁱ
-        (; qˢ, Zⁱ, qᵗ, workspace) = tp
-        workspace .= qˢ .* Zⁱ .* qᵗ
+    elseif x === :Q
+        (; qˢ, qᵗ, workspace) = tp
+        workspace .= qˢ .* qᵗ
+    elseif x === :QZⁱ 
+        (; Q, Zⁱ, workspace) = tp
+        workspace .= Q .* Zⁱ
     elseif x === :K
         _proximitymatrix(tp)
     elseif x === :M
@@ -250,14 +258,14 @@ end
             Graphs.dijkstra_shortest_paths(gridinit(tp).cost_weighted_digraph, target(tp).spatial)
         elseif x == :shortest_paths_en
             Graphs.enumerate_paths(tp.shorted_paths)
-        elseif x == :K
+        elseif x == :K # "proximity matrix"
             (; shortest_paths, workspace) = tp
             if isnothing(distance_transformation(tp))
                 workspace1 .= 1.0 # TODO is this right? not shortest_paths.dists?
             else
                 workspace1 .= distance_transformation(cm).(shortest_paths.dists)
             end
-        elseif x === :M
+        elseif x === :M # "landscape matrix"
             (; qˢ, K, qᵗ, workspace) = tp
             workspace .= qˢ .* K .* qᵗ
         else
@@ -340,8 +348,7 @@ init(m::Union{Measure,Tuple,NamedTuple}, problem::Problem, rast::RasterStack; kw
     init(m, problem, init(problem, rast); kw...)
 init(problem::Problem, rast::RasterStack; kw...) = MultiGridInit(problem, rast; kw...)
 init(problem::Problem, grid::Grid; kw...) = MultiGridInit(problem, grid; kw...)
-init(gi::GridInit, t::Int) = init(gi, target_ids(gi)[t]) 
-init(gi::GridInit, target::TargetID) = TargetInit(gi, target)
+init(gi::GridInit, target::Union{Int,TargetID}) = TargetInit(gi, target)
 init(mgi::MultiGridInit, subgrid_id::Int; kw...) = GridInit(mgi, subgrid_id; kw...)
 
 # Allow solving all the levels of precalculated object with specific measures
