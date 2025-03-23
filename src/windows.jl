@@ -313,10 +313,12 @@ solve(problem::BatchProblem, rast::RasterStack, i::Int...; verbose=false, kw...)
     solve(init(problem, rast; kw...), i...; verbose)
 
 # Initialise BatchProblem to a BatchInit
+init(problem::BatchProblem, rast::RasterStack, i::Int; verbose=false, kw...) =
+    init(init(problem, rast; verbose, kw...), i; verbose)
 function init(problem::BatchProblem, rast::RasterStack; 
     batch_ranges=window_ranges(problem, rast),
     batch_indices=_select_indices(problem, rast; window_ranges=batch_ranges),
-    kw...
+    verbose=false, kw...
 )
     return BatchInit(; 
         problem, 
