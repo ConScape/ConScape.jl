@@ -4,7 +4,6 @@ using ArnoldiMethod
 using ConstructionBase
 using Graphs
 using LinearAlgebra
-using LinearSolve
 using Rasters
 using SimpleWeightedGraphs
 using SparseArrays
