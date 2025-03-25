@@ -17,7 +17,7 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [weakdeps]
-LinearSolve = "2.38.0"
+LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 
 [extensions]
 ConScapeLinearSolveExt = "LinearSolve"
@@ -29,6 +29,7 @@ ConstructionBase = "1.5.8"
 DelimitedFiles = "1"
 Graphs = "1"
 LaTeXStrings = "1.1"
+LinearSolve = "2.38.0"
 Plots = "1.4"
 ProgressLogging = "0.1"
 Rasters = "0.14"
@@ -37,7 +38,6 @@ julia = "1.10"
 
 [extras]
 ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
-LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 
 [targets]
