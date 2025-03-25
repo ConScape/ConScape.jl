@@ -65,7 +65,7 @@ struct GridInit{MM,P<:Problem{MM},G<:Grid,O<:Union{NamedTuple,Tuple},W<:Abstract
     function GridInit(
         problem::P, grid::G, outputs::O, workspaces::Workspaces{W}, storage::S, precalculation::Pr
     ) where {P<:Problem{MM},G,O,W,S,Pr} where MM
-        @assert length(workspaces) == nsources(grid) == sparse_size(grid)[1]
+        @assert length(workspaces) == nsources(grid)
         free!(workspaces)
         empty!(storage)
         new{MM,P,G,O,W,S,Pr}(problem, grid, outputs, workspaces, storage, precalculation)
@@ -90,7 +90,6 @@ function GridInit(mgi::MultiGridInit, subgrid_id::Int; kw...)
         workspaces=workspaces(mgi),
         outputs=outputs(mgi), 
         storage=storage(mgi), 
-        kw...
     )
 end
 
@@ -442,7 +441,8 @@ _allocate_workspaces!(x, problem::Problem, grid::Grid) =
 _allocate_workspaces!(x::Nothing, problem::Problem, length::Int) =
     Workspaces(length, nworkspaces(problem) + 20)
 _allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
-    (resize!(free!(workspaces), length); workspaces)
+    free!(resize!(workspaces, length))
+
 _maybe_new_outputs(mes, mgi) =
     mes === measures(mgi) ? outputs(mgi) : allocate_output(mes, mgi)
 

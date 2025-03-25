@@ -48,7 +48,6 @@ isthreaded(p::WindowedProblem) = p.threaded
 
 function init(p::WindowedProblem, rast::RasterStack; 
     window_ranges=window_ranges(p, rast),
-    workspaces=nothing,
     grid_sizes=nothing,
     indices=nothing,
     verbose=true,
@@ -62,13 +61,9 @@ function init(p::WindowedProblem, rast::RasterStack;
     # Select and sort indices: we usually only run a subset of windows
     indices = isnothing(indices) ? _select_indices(p, rast; window_ranges, grid_sizes) : indices
     sorted_indices = last.(sort!(first.(grid_sizes[indices]) .=> indices; rev=true))
-    # Workspaces: allocate now to use ing GridInit for each window.
-    # We start with the largest possible workspace length
-    workspacelen = first(grid_sizes[first(sorted_indices)]) 
-    workspaces = _allocate_workspaces!(workspaces, problem(p), workspacelen)
 
     return WindowedInit(
-        p, rast, grid_sizes, window_ranges, indices, sorted_indices, workspaces
+        p, rast, grid_sizes, window_ranges, indices, sorted_indices
     )
 end
 
@@ -82,17 +77,15 @@ struct WindowedInit{P,R} <: Initialisation
     ranges::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
     indices::Vector{Int}
     sorted_indices::Vector{Int}
-    workspaces::Workspaces{Vector{Float64}}
 end
 
 problem(wi::WindowedInit) = wi.problem
-workspace(wi::WindowedInit) = wi.workspaces
 
 function init(wi::WindowedInit, i::Int; verbose=false)
     ranges = wi.ranges[i]
     verbose && println("Initialising window from ranges $ranges...")
     rast = _get_window_with_zeroed_buffer(view, problem(wi), wi.rast, ranges)
-    init(problem(problem(wi)), rast; verbose, workspaces=wi.workspaces)
+    init(problem(problem(wi)), rast; verbose)
 end
 function solve(window_init::WindowedInit; 
     verbose::Bool=false,
@@ -119,9 +112,10 @@ function solve(window_init::WindowedInit;
     # Set up channels for threading
     # Define a runner for threaded/non-threaded operation
     function run(i, iw)
-        verbose && println("Running job $i - $iw on thread $(Threads.threadid())")
+        verbose && println("Running window $i - $iw on thread $(Threads.threadid())")
         # Initialise the window using stored memory
         multi_grid_init = init(window_init, iw; verbose)
+        @assert multi_grid_init isa MultiGridInit
         # Solve for the window
         elapsed = @elapsed begin
             output = solve(multi_grid_init; verbose)
@@ -378,7 +372,7 @@ function solve(bi::BatchInit, i::Int; verbose=false)
     output = solve(inner_init; verbose)
      # Store the output raster/s for this job to disk and return the file path
     return if ismissing(output)
-        @warn "Output was empty for job $i at window $ib over ranges $ranges"
+        println("WARNING: Output was empty for job $i at window $ib over ranges $ranges")
         missing
     else
         # Clear out some memory before writing
@@ -389,9 +383,8 @@ function solve(bi::BatchInit, i::Int; verbose=false)
 end
 # Solve all batches. 
 # Not the main intent of `BatchProblem` but here as a convenience.
-function solve(bi::BatchInit; verbose=false)
+solve(bi::BatchInit; verbose=false) =
     [solve(bi, i; verbose) for i in eachindex(bi.batch_indices)]
-end
 
 """
     batch_paths(p::BatchProblem, x::RasterStack)

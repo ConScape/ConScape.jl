@@ -53,9 +53,12 @@ end
 Base.iterate(ws::Workspaces, args...) = take!(ws), nothing
 Base.length(ws::Workspaces) = length(first(ws.workspaces))
 function Base.resize!(ws::Workspaces, n::Int) 
-    map(w -> resize!(w, n), ws.workspaces)
-    @assert length(ws) == n
+    ws = Workspaces(map(w -> resize!(w, n), ws.workspaces))
+    length(ws) == n || _not_matching_error(wn, n)
     return ws
 end
+
+@noinline _not_matching_error(wn, n) =
+    error("Not matching $(length(ws)), $n, $(map(length, ws.workspaces))")
 
 free!(ws::Workspaces) = (ws.unused .= true; ws)
