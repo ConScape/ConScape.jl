@@ -29,7 +29,7 @@ function MultiGridInit(problem::Problem, grid::Grid;
         grid = coarse_graining(grid, grain(problem))
     end
     subgrids = split_subgraphs(grid)
-    workspaces = _allocate_workspaces!(workspaces, problem, grid)
+    workspaces = _allocate_workspaces!(workspaces, problem, first(subgrids))
     storage = _newstoragedict(workspaces)
     # Create a MultiGridInit without outputs
     mgi = MultiGridInit(problem, grid, subgrids, workspaces, storage, nothing)
@@ -62,7 +62,17 @@ struct GridInit{MM,P<:Problem{MM},G<:Grid,O<:Union{NamedTuple,Tuple},W<:Abstract
     workspaces::Workspaces{W}
     storage::S
     precalculation::Pr
+    function GridInit(
+        problem::P, grid::G, outputs::O, workspaces::Workspaces{W}, storage::S, precalculation::Pr
+    ) where {P<:Problem{MM},G,O,W,S,Pr} where MM
+        @show length(workspaces), nsources(grid), sparse_size(grid)[1]
+        @assert length(workspaces) == nsources(grid) == sparse_size(grid)[1]
+        free!(workspaces)
+        empty!(storage)
+        new{MM,P,G,O,W,S,Pr}(problem, grid, outputs, workspaces, storage, precalculation)
+    end
 end
+
 function GridInit(problem::Problem, grid::Grid;
     outputs=allocate_output(problem, grid),
     workspaces=nothing, 
@@ -73,9 +83,7 @@ function GridInit(problem::Problem, grid::Grid;
     if isnothing(storage) 
         storage = _newstoragedict(workspaces)
     end
-    @assert length(workspaces) == nsources(grid) == sparse_size(grid)[1]
     precalculation = gridinit_precalculation(problem, grid)
-
     return GridInit(problem, grid, outputs, workspaces, storage, precalculation)
 end
 function GridInit(mgi::MultiGridInit, subgrid_id::Int; kw...)
@@ -127,6 +135,8 @@ struct TargetInit{MM,GI<:GridInit{MM}} <: Initialisation
     gridinit::GI
     target::TargetID
     function TargetInit(gi::GI, target::TargetID) where GI<:GridInit{MM} where MM
+        @show length(workspaces(gi)), nsources(gi), sparse_size(gi)[1]
+        @assert (length(workspaces(gi)) == nsources(gi) == sparse_size(gi)[1]) 
         free!(workspaces(gi))
         empty!(storage(gi))
         new{MM,GI}(gi, target)

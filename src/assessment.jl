@@ -234,9 +234,8 @@ init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack, a::NestedAssessment,
     init(p, rast, i...; _assessment_keywords(p, rast, a)..., kw...)
 init(p::BatchProblem{<:Problem}, rast::RasterStack, a::WindowAssessment, i::Int...; kw...) =
     init(p, rast, i...; batch_indices=a.indices)
-function init(p::WindowedProblem{<:Problem}, rast::RasterStack, a::WindowAssessment; kw...)
-    WindowInit(p, rast; grid_sizes, window_indices=a.indices, kw...)
-end
+init(p::WindowedProblem{<:Problem}, rast::RasterStack, a::WindowAssessment; kw...) =
+    init(p, rast; grid_sizes=a.grid_sizes, indices=a.indices, kw...)
 
 # Keywords to pass from an Assessment to `init` or `solve`
 # We don't use the `Assesment` directly to allow manual manipulation

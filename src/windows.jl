@@ -88,18 +88,20 @@ end
 problem(wi::WindowedInit) = wi.problem
 workspace(wi::WindowedInit) = wi.workspaces
 
-function init(wi::WindowedInit, i::Int)
-    init(problem(problem(wi)), view(wi.rast, wi.window_ranges[i]...);
-        workspaces=wi.workspaces
-    )
+function init(wi::WindowedInit, i::Int; verbose=false)
+    ranges = wi.ranges[i]
+    verbose && println("Initialising window from ranges $ranges...")
+    rast = _get_window_with_zeroed_buffer(view, problem(wi), wi.rast, ranges)
+    init(problem(problem(wi)), rast; verbose, workspaces=wi.workspaces)
 end
-function solve(wi::WindowedInit; 
+function solve(window_init::WindowedInit; 
     verbose::Bool=false,
-    mosaic_return=problem(wi).mosaic_return,
-    timed=problem(wi).timed,
+    mosaic_return=problem(window_init).mosaic_return,
+    timed=problem(window_init).timed,
 )
-    (; rast, ranges, indices, sorted_indices) = wi
-    p = problem(wi)
+    (; rast, ranges, indices, sorted_indices) = window_init
+    verbose && println("Solving WindowedProblem with $(length(indices)) windows...")
+    p = problem(window_init)
     # Test outputs just return the inputs after window masking 
     if p.test_windows
         output_stacks = map(indices) do i
@@ -117,17 +119,12 @@ function solve(wi::WindowedInit;
     # Set up channels for threading
     # Define a runner for threaded/non-threaded operation
     function run(i, iw)
-        # Get a window range
-        window = ranges[iw]
-        verbose && println("Running job $i - $iw for ranges $window and thread $(Threads.threadid())")
-        window_rast = _get_window_with_zeroed_buffer(view, p, rast, window)
+        verbose && println("Running job $i - $iw on thread $(Threads.threadid())")
         # Initialise the window using stored memory
-        verbose && println("Initialising window from size $(size(window_rast)), from ranges $window...")
-        window_precalc = init(problem(p), window_rast; verbose)
+        multi_grid_init = init(window_init, iw; verbose)
         # Solve for the window
-        verbose && println("Solving window $window...")
         elapsed = @elapsed begin
-            output = solve(window_precalc)
+            output = solve(multi_grid_init; verbose)
         end
         # Garbage collect for this window
         # Inneficient for few/small windows but
@@ -309,26 +306,6 @@ end
 
 centersize(problem::BatchProblem) = problem.centersize
 
-solve(problem::BatchProblem, rast::RasterStack, i::Int...; verbose=false, kw...) =
-    solve(init(problem, rast; kw...), i...; verbose)
-
-# Initialise BatchProblem to a BatchInit
-init(problem::BatchProblem, rast::RasterStack, i::Int; verbose=false, kw...) =
-    init(init(problem, rast; verbose, kw...), i; verbose)
-function init(problem::BatchProblem, rast::RasterStack; 
-    batch_ranges=window_ranges(problem, rast),
-    batch_indices=_select_indices(problem, rast; window_ranges=batch_ranges),
-    verbose=false, kw...
-)
-    return BatchInit(; 
-        problem, 
-        rast, 
-        batch_ranges=vec(batch_ranges), 
-        batch_indices=vec(batch_indices),
-        kw...
-    )
-end
-
 # function Base.show(io, ::MIME"text/plain", p::BatchProblem)
 #     summary(io, p)
 #     println(io, "centersize: ", p.centersize)
@@ -350,31 +327,54 @@ end
 
 problem(wi::BatchInit) = wi.problem
 
-# Initialise a job from a BatchInit to WindowedInit for WindowedProblem
-function init(bi::BatchInit{<:BatchProblem{<:WindowedProblem}}, i::Int; 
-    indices=isnothing(bi.window_indices) ? nothing : bi.window_indices[bi.batch_indices[i]],
-    sparse_sizes=isnothing(bi.sparse_sizes) ? nothing : bi.sparse_sizes[bi.batch_indices[i]],
-    kw...
+solve(problem::BatchProblem, rast::RasterStack, i::Int...; verbose=false, kw...) =
+    solve(init(problem, rast; kw...), i...; verbose)
+
+# Initialise BatchProblem to a BatchInit
+init(problem::BatchProblem, rast::RasterStack, i::Int; verbose=false, kw...) =
+    init(init(problem, rast; verboe, kw...), i; verbose)
+function init(problem::BatchProblem, rast::RasterStack; 
+    batch_ranges=window_ranges(problem, rast),
+    batch_indices=_select_indices(problem, rast; window_ranges=batch_ranges),
+    verbose=false, kw...
 )
+    verbose && println("Initialising batch problem for RasterStack of size $(size(rast)) and $(length(batch_ranges)) batches...")
+    return BatchInit(; 
+        problem, 
+        rast, 
+        batch_ranges=vec(batch_ranges), 
+        batch_indices=vec(batch_indices),
+        kw...
+    )
+end
+# Initialise a job from a BatchInit to WindowedInit for WindowedProblem
+
+function init(bi::BatchInit{<:BatchProblem{<:WindowedProblem}}, i::Int; verbose=false, kw...)
     checkbounds(Bool, bi.batch_indices, i) || 
         throw(ArgumentError("Invalid batch index $i, must be between 1 and $(length(bi.batch_indices))"))
-    # Subset the raster for the range
-    rast = view(bi.rast, bi.batch_ranges[bi.batch_indices[i]]...)
-    return init(problem(problem(bi)), rast; indices, sparse_sizes)
+
+    indices = isnothing(bi.window_indices) ? nothing : bi.window_indices[bi.batch_indices[i]]
+    sparse_sizes = isnothing(bi.sparse_sizes) ? nothing : bi.sparse_sizes[bi.batch_indices[i]]
+    ranges = bi.batch_ranges[bi.batch_indices[i]]
+
+    verbose && println("Loading raster window for ranges $ranges...")
+    rast = bi.rast[ranges...]
+    verbose && println("Initialising window problem")
+    return init(problem(problem(bi)), rast; verbose, indices, sparse_sizes)
 end
 # Or to GridInit for Problem
-function init(bi::BatchInit{<:BatchProblem{<:Problem}}, i::Int; kw...)
+function init(bi::BatchInit{<:BatchProblem{<:Problem}}, i::Int; verbose=false, kw...)
     problem_rast = bi.rast[bi.batch_ranges[bi.batch_indices[i]]...]
-    return init(problem(problem(bi)), problem_rast)
+    return init(problem(problem(bi)), problem_rast; verbose)
 end
 
 # Solve a single batch job (there is no method to solve all jobs)
 function solve(bi::BatchInit, i::Int; verbose=false)
-    verbose && "Initialising window memory..."
-    inner_init = init(bi, i)
+    verbose && println("Initialising window memory...")
+    inner_init = init(bi, i; verbose)
     ib = bi.batch_indices[i]
     ranges = bi.batch_ranges[ib]
-    verbose && "Running batch $i for window $ib over ranges $ranges..."
+    verbose && println("Running batch $i for window $ib over ranges $ranges...")
     output = solve(inner_init; verbose)
      # Store the output raster/s for this job to disk and return the file path
     return if ismissing(output)
@@ -383,7 +383,7 @@ function solve(bi::BatchInit, i::Int; verbose=false)
     else
         # Clear out some memory before writing
         GC.gc()
-        verbose && "Writing finished raster to disk..."
+        verbose && println("Writing finished raster to disk...")
         _write(problem(bi), output, ranges; verbose)
     end
 end
