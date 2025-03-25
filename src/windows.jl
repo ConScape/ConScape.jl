@@ -59,22 +59,22 @@ problem(wi::WindowedInit) = wi.problem
 
 function init(p::WindowedProblem, rast::RasterStack; 
     window_ranges=window_ranges(p, rast),
-    grid_sizes=nothing,
+    sparse_sizes=nothing,
     indices=nothing,
     verbose=true,
     kw...
 )
     window_ranges = vec(window_ranges)
     # Estimate grid sizes. This is expensive, it us usually passed in from an Assessment
-    grid_sizes = isnothing(grid_sizes) ? _estimate_grid_sizes(p, rast; window_ranges) : grid_sizes |> vec
-    @assert length(window_ranges) == length(grid_sizes)
+    sparse_sizes = isnothing(sparse_sizes) ? _estimate_sparse_sizes(p, rast; window_ranges) : sparse_sizes |> vec
+    @assert length(window_ranges) == length(sparse_sizes)
 
     # Select and sort indices: we usually only run a subset of windows
-    indices = isnothing(indices) ? _select_indices(p, rast; window_ranges, grid_sizes) : indices
-    sorted_indices = last.(sort!(first.(grid_sizes[indices]) .=> indices; rev=true))
+    indices = isnothing(indices) ? _select_indices(p, rast; window_ranges, sparse_sizes) : indices
+    sorted_indices = last.(sort!(first.(sparse_sizes[indices]) .=> indices; rev=true))
 
     return WindowedInit(
-        p, rast, grid_sizes, window_ranges, indices, sorted_indices
+        p, rast, sparse_sizes, window_ranges, indices, sorted_indices
     )
 end
 function init(wi::WindowedInit, i::Int; verbose=false)
@@ -157,25 +157,25 @@ function solve(window_init::WindowedInit;
     end
 end
 
-function _max_estimated_grid_size(p::AbstractWindowedProblem, rast; kw...)
-    sizes = _estimate_grid_sizes(p, rast; kw...)
+function _max_estimated_sparse_sizes(p::AbstractWindowedProblem, rast; kw...)
+    sizes = _estimate_sparse_sizes(p, rast; kw...)
     _, i = findmax(prod, sizes)
     return sizes[i]
 end
 
 
 # Calculate the maximum number of source and target values in any window
-function _estimate_grid_sizes(p::AbstractWindowedProblem, rast;
+function _estimate_sparse_sizes(p::AbstractWindowedProblem, rast;
     window_ranges=window_ranges(p, rast)
 )
     # Calculate the maximum number of source and target values in any window
-    return map(r -> _estimate_grid_size(p, rast, r), window_ranges)
+    return map(r -> _estimate_sparse_sizes(p, rast, r), window_ranges)
 end
 
 # This function extimates problem size without actually constructing grids.
 # It cant be too small, but may be too large
-_estimate_grid_size(p::AbstractProblem, rast) = _estimate_grid_size(p, rast, axes(rast))
-function _estimate_grid_size(p::AbstractProblem, rast, ranges::Tuple)
+_estimate_sparse_sizes(p::AbstractProblem, rast) = _estimate_sparse_sizes(p, rast, axes(rast))
+function _estimate_sparse_sizes(p::AbstractProblem, rast, ranges::Tuple)
     source_count = _valid_sources(count, p, rast, ranges)
     target_count = _valid_targets(count, p, rast, ranges)
     return source_count, target_count
@@ -325,7 +325,7 @@ solve(problem::BatchProblem, rast::RasterStack, i::Int...; verbose=false, kw...)
 
 # Initialise BatchProblem to a BatchInit
 init(problem::BatchProblem, rast::RasterStack, i::Int; verbose=false, kw...) =
-    init(init(problem, rast; verboe, kw...), i; verbose)
+    init(init(problem, rast; verbose, kw...), i; verbose)
 function init(problem::BatchProblem, rast::RasterStack; 
     batch_ranges=window_ranges(problem, rast),
     batch_indices=_select_indices(problem, rast; window_ranges=batch_ranges),
@@ -423,10 +423,10 @@ end
 # Running `assess` before solving to do this perfectly.
 function _select_indices(p, rast;
     window_ranges=window_ranges(p, rast),
-    grid_sizes=_estimate_grid_sizes(p, rast; window_ranges)
+    sparse_sizes=_estimate_sparse_sizes(p, rast; window_ranges)
 )
     # Get the Bool mask of needed windows
-    mask = prod.(grid_sizes) .> 0
+    mask = prod.(sparse_sizes) .> 0
     # Get the Int indices of the needed windows
     return eachindex(mask)[vec(mask)]
 end

@@ -41,7 +41,7 @@ a `Problem`.
 - `size::Tuple{Int,Int}`: the size of the input and output RasterStack
 - `shape::Tuple{Int,Int}`: the shape of the windowing
 - `njobs::Int`: the number of problem runs required to finish the problem
-- `grid_sizes::Vector{Tuple{Int,Int}}`: the sizes of each window
+- `sparse_sizes::Vector{Tuple{Int,Int}}`: the sizes of each window
 - `mask::Vector{Bool}`: Vector{Bool} where `true` values are jobs that need to be run.
 - `indices::Vector{Int}`: the indices of `mask` that are `true`.
 """
@@ -52,7 +52,7 @@ a `Problem`.
     mask::Vector{Bool}
     indices::Vector{Int}
     warnings::AssessmentWarnings
-    grid_sizes::Vector{Tuple{Int,Int}}
+    sparse_sizes::Vector{Tuple{Int,Int}}
 end
 
 """
@@ -125,17 +125,17 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
     bool_rast = RasterStack((; source_qualities, target_qualities), dims(rast))
 
     # Calculate window sizes and allocations
-    grid_sizes = vec(_estimate_grid_sizes(p, bool_rast; window_ranges))
+    sparse_sizes = vec(_estimate_sparse_sizes(p, bool_rast; window_ranges))
 
     # Organise stats for each window into vectors
-    window_mask = map(s -> prod(s) > 0, grid_sizes)
+    window_mask = map(s -> prod(s) > 0, sparse_sizes)
     non_empty_indices = eachindex(window_mask)[window_mask]
 
     # Calculate global stats
     njobs = count(window_mask)
     shape = size(window_ranges)
 
-    WindowAssessment(size(rast), shape, njobs, window_mask, non_empty_indices, warnings, grid_sizes)
+    WindowAssessment(size(rast), shape, njobs, window_mask, non_empty_indices, warnings, sparse_sizes)
 end
 function assess(
     p::AbstractWindowedProblem{<:AbstractWindowedProblem},
@@ -163,7 +163,7 @@ function assess(
                 mask=Bool[],
                 indices=Int[],
                 warnings=AssessmentWarnings(false, false),
-                grid_sizes=Tuple{Int,Int}[],
+                sparse_sizes=Tuple{Int,Int}[],
             )
         end
         # We only need qualities for the assessment
@@ -235,7 +235,7 @@ init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack, a::NestedAssessment,
 init(p::BatchProblem{<:Problem}, rast::RasterStack, a::WindowAssessment, i::Int...; kw...) =
     init(p, rast, i...; batch_indices=a.indices)
 init(p::WindowedProblem{<:Problem}, rast::RasterStack, a::WindowAssessment; kw...) =
-    init(p, rast; grid_sizes=a.grid_sizes, indices=a.indices, kw...)
+    init(p, rast; sparse_sizes=a.sparse_sizes, indices=a.indices, kw...)
 
 # Keywords to pass from an Assessment to `init` or `solve`
 # We don't use the `Assesment` directly to allow manual manipulation
@@ -245,7 +245,7 @@ function _assessment_keywords(::BatchProblem, rast, a::WindowAssessment)
 end
 function _assessment_keywords(p::BatchProblem, rast, a::NestedAssessment)
     sparse_sizes = map(a.assessments) do a_w
-        a_w.grid_sizes
+        a_w.sparse_sizes
     end
     window_indices = map(a.assessments) do a_w
         a_w.indices
