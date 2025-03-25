@@ -89,11 +89,14 @@ function GridInit(problem::Problem, grid::Grid;
     precalculation = gridinit_precalculation(problem, grid)
     return GridInit(problem, grid, outputs, workspaces, storage, precalculation)
 end
-function GridInit(mgi::MultiGridInit, subgrid_id::Int; kw...)
+function GridInit(mgi::MultiGridInit, subgrid_id::Int; 
+    workspaces=workspaces(mgi),
+    outputs=outputs(mgi), 
+    storage=storage(mgi), 
+    kw...
+)
     GridInit(problem(mgi), subgrids(mgi)[subgrid_id]; 
-        workspaces=workspaces(mgi),
-        outputs=outputs(mgi), 
-        storage=storage(mgi), 
+        workspaces, outputs, storage, kw...
     )
 end
 
@@ -402,6 +405,7 @@ function solve(measures::Union{NamedTuple,Tuple}, ti::TargetInit;
     map(measures, outputs) do measure, output
         # Compute a measure for this target
         v = compute(measure, ti)
+        any(isinf, v) && error("Inf values in computed value for $measure at target $(target(ti))")
         # Write values to output object
         update_output!(output, measure, v, ti)
     end

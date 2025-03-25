@@ -133,7 +133,7 @@ function compute(
 ) where Weighting
     return compute(Betweenness(Weighting()), ti) * pref[target(ti).spatial]
 end
-function compute(bet::Betweenness, ti::TargetInit{<:RandomWalk})
+function compute(::Betweenness, ti::TargetInit{<:RandomWalk})
     (; Z1, Z, H, p, workspace) = ti
     return workspace .= Z1 .- Z .+ H .* p[target(ti).node] .* _weight(weighting(gm), ti)
 end
@@ -159,11 +159,10 @@ function compute(
 end
 function compute(m::Betweenness, ti::TargetInit{<:RSP})
     (; Z, Zⁱ, IW_adj_factorization, workspace) = ti
-    # Find the scaling factor:
-    # If any of the values of MZⁱ is above one then there is a risk of overflow,
     X = _weight(weighting(m), ti)
-    λ = max(1.0, maximum(X))
     XZⁱt = workspace .= X .* Zⁱ
+    # Find the scaling factor: if any of XZⁱ is above 1.0 there is a risk of overflow
+    λ = max(1.0, maximum(XZⁱt))
     # TODO: explain what this subtraction does
     XZⁱt[target(ti).node] -= Zⁱ[target(ti).node] * sum(X)
     # Scale MZⁱ with λ
