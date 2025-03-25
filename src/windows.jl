@@ -46,6 +46,17 @@ WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 centersize(p::WindowedProblem) = p.centersize, p.centersize
 isthreaded(p::WindowedProblem) = p.threaded
 
+struct WindowedInit{P,R} <: Initialisation
+    problem::P
+    rast::R
+    sparse_sizes::Vector{Tuple{Int,Int}}
+    ranges::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
+    indices::Vector{Int}
+    sorted_indices::Vector{Int}
+end
+
+problem(wi::WindowedInit) = wi.problem
+
 function init(p::WindowedProblem, rast::RasterStack; 
     window_ranges=window_ranges(p, rast),
     grid_sizes=nothing,
@@ -66,27 +77,15 @@ function init(p::WindowedProblem, rast::RasterStack;
         p, rast, grid_sizes, window_ranges, indices, sorted_indices
     )
 end
-
-solve(p::WindowedProblem, rast::RasterStack; verbose=false, kw...) =
-    solve(init(p, rast; verbose, kw...); verbose)
-
-struct WindowedInit{P,R} <: Initialisation
-    problem::P
-    rast::R
-    sparse_sizes::Vector{Tuple{Int,Int}}
-    ranges::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
-    indices::Vector{Int}
-    sorted_indices::Vector{Int}
-end
-
-problem(wi::WindowedInit) = wi.problem
-
 function init(wi::WindowedInit, i::Int; verbose=false)
     ranges = wi.ranges[i]
     verbose && println("Initialising window from ranges $ranges...")
     rast = _get_window_with_zeroed_buffer(view, problem(wi), wi.rast, ranges)
     init(problem(problem(wi)), rast; verbose)
 end
+
+solve(p::WindowedProblem, rast::RasterStack; verbose=false, kw...) =
+    solve(init(p, rast; verbose, kw...); verbose)
 function solve(window_init::WindowedInit; 
     verbose::Bool=false,
     mosaic_return=problem(window_init).mosaic_return,
@@ -377,7 +376,6 @@ function solve(bi::BatchInit, i::Int; verbose=false)
     else
         # Clear out some memory before writing
         GC.gc()
-        verbose && println("Writing finished raster to disk...")
         _write(problem(bi), output, ranges; verbose)
     end
 end
@@ -410,10 +408,11 @@ function _batch_path(p, ranges::Tuple)
 end
 
 # Write the output to disk with Rasters
-function _write(p::BatchProblem, output::RasterStack{K}, ranges::Tuple; kw...) where {K}
+function _write(p::BatchProblem, output::RasterStack{K}, ranges::Tuple; verbose, kw...) where {K}
     dir = mkpath(_batch_path(p, ranges))
+    verbose && println("Writing finished raster to $dir...")
     return Rasters.write(joinpath(dir, ""), output;
-        ext=p.ext, force=true, kw...
+        ext=p.ext, force=true, verbose, kw...
     )
 end
 
@@ -432,6 +431,7 @@ function _select_indices(p, rast;
     return eachindex(mask)[vec(mask)]
 end
 
+window_ranges(wi::Union{WindowedInit,BatchInit}) = window_ranges(problem(wi), wi.rast)
 window_ranges(p::Union{BatchProblem,WindowedProblem}, rast::AbstractRasterStack) =
     window_ranges(p::Union{BatchProblem,WindowedProblem}, size(rast))
 function window_ranges(p::Union{BatchProblem,WindowedProblem}, size::Tuple)

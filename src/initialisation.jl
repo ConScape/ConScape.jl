@@ -29,7 +29,11 @@ function MultiGridInit(problem::Problem, grid::Grid;
         grid = coarse_graining(grid, grain(problem))
     end
     subgrids = split_subgraphs(grid)
-    workspaces = _allocate_workspaces!(workspaces, problem, first(subgrids))
+    workspaces = if length(subgrids) > 0
+        _allocate_workspaces!(workspaces, problem, first(subgrids))
+    else
+        Workspaces(0, 0)
+    end
     storage = _newstoragedict(workspaces)
     # Create a MultiGridInit without outputs
     mgi = MultiGridInit(problem, grid, subgrids, workspaces, storage, nothing)
