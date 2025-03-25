@@ -65,7 +65,6 @@ struct GridInit{MM,P<:Problem{MM},G<:Grid,O<:Union{NamedTuple,Tuple},W<:Abstract
     function GridInit(
         problem::P, grid::G, outputs::O, workspaces::Workspaces{W}, storage::S, precalculation::Pr
     ) where {P<:Problem{MM},G,O,W,S,Pr} where MM
-        @show length(workspaces), nsources(grid), sparse_size(grid)[1]
         @assert length(workspaces) == nsources(grid) == sparse_size(grid)[1]
         free!(workspaces)
         empty!(storage)
@@ -135,7 +134,6 @@ struct TargetInit{MM,GI<:GridInit{MM}} <: Initialisation
     gridinit::GI
     target::TargetID
     function TargetInit(gi::GI, target::TargetID) where GI<:GridInit{MM} where MM
-        @show length(workspaces(gi)), nsources(gi), sparse_size(gi)[1]
         @assert (length(workspaces(gi)) == nsources(gi) == sparse_size(gi)[1]) 
         free!(workspaces(gi))
         empty!(storage(gi))

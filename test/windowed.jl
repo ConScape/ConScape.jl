@@ -84,11 +84,20 @@ end
     @time windowed_result = ConScape.solve(windowed_init);
 
     batch_problem = BatchProblem(problem; datapath=tempname(), kw...)
-    paths = solve(batch_problem, rast)
+    paths = solve(batch_problem, rast; verbose=true)
     Rasters.mosaic(sum, RasterStack.(paths))
 
     batch_result = mosaic(batch_problem, rast)
     @test batch_result isa RasterStack
+
+    batch_init_problem = BatchProblem(problem; datapath=tempname(), kw...)
+    batch_init = init(batch_init_problem, rast; verbose=true)
+    paths = solve(batch_init_problem, rast)
+    Rasters.mosaic(sum, RasterStack.(paths))
+
+    batch_init_result = mosaic(batch_init_problem, rast)
+    @test batch_result isa RasterStack
+
 
     # BatchProblem can be run as batch jobs for clusters
     # We just need a new path to make sure the result is from a new run
@@ -96,17 +105,22 @@ end
         datapath=tempname(), kw...
     )
     assessment = ConScape.assess(batch_jobs_problem, rast)
-    batch_jobs_problem.centersize
     @test assessment.njobs == 39
 
     paths = solve(batch_jobs_problem, rast, assessment, 1; verbose=true)
     @test keys(paths) == (:betk, :ch)
     for job in 1:assessment.njobs
-        ConScape.solve(batch_jobs_problem, rast, assessment, job)
+        solve(batch_jobs_problem, rast, assessment, job)
     end
     batch_jobs_result = mosaic(batch_jobs_problem, rast)
-    batch_jobs_result.betk
 
+    batch_jobs_init_problem = ConScape.BatchProblem(problem; datapath=tempname(), kw...)
+    assessment = ConScape.assess(batch_jobs_init_problem, rast)
+    for job in 1:assessment.njobs
+        batch_jobs_init = init(batch_jobs_init_problem, rast, assessment; verbose=true)
+        solve(batch_jobs_init, job; verbose=true)
+    end
+    batch_jobs_init_result = mosaic(batch_jobs_init_problem, rast)
 
     @testset "reassessment" begin
         # There should be no jobs left
@@ -146,11 +160,11 @@ end
     nested_jobs_problem = ConScape.BatchProblem(windowed_problem; 
         datapath=tempname(), centersize=(10, 10)
     )
-    # Try one
-    @time nested_batch_init = init(nested_jobs_problem, rast)
-    @time solve(nested_batch_init, 5)
-    res = solve(windowed_problem, rast; mosaic_return=false)
     assessment = ConScape.assess(nested_jobs_problem, rast);
+    # Try one
+    @time nested_batch_init = init(nested_jobs_problem, rast, assessment)
+    @time solve(nested_batch_init, 5; verbose=true)
+    res = solve(windowed_problem, rast; mosaic_return=false)
     for job in 1:assessment.njobs
         solve(nested_jobs_problem, rast, job)
     end
@@ -186,6 +200,7 @@ end
           keys(nested_result) == 
           keys(batch_result) == 
           keys(batch_jobs_result) == 
+          keys(batch_jobs_init_result) == 
           keys(nested_jobs_result) == 
           keys(measures)
 
@@ -195,15 +210,17 @@ end
 
     @test all(batch_jobs_result.ch .=== batch_result.ch)
     @test all(batch_jobs_result.betk .=== batch_result.betk)
+    @test all(batch_jobs_init_result.ch .=== batch_result.ch)
+    @test all(batch_jobs_init_result.betk .=== batch_result.betk)
     @test all(compare.(nested_result.betk, nested_jobs_result.betk))
     @test all(compare.(nested_result.ch, nested_jobs_result.ch))
     @test all(compare.(permutedims(nested_result.betk), windowed_result.betk))
     @test all(compare.(permutedims(nested_result.ch), windowed_result.ch))
+    @test all(compare.(permutedims(nested_jobs_result.betk), windowed_result.betk))
+    @test all(compare.(permutedims(nested_jobs_result.ch), windowed_result.ch))
     # Non-nested batch is broken somehow
     @test_broken all(compare.(permutedims(batch_result.ch), windowed_result.ch))
     @test_broken all(compare.(permutedims(batch_result.betk), windowed_result.betk))
-    # TODO: there are some tiny fp differences in the nested result
-    @test all(compare.(nested_result.ch, permutedims(windowed_result.ch)))
 
     # plot(windowed_result)
     # plot(batch_result)
