@@ -291,3 +291,9 @@ _diff_KD(::Inv) = -K .^ 2
 
 _scale_uniless!(A, ::Union{Affinity,AffinityAndCost}, g) = A .*= affinitymatrix(g)
 _scale_uniless!(A, ::Union{Cost,CostAndAffinity}, g) = A .*= costmatrix(g)
+
+
+# TODO: handle self connectivity for single isolated nodes
+# fill_isolated_node(::ConnectedHabitat, init::Initalisation, target::CartesianIndex) =
+#      diagvalue(init) * source_quality_spatial(init)[target] * target_quality_spatial(init)[target]
+# fill_isolated_node(::Betweenness, init::Initalisation, target::CartesianIndex) = 0.0

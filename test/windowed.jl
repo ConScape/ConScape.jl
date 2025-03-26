@@ -1,6 +1,5 @@
 using ConScape, Test, SparseArrays, LinearAlgebra
 using Rasters, ArchGDAL
-using ConScape.LinearSolve
 
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 _tempdir = mkdir(tempname())
@@ -30,6 +29,25 @@ solver = ConScape.VectorSolver()
 problem = ConScape.Problem(; measures, movement_mode, solver);
 solve(problem, rast; verbose=true)
 
+@testset "window shape" begin
+    circle_windowed_problem = ConScape.WindowedProblem(problem; 
+        buffer=10, centersize=5, threaded=true, test_windows=true, shape=:circle
+    )
+    square_windowed_problem = ConScape.WindowedProblem(problem; 
+        buffer=10, centersize=5, threaded=true, test_windows=true, shape=:square
+    )
+    wi = init(circle_windowed_problem, rast)
+    circle_st = ConScape._get_window_with_zeroed_buffer(circle_windowed_problem, rast, wi.ranges[6])
+    square_st = ConScape._get_window_with_zeroed_buffer(square_windowed_problem, rast, wi.ranges[6])
+    # Affinities never have rounded corners
+    @test circle_st.affinities[end] !== 0.0
+    @test square_st.affinities[end] !== 0.0
+    # Source qualities do for :circle 
+    @test circle_st.source_qualities[end] === 0.0
+    # But not for :square
+    @test square_st.source_qualities[end] !== 0.0
+end
+
 @testset "target mosaicing matches original" begin
     windowed_problem = ConScape.WindowedProblem(problem; 
         buffer=10, centersize=5, threaded=true, test_windows=true
@@ -54,13 +72,14 @@ end
 
 @testset "windowed results approximate non-windowed" begin
     buffer=15
-    windowed_problem = ConScape.WindowedProblem(problem; 
-        buffer, centersize=5
+    windowed_problem = WindowedProblem(problem; 
+        buffer, centersize=2, shape=:circle
     )
     mask!(rast; with=rast)
-    rast_inner = ConScape._get_window_with_zeroed_buffer(windowed_problem, rast, axes(rast))
-    @time wp_result = ConScape.solve(windowed_problem, rast)
-    @time p_result = ConScape.solve(problem, rast_inner)
+    wi = init(windowed_problem, rast)
+    rast_inner = ConScape._get_window_with_zeroed_buffer(wi; shape=:square)
+    @time wp_result = solve(wi)
+    @time p_result = solve(problem, rast_inner)
     @test maplayers(p_result, wp_result) do P, WP
         broadcast(P, WP) do p, wp
             isnan(p) && isnan(wp) || isapprox(p, wp; atol=1e-4)
@@ -218,9 +237,8 @@ end
     @test all(compare.(permutedims(nested_result.ch), windowed_result.ch))
     @test all(compare.(permutedims(nested_jobs_result.betk), windowed_result.betk))
     @test all(compare.(permutedims(nested_jobs_result.ch), windowed_result.ch))
-    # Non-nested batch is broken somehow
-    @test_broken all(compare.(permutedims(batch_result.ch), windowed_result.ch))
-    @test_broken all(compare.(permutedims(batch_result.betk), windowed_result.betk))
+    @test all(compare.(permutedims(batch_result.ch), windowed_result.ch))
+    @test all(compare.(permutedims(batch_result.betk), windowed_result.betk))
 
     # plot(windowed_result)
     # plot(batch_result)

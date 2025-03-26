@@ -1,6 +1,5 @@
 using ConScape, Test, SparseArrays, LinearAlgebra
 using Rasters, ArchGDAL
-using ConScape.LinearSolve
 using OldConScape
 
 compare(a, b) = ismissing(a) && ismissing(b) || isnan(a) && isnan(b) || isapprox(a, b)
@@ -77,6 +76,7 @@ solver = ConScape.VectorSolver()
     K = ConScape.ExpMinus().(ec)
     M = qs .* K .* qt'
     MZⁱ = M .* Zⁱ
+    M
 
     for i in axes(test_grsp.Z, 2)
         target_i = ConScape.init(gridinit, ConScape.target_ids(gridinit)[i])

@@ -7,6 +7,7 @@ grain(::AbstractProblem) = nothing
 problem(p::AbstractWindowedProblem) = p.problem
 costfunction(p::AbstractWindowedProblem) = costfunction(problem(p))
 solver(p::AbstractWindowedProblem) = solver(problem(p))
+shape(p::AbstractWindowedProblem) = p.shape
 
 """
     WindowedProblem(problem::AbstractProblem; size, centers, θ)
@@ -28,6 +29,7 @@ to be run over the same windowed grids.
     centersize::Int
     buffer::Int
     threaded::Bool = false
+    shape::Symbol = :circle
     gc::Bool = true 
     test_windows::Bool = false
     mosaic_return::Bool = true
@@ -80,7 +82,7 @@ end
 function init(wi::WindowedInit, i::Int; verbose=false)
     ranges = wi.ranges[i]
     verbose && println("Initialising window from ranges $ranges...")
-    rast = _get_window_with_zeroed_buffer(view, problem(wi), wi.rast, ranges)
+    rast = _get_window_with_zeroed_buffer(wi, ranges)
     init(problem(problem(wi)), rast; verbose)
 end
 
@@ -97,7 +99,7 @@ function solve(window_init::WindowedInit;
     # Test outputs just return the inputs after window masking 
     if p.test_windows
         output_stacks = map(indices) do i
-            _get_window_with_zeroed_buffer(view, p, rast, ranges[i])
+            _get_window_with_zeroed_buffer(p, rast, ranges[i])
         end
         return if mosaic_return
             Rasters.mosaic(sum, collect(skipmissing(output_stacks));
@@ -261,6 +263,7 @@ mosaic(batch_problem; to=rast)
     problem::P
     buffer::Int
     centersize::Tuple{Int,Int}
+    shape::Symbol = :circle
     datapath::String
     ext::String = ".tif"
 end
@@ -357,7 +360,8 @@ function init(bi::BatchInit{<:BatchProblem{<:WindowedProblem}}, i::Int; verbose=
 end
 # Or to GridInit for Problem
 function init(bi::BatchInit{<:BatchProblem{<:Problem}}, i::Int; verbose=false, kw...)
-    problem_rast = bi.rast[bi.batch_ranges[bi.batch_indices[i]]...]
+    ranges = bi.batch_ranges[bi.batch_indices[i]]
+    problem_rast = _get_window_with_zeroed_buffer(bi, ranges)
     return init(problem(problem(bi)), problem_rast; verbose)
 end
 
@@ -445,43 +449,48 @@ function window_ranges(p::Union{BatchProblem,WindowedProblem}, size::Tuple)
     return [map((i, s, ws) -> i:min(s, i + ws - 1), Tuple(c), size, windowsize) for c in corners]
 end
 
-function _get_window_with_zeroed_buffer!(dest, p::AbstractWindowedProblem, rast::RasterStack, rs)
-    source = view(rast, rs...)
-    # Reshape and rebuild to resuse memory
-    data = (
-        affinities=_reshape(parent(parent(dest.affinities)), size(source)),
-        source_qualities=_reshape(parent(parent(dest.source_qualities)), size(source)),
-        target_qualities=parent(parent(dest.target_qualities)),
-    )
-    dest = rebuild(dest; data, dims=dims(source))
-    # Update values
-    dest.source_qualities .= source.source_qualities
-    dest.affinities .= source.affinities
-
-    return _with_sparse_targets(p, source, dest)
-end
-_get_window_with_zeroed_buffer(p::AbstractWindowedProblem, args...) =
-    _get_window_with_zeroed_buffer(view, p, args...)
-_get_window_with_zeroed_buffer(f::Function, p::AbstractWindowedProblem, rast::RasterStack) =
-    _get_window_with_zeroed_buffer(f, p, rast, axes(rast))
-function _get_window_with_zeroed_buffer(f::Function, p::AbstractWindowedProblem, rast::RasterStack, rs)
-    source = f(rast, rs...)
-    return _with_sparse_targets(p, source, source)
-end
-
-_target_ranges(p, source) = map(s -> buffer(p)+1:s-buffer(p), size(source))
-
-function _with_sparse_targets(p, source, dest)
-    tq = source.target_qualities
+_get_window_with_zeroed_buffer(wi::Union{WindowedInit,BatchInit}, args...; kw...) =
+    _get_window_with_zeroed_buffer(problem(wi), wi.rast, args...; kw...)
+_get_window_with_zeroed_buffer(p::AbstractWindowedProblem, rast::RasterStack; kw...) =
+    _get_window_with_zeroed_buffer(p, rast, axes(rast); kw...)
+function _get_window_with_zeroed_buffer(p::AbstractWindowedProblem, rast::RasterStack, rs;
+    shape=shape(p)
+)
+    window = view(rast, rs...)
+    tq = window.target_qualities
     tq_sparse = spzeros(eltype(tq), size(tq))
-    target_ranges = _target_ranges(p, source)
+    target_ranges = _target_ranges(p, window)
     tq_sparse[target_ranges...] = tq[target_ranges...]
     if !isnothing(grain(p))
         tq_sparse = coarse_graining(tq_sparse, grain(p))
     end
 
-    return merge(dest, (; target_qualities=rebuild(tq; data=tq_sparse)))
+    target_qualities = rebuild(tq; data=tq_sparse)
+    source_qualities = modify(Array, window.source_qualities)
+    
+    # Handle :circle shaped buffers
+    if shape == :circle
+        center = CartesianIndex(size(source_qualities) .÷ 2 .+ 1)
+        maxdist = buffer(p) + max(centersize(p)...) / 2
+        for I in CartesianIndices(source_qualities)
+            if _dist_from_center(I, center) >= maxdist
+                source_qualities[I] = 0.0
+            end
+        end
+    elseif shape != :square
+        error("WindowedProblem shape must be :square or :circle")
+    end
+
+    return merge(window, (; source_qualities, target_qualities))
 end
+
+function _dist_from_center(point::CartesianIndex, center::CartesianIndex)
+    map(Tuple(point), Tuple(center)) do pn, cn
+        (pn - cn)^2
+    end |> sum |> sqrt
+end
+
+_target_ranges(p, source) = map(s -> buffer(p)+1:s-buffer(p), size(source))
 
 # Apply function `f` to the validity (Bool) of each window. Empty windows are false. 
 # `any` `count` or `map`(for the Vector{Bool}) are useful functions for f
