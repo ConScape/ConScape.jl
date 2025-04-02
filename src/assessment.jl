@@ -85,12 +85,12 @@ function Base.show(io::IO, mime::MIME"text/plain", a::ProblemAssessment)
     println(io, "Shape: $(a.shape)")
     println(io, "Number of jobs: $(a.njobs)")
     # Use SparseArrays nice matrix printing for the mask
+    if any(a.warnings) 
+        println(io, "Warnings: $(a.warnings)")
+    end
     println(io, "Job mask: ")
     mask = sparse(reshape(a.mask, a.shape))
     Base.print_array(io, mask)
-    if any(a.warnings) 
-        show(io, mime, a.warnings)
-    end
 end
 
 
