@@ -1,68 +1,3 @@
-# simulate a permeable wall
-function perm_wall_sim(
-    nrows::Integer,
-    ncols::Integer;
-    scaling::Float64=0.5,
-    wallwidth::Integer=3,
-    wallposition::Float64=0.5,
-    corridorwidths::NTuple{<:Any,Int}=(3,3),
-    corridorpositions=(0.35,0.7),
-    impossible_affinity::Real=1e-20,
-    nhood_size::Integer=8,
-    kwargs...
-)
-
-    # 1. initialize landscape
-    affinities = _generate_affinities(nrows, ncols, nhood_size)
-    g = Grid(nrows, ncols; affinities=affinities*scaling, kwargs...)
-
-    # # 2. compute the wall
-    wpt = round(Int, ncols*wallposition - wallwidth/2 + 1)
-    xs  = range(wpt, stop=wpt + wallwidth - 1)
-
-    # 3. compute the corridors
-    ys = Int[]
-    for i in 1:length(corridorwidths)
-        cpt = floor(Int, nrows*corridorpositions[i]) - ceil(Int, corridorwidths[i]/2)
-        if i == 1
-            append!(ys, 1:cpt)
-        else
-            append!(ys, range(maximum(ys) + 1 + corridorwidths[i-1], stop=cpt))
-        end
-    end
-    append!(ys, range(maximum(ys) + 1 + corridorwidths[end]  , stop=nrows))
-
-    impossible_nodes = vec(CartesianIndex.(collect(Iterators.product(ys, xs))))
-    g = _set_impossible_nodes(g, impossible_nodes, impossible_affinity)
-
-    return g
-end
-
-⊗ = kron
-#=
-Generate the affinity matrix of a grid graph, where each
-pixel is connected to its vertical and horizontal neighbors.
-
-Parameters:
-- nhood_size: 4 creates horizontal and vertical edges, 8 creates also diagonal edges
-=#
-function _generate_affinities(nrows, ncols, nhood_size)
-
-    if !(nhood_size ∈ (4, 8))
-        throw(ArgumentError("nhood_size must be either 4 or 8"))
-    end
-
-    affinities = spdiagm(0=>ones(ncols)) ⊗ spdiagm(-1=>ones(nrows - 1), 1=>ones(nrows - 1)) +
-        spdiagm(-1=>ones(ncols - 1), 1=>ones(ncols - 1)) ⊗ spdiagm(0=>ones(nrows))
-
-    if nhood_size == 8
-        affinities .+= spdiagm(-1=>ones(ncols - 1), 1=>ones(ncols - 1)) ⊗
-              spdiagm(-1=>fill(1/√2, nrows - 1), 1=>fill(1/√2, nrows - 1))
-    end
-
-    return affinities
-end
-
 const N4 = (( 0, -1, 1.0),
             (-1,  0, 1.0),
             ( 1,  0, 1.0),
@@ -144,7 +79,9 @@ function graph_matrix_from_raster(
             end
         end
     end
-    return sparse(is, js, vs, m*n, m*n)
+    # TODO just make a BandedMatrix from the start
+    # and what happens when this is not square?
+    return (sparse(is, js, vs, m*n, m*n))
 end
 
 
@@ -154,28 +91,27 @@ Input:
     - node_list: list of nodes (either node_ids or coordinate-tuples) to be made impossible
 =#
 function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, impossible_affinity=1e-20)
-    # Find the indices of the coordinates in the id_to_grid_coordinate_list vector
-    node_list_idx = [findfirst(isequal(n), g.id_to_grid_coordinate_list) for n in node_list]
+    # Find the indices of the coordinates in the source_ids vector
+    node_list_idx = [findfirst(isequal(n), source_ids(g)) for n in node_list]
 
     # Copy affinities and qualities for modification
-    affinities       = copy(g.affinities)
-    source_qualities = copy(g.source_qualities)
-    target_qualities = copy(g.target_qualities)
+    affinitymatrix = copy(g.affinitymatrix)
+    source_qualities = copy(g.source_quality_spatial)
+    target_qualities = copy(g.target_quality_spatial)
 
     # Set (nonzero) values to impossible_affinity:
-    # Affinities
+    # affinitymatrix
     # FIXME! Row slicing of a sparse matrix is really inefficient
-    affinities[node_list_idx,:] = impossible_affinity*(affinities[node_list_idx,:] .> 0)
-    affinities[:,node_list_idx] = impossible_affinity*(affinities[:,node_list_idx] .> 0)
-    dropzeros!(affinities)
+    affinitymatrix[node_list_idx, :] = impossible_affinity * (affinitymatrix[node_list_idx, :] .> 0)
+    affinitymatrix[:, node_list_idx] = impossible_affinity * (affinitymatrix[:, node_list_idx] .> 0)
+    dropzeros!(affinitymatrix)
 
     # Qualities
     source_qualities[node_list] .= 0
     target_qualities[node_list] .= 0
 
-    # Generate a new Grid based on the modified affinities
-    costs = g.costfunction === nothing ? g.costmatrix : g.costfunction
-    return Grid(size(g)...; affinities, source_qualities, target_qualities, costs)
+    # Generate a new Grid based on the modified affinitymatrix
+    return Grid(size(g); affinitymatrix, source_qualities, target_qualities, g.costfunction, g.costmatrix)
 end
 
 """
@@ -188,3 +124,17 @@ function mapnz(f, A::SparseMatrixCSC)
     map!(f, B.nzval, A.nzval)
     return B
 end
+function mapnz(f, A::AbstractArray)
+    B = copy(A)
+    map!(f, B.data, A.data)
+    return B
+end
+
+_maybe_raster(mat::Raster, g::Initialisation) = mat
+_maybe_raster(mat::AbstractMatrix, g::Initialisation) =
+    _maybe_raster(mat, dims(g))
+_maybe_raster(mats::Union{Tuple,NamedTuple}, g::Initialisation) =
+    map(mat -> _maybe_raster(mat, g), mats)
+_maybe_raster(x, _) = x
+_maybe_raster(mat::Matrix{T}, dims::Tuple) where T =
+    Raster(mat, dims; missingval=T(NaN))
