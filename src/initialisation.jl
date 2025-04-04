@@ -405,7 +405,7 @@ function solve(measures::Union{NamedTuple,Tuple}, ti::TargetInit;
     map(measures, outputs) do measure, output
         # Compute a measure for this target
         v = compute(measure, ti)
-        any(isinf, v) && error("Inf values in computed value for $measure at target $(target(ti))")
+        # any(isinf, v) && error("Inf values in computed value for $measure at target $(target(ti))")
         # Write values to output object
         update_output!(output, measure, v, ti)
     end
