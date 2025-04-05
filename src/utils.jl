@@ -104,6 +104,7 @@ function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, im
     # FIXME! Row slicing of a sparse matrix is really inefficient
     affinitymatrix[node_list_idx, :] = impossible_affinity * (affinitymatrix[node_list_idx, :] .> 0)
     affinitymatrix[:, node_list_idx] = impossible_affinity * (affinitymatrix[:, node_list_idx] .> 0)
+
     dropzeros!(affinitymatrix)
 
     # Qualities
@@ -111,7 +112,7 @@ function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, im
     target_qualities[node_list] .= 0
 
     # Generate a new Grid based on the modified affinitymatrix
-    return Grid(size(g); affinitymatrix, source_qualities, target_qualities, g.costfunction, g.costmatrix)
+    return Grid(size(g); affinitymatrix, source_qualities, target_qualities, costfunction=g.costfunction, costmatrix=g.costmatrix)
 end
 
 """
@@ -138,3 +139,158 @@ _maybe_raster(mats::Union{Tuple,NamedTuple}, g::Initialisation) =
 _maybe_raster(x, _) = x
 _maybe_raster(mat::Matrix{T}, dims::Tuple) where T =
     Raster(mat, dims; missingval=T(NaN))
+
+function _fill_matrix(values, g::Initialisation)
+    matrix = fill(NaN, size(g))
+    matrix[source_ids(g)] .= values
+    return matrix
+end
+
+function Raster(values::AbstractVector, p::Initialisation; kwargs...)
+    isnothing(dims(p)) && throw(ArgumentError("Grid dims are `nothing` - it was not initialised with a Raster"))
+    return Raster(_fill_matrix(values, p), dims(p); kwargs...)
+end
+
+function outdegrees(p::Initialisation)
+    values = sum(affinitymatrix(p), dims=2)
+    _maybe_raster(_fill_matrix(values, p), p)
+end
+
+function indegrees(p::Initialisation; kwargs...)
+    values = sum(affinitymatrix(g), dims=1)
+    _maybe_raster(_fill_matrix(values, p), p)
+end
+
+"""
+    is_strongly_connected(g::Grid)::Bool
+
+Test if graph defined by Grid is fully connected.
+
+# Examples
+
+```jldoctests
+julia> affinities = [1/4 0 1/4 1/4
+                     1/4 0 1/4 1/4
+                     1/4 0 1/4 1/4
+                     1/4 0 1/4 1/4];
+
+julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities), prune=false)
+ConScape.Grid of size 4x4
+
+julia> ConScape.is_strongly_connected(grid)
+false
+```
+"""
+Graphs.is_strongly_connected(g::Grid) = is_strongly_connected(SimpleWeightedDiGraph(g.affinitymatrix))
+
+function split_subgraphs(g::Grid)
+    # Convert cost matrix to graph, todo: is `permute=false` needed
+    graph = SimpleWeightedDiGraph(costmatrix(g); permute=false)
+
+    # Find the subgraphs
+    scc = strongly_connected_components(graph)
+
+    # Keep all subgraphs that contain target nodes
+    subgraphs_with_targets = map(scc) do c
+        length(c) > 1 && any(t -> t.node in c, g.target_ids)
+    end
+
+    # Sort subgraphs by number of nodes
+    subgraphs = sort!(scc[subgraphs_with_targets]; by=length, rev=true)
+
+    # Return a Vector of Grids for each subgraph
+    return map(subgraphs) do scci
+        # Sort subgraph indices
+        sort!(scci)
+
+        # Get matrices for the subgraph 
+        affinitymatrix = g.affinitymatrix[scci, scci]
+        costmatrix = g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinitymatrix)
+
+        # Get new source and target ids for subgraph
+        source_ids = g.source_ids[scci]
+        target_ids = _target_ids(g.target_quality_spatial, source_ids)
+
+        # Get source and target quality vectors for subgraph
+        source_quality_vector = [g.source_quality_spatial[i] for i in source_ids]
+        target_quality_vector = [g.target_quality_spatial[i.spatial] for i in target_ids]
+
+        # Return new grid for subgraph
+        Grid(
+            g.size,
+            g.costfunction,
+            costmatrix,
+            affinitymatrix,
+            g.source_quality_spatial, g.target_quality_spatial,
+            source_quality_vector, target_quality_vector,
+            source_ids, target_ids,
+            g.dims,
+        )
+    end
+end
+
+"""
+    sum_neighborhood(g::Grid, rc::Tuple{Int,Int}, npix::Integer)::Float64
+
+A helper-function, used by coarse_graining, that computes the sum of pixels within a npix neighborhood around the target rc.
+"""
+sum_neighborhood(g, rc, npix) = sum_neighborhood(g.target_qualities, rc, npix)
+function sum_neighborhood(target_qualities::AbstractMatrix, rc, npix)
+    getrows = (rc[1]-floor(Int, npix / 2)):(rc[1]+(ceil(Int, npix / 2)-1))
+    getcols = (rc[2]-floor(Int, npix / 2)):(rc[2]+(ceil(Int, npix / 2)-1))
+    # pixels outside of the landscape are encoded with NaNs but we don't want
+    # the NaNs to propagate to the coarse grained values
+    return sum(t -> isnan(t) ? 0.0 : t, target_qualities[getrows, getcols])
+end
+
+"""
+    coarse_graining(g::Grid, npix::Integer)::Array
+
+Creates a sparse matrix of target qualities for the landmarks based on merging npix pixels into the center pixel.
+"""
+function coarse_graining(g, npix)
+    coarse_graining(g.target_quality_spatial, npix;
+        source_ids=source_ids(g)
+    )
+end
+coarse_graining(rast::AbstractRaster, npix; kw...) =
+    rebuild(rast, coarse_graining(parent(rast), npix; kw...))
+function coarse_graining(rast::AbstractRasterStack, npix; kw...)
+    target = _get_target_qualities(rast)
+    # Get target qualities or qualities
+    target_qualities = coarse_graining(target, npix; kw...)
+    return Base.setindex(rast, target_qualities, :target_qualities)
+end
+function coarse_graining(M::AbstractMatrix, npix;
+    source_ids=_id_gc_list(size(M)...)
+)
+    nrows, ncols = size(M)
+    getrows = (floor(Int, npix / 2)+1):npix:(nrows-ceil(Int, npix / 2)+1)
+    getcols = (floor(Int, npix / 2)+1):npix:(ncols-ceil(Int, npix / 2)+1)
+    coarse_target_rc = Base.product(getrows, getcols)
+    coarse_target_ids = vec(
+        [
+        findfirst(
+            isequal(CartesianIndex(ij)),
+            source_ids
+        ) for ij in coarse_target_rc
+    ]
+    )
+    coarse_target_rc = [ij for ij in coarse_target_rc if !ismissing(ij)]
+    filter!(!ismissing, coarse_target_ids)
+    V = [sum_neighborhood(M, ij, npix) for ij in coarse_target_rc]
+    I = first.(coarse_target_rc)
+    J = last.(coarse_target_rc)
+    target_mat = sparse(I, J, V, nrows, ncols)
+    target_mat = dropzeros(target_mat)
+
+    return target_mat
+end
+
+function _get_target_qualities(rast::AbstractRasterStack)
+    get(rast, :target_qualities) do
+        get(rast, :qualities) do
+            throw(ArgumentError("No :target_qualities or :qualities layers found"))
+        end
+    end
+end

@@ -1,8 +1,12 @@
-#=
-`compute` and `compute_target` for GraphMeasures.  eventually the whole package could work somthing like this
-with computations all at the single target level and 
-aggregation processes controlled with `returntrait`
-=#
+
+function get_or_compute!(m::Measure, ti::TargetInit)
+    get!(storage(ti), Symbol(m)) do
+        compute(m, ti)
+    end
+end
+
+######################################################################################
+# Proximities
 
 # TODO: the loop here doesn't decompose to single targets, so the full Z matrix seems to be needed.
 # this is a problem for memory use in e.g. BatchProblem, D may be large fraction of 
@@ -37,9 +41,8 @@ function compute(
 end
 function compute(::ExpectedCost, ti::TargetInit{<:RSP})
     (; Z, Zⁱ, CW, IW_factorization, workspace) = ti
-    # Solve: IW \ ((C .* W) * Z)
-    b = mul!(workspace, CW, Z)
-    C̄ = ldiv!(ti, IW_factorization, b) .*= Zⁱ
+    # Solve: (I - W) \ (C .* W) * Z ./ Z
+    C̄ = ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)) .*= Zⁱ
     # Subtract the cost at the target from all sources
     C̄ .-= C̄[target(ti).node, 1]
     return C̄
@@ -56,20 +59,26 @@ function compute(::PowerMeanProximity, ti::TargetInit{<:RSP})
 end
 function compute(::SurvivalProbability, ti::TargetInit{<:RSP})
     (; Z, workspace) = ti
-    return workspace .= Z ./ Z[target(ti).node, 1]
+    return workspace .= Z ./ Z[target(ti).node]
 end
-# Mean Kullback-Leibler Divergence
-function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LeastCost})
-    (; Pref, cost_weighted_digraph, qˢ, qᵗ) = ti
-    from, to, output = workspaces(ti)
 
-    # Calculate shortest paths
+
+######################################################################################
+# Mean Kullback-Leibler Divergence
+
+function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LeastCost})
+    (; probability, cost_weighted_digraph, qˢ, qᵗ) = ti
+    output = ti.workspace
+    from = Vector{Int}(undef, length(output))
+    to = Vector{Int}(undef, length(output))
+
+    n = length(from)
     dsp = dijkstra_shortest_paths(cost_weighted_digraph, target(ti).node)
     parents = dsp.parents
     parents[target(ti).node] = target(ti).node
 
     # Initialise arrays
-    fill!(output, 0)
+    fill!(output, 0.0)
     from .= 1:n
     to .= parents
 
@@ -80,7 +89,7 @@ function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LeastCost})
             fromᵢ, toᵢ = from[i], to[i]
             notdone |= (fromᵢ != toᵢ)
             fromᵢ == toᵢ && continue
-            output[i] += -log(Pref[fromᵢ, toᵢ])
+            output[i] += -log(probability[fromᵢ, toᵢ])
             from[i] = parents[toᵢ]
         end
         if !notdone
@@ -98,8 +107,7 @@ function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:RSP})
     θ = theta(ti)
     (; free_energy_distances, expected_costs, qˢ, qᵗ, workspace) = ti
     diff = workspace .= free_energy_distances .- expected_costs
-    # qs' * diff * qt * θ
-    return sum(diff .*= qˢ) * qᵗ * θ
+    return sum(diff .*= qˢ) * qᵗ * θ # qˢ' * diff * qᵗ * θ
 end
 
 # What are these, how are they different to the RSP versions?
@@ -109,59 +117,44 @@ end
 # bellman_ford(ti::TargetInit{<:RSP}) =
     # first(bellman_ford(probabilitymatrix(ti), costmatrix(ti), theta(ti), target_id(ti), approx(ti)))
 
+######################################################################################
 # ConnectedHabitat 
+
 compute(::ConnectedHabitat, ti::TargetInit) = ti.M
 
+######################################################################################
 # Betweenness
 
 # LeastCost
-function compute(gm::Betweenness, ti::TargetInit{<:LeastCost})
-    (; shortest_paths_en, dijk) = ti
-    # TODO what does all this do...
-    shortest_paths_en[targetid] = [targetid]
-    tgts = [repeat([i], length(dijk[i])) for i in (1:length(shorted_paths))]
-    tgts = reduce(vcat, tgts)
-    final_paths = reduce(vcat, final_paths)
-    btw = sparse(final_paths, tgts, repeat([1], length(tgts)))
+function compute(m::Betweenness, ti::TargetInit{<:LeastCost})
+    (; shortest_paths, path_allocs, workspace) = ti
+    shortest_paths_enumerated = Graphs.enumerate_paths!(path_allocs, shortest_paths, 1:length(path_allocs))
+    # Set the target path to only contain itself
+    targetpath = resize!(shortest_paths_enumerated[target(ti).node], 1)
+    targetpath[1] = target(ti).node
+    # Get the target weights
+    weights = _weight(m, ti)
+    btw = workspace .= 0.0
 
-    return btw .*= _weight(weighting(gm), ti)
+    @inbounds for s in eachindex(source_ids(ti))
+        w = weights[s]
+        for p in shortest_paths_enumerated[s]
+            btw[p] += w 
+        end
+    end
+    return btw
 end
-
 # RandomWalk 
-function compute(
-    ::EdgeBetweenness{Weighting}, ti::TargetInit{<:RandomWalk}
-) where Weighting
-    return compute(Betweenness(Weighting()), ti) * pref[target(ti).spatial]
-end
-function compute(::Betweenness, ti::TargetInit{<:RandomWalk})
+function compute(m::Betweenness, ti::TargetInit{<:RandomWalk})
     (; Z1, Z, H, p, workspace) = ti
-    return workspace .= Z1 .- Z .+ H .* p[target(ti).node] .* _weight(weighting(gm), ti)
+    return workspace .= Z1 .- Z .+ H .* p[target(ti).node] .* _weight(m, ti)
 end
-
 # RandomShortestPath
-function compute(::EdgeBetweenness{QualityWeighted}, ti::TargetInit{<:RSP})
-    (; Z, Zⁱ, Zrows, QZⁱ, W, IW_adj_factorization, qˢ, qᵗ, workspace) = ti
-    # QZⁱᵀZ = qˢZⁱqᵗ' / A
-    QZⁱc = workspace .= QZⁱ
-    QZⁱᵀZ = ldiv!(ti, IW_adj_factorization, QZⁱc)
-    RHS = workspace .= QZⁱᵀZ .- sum(qˢ) .* qᵗ .* Zⁱ[target(ti).node, 1] .* Zrows
-    return _combine_edge_betweenness(W, Z, RHS, target(ti))
-end
-function compute(
-    ::EdgeBetweenness{QualityAndProximityWeighted}, ti::TargetInit{<:RSP}
-)
-    (; W, Z, Zⁱ, M, Zrows, IW_adj_factorization, workspace) = ti
-    MZⁱ = workspace .= M .* Zⁱ
-    k = sum(MZⁱ)
-    MᵀZ = ldiv!(ti, IW_adj_factorization, MZⁱ) # MᵀZ = MZⁱ' / A
-    RHS = workspace .= MᵀZ .- k * Zⁱ[target(ti).node, 1] .* Zrows
-    return _combine_edge_betweenness(W, Z, RHS, target(ti))
-end
 function compute(m::Betweenness, ti::TargetInit{<:RSP})
     (; Z, Zⁱ, IW_adj_factorization, workspace) = ti
-    X = _weight(weighting(m), ti)
+    X = _weight(m, ti)
     XZⁱt = workspace .= X .* Zⁱ
-    # Find the scaling factor: if any of XZⁱ is above 1.0 there is a risk of overflow
+    # Find the scaling factor: if any of XZⁱ is above 1.0 there is a risk of Inf overflow
     λ = max(1.0, maximum(XZⁱt))
     # TODO: explain what this subtraction does
     XZⁱt[target(ti).node] -= Zⁱ[target(ti).node] * sum(X)
@@ -171,10 +164,43 @@ function compute(m::Betweenness, ti::TargetInit{<:RSP})
     return ldiv!(ti, IW_adj_factorization, XZⁱtλ) .*= λ .* Z
 end
 
+_weight(m::Betweenness, ti::TargetInit) = _weight(weighting(m), ti)
 _weight(::Unweighted, ti::TargetInit) = 1
 _weight(::ProximityWeighted, ti::TargetInit) = ti.K
 _weight(::QualityAndProximityWeighted, ti::TargetInit) = ti.M
 _weight(::QualityWeighted, ti::TargetInit) = ti.Q
+
+######################################################################################
+# EdgeBetweenness
+
+# LeastCost
+
+# TODO: implement
+
+# RandomWalk
+function compute(eb::EdgeBetweenness, ti::TargetInit{<:RandomWalk})
+    return compute(Betweenness(weighting(eb)), ti) * pref[target(ti).spatial]
+end
+
+# RandomShortestPath
+function compute(::EdgeBetweenness{QualityWeighted}, ti::TargetInit{<:RSP})
+    (; Z, Zⁱ, Zrows, W, IW_adj_factorization, qˢ, qᵗ, workspace) = ti
+    QZⁱ = workspace .= ti.QZⁱ
+    k = sum(qˢ) .* qᵗ # TODO: is this a bug? why not sum(QZⁱ) as below
+    QZⁱᵀZ = ldiv!(ti, IW_adj_factorization, QZⁱ)
+    RHS = QZⁱᵀZ .-= k .* Zⁱ[target(ti).node, 1] .* Zrows
+    return _combine_edge_betweenness(W, Z, RHS, target(ti))
+end
+function compute(
+    ::EdgeBetweenness{QualityAndProximityWeighted}, ti::TargetInit{<:RSP}
+)
+    (; W, Z, Zⁱ, M, Zrows, IW_adj_factorization, workspace) = ti
+    MZⁱ = workspace .= M .* Zⁱ
+    k = sum(MZⁱ)
+    MᵀZ = ldiv!(ti, IW_adj_factorization, MZⁱ)
+    RHS = MᵀZ .-= k .* Zⁱ[target(ti).node, 1] .* Zrows
+    return _combine_edge_betweenness(W, Z, RHS, target(ti))
+end
 
 function _combine_edge_betweenness(W, Z, X, t::TargetID)
     edge_betweennesses = spzeros(size(W, 1))
@@ -187,98 +213,105 @@ function _combine_edge_betweenness(W, Z, X, t::TargetID)
     return edge_betweennesses
 end
 
+
+######################################################################################
 # Sensitivity
-function compute(gm::Sensitivity, ti::TargetInit{<:RSP})
-    # TODO calculate this in GridInit
-    # diff_C_A = ConScape.mapnz(_diff_C_A_fun(ti), affinitymatrix(ti))
-    # diff_A_C = ConScape.mapnz(_diff_A_C_fun(ti), affinitymatrix(ti))
+function compute(m::Sensitivity{<:Permeability}, ti::TargetInit{<:RSP})
+    (; diff_C_A, diff_A_C) = ti
+    S_e_aff, S_e_cost = _permeability_sensitivity(proximity_measure(ti), ti)
 
-    if wrt(gm) isa Union{Affinity,Cost,CostAndAffinitySensitivityContext} 
-        (; diff_C_A, diff_A_C) = ti
-        S_e_aff, S_e_cost = _sensitivity(proximity_measure(ti), ti)
-
-        if unitless 
-            _scale_uniless!(S_e_aff, wrt(gm), ti)
-            _scale_uniless!(S_e_cost, wrt(gm), ti)
-        end
-        target_sensitivity = if wrt(gm) isa Affinity
-            S_e_aff
-        elseif wrt(gm) isa Cost
-            S_e_cost
-        elseif wrt(gm) isa AffinityAndCost
-            S_e_total = S_e_aff .+ S_e_cost .* diff_C_A
-            S_e_total
-        elseif wrt(gm) isa CostAndAffinity
-            S_e_total = S_e_aff .* diff_A_C .+ S_e_cost
-            S_e_total
-        end
-    elseif wrt(gm) isa Qualities
-        (; qˢ, qᵗ, K, unitless, workspace) = ti
-        # TODO make this single-target
-        # Need a summed source proximities vector
-        # Also split in respect to source and target quality
-        target_sensitivity = workspace .= K .+ transpose(K) .*= qᵗ 
-        if unitless
-            target_sensitivity *= qˢ[target.node]
-        end
+    if change(m) isa ProportionalChange
+        _scale_uniless!(S_e_aff, context(m), ti)
+        _scale_uniless!(S_e_cost, context(m), ti)
     end
 
+    return if context(m) isa Affinity
+        S_e_aff
+    elseif context(m) isa Cost
+        S_e_cost
+    elseif context(m) isa AffinityAndCost
+        S_e_aff .+ S_e_cost .* diff_C_A
+    elseif context(m) isa CostAndAffinity
+        S_e_aff .* diff_A_C .+ S_e_cost
+    end
+end
+function compute(m::Sensitivity{<:Quality}, ti::TargetInit{<:RSP})
+    (; qˢ, qᵗ, K, workspace) = ti
+    # TODO make this single-target
+    # Need a summed source proximities vector
+    # Also split in respect to source and target quality
+    target_sensitivity = workspace .= K .+ transpose(K) .*= qᵗ 
+    if change(m) isa ProportionalChange
+        target_sensitivity .*= qˢ[target(ti).node]
+    end
     return target_sensitivity
 end
 
-function _sensitivity(::ExpectedCost, ti::TargetInit{<:RSP})
-    (; A, C, W, K, Z, CW, IW, Zⁱ, MZⁱ, Zrows, workspace) = ti
-    diff_KD = _diff_KD(K, distance_transformation(ti))
-    # TODO convert all / \ to ldiv!
+function _permeability_sensitivity(::ExpectedCost, ti::TargetInit{<:RSP})
+    (; A, Aⁱ, A_rowsums, C, W, M, Z, CW, IW_factorization, IW_adj_factorization, Zⁱ, MZⁱ, Zrows) = ti
+    θ = theta(ti)
+    # diff_KD = _diff_KD(K, distance_transformation(ti))
+
+    # TODO this is basically ExpectedCost mashed with Betweenness K
+    # Can we reuse those instead?
 
     # MZⁱ = workspace1 .= M .* Zⁱ 
     # k̂ᵢⱼ = kᵢⱼ/zᵢⱼ
-    Y = ldiv(ti, IW, mul!(workspace, CW * Z))
-    C̄ᵣ = Y .* Zⁱ # Expected costs of REGULAR paths
-    MᵀZ = MZⁱ' / IW
+    Y = ldiv!(ti, IW_factorization, mul!(ti.workspace, CW, Z))
+    C̄ = Y .*= Zⁱ # Expected costs of REGULAR paths
 
-    k̂diagZⁱ = sum(MZⁱ) .* Zⁱ[target.node, 1]
+    # TODO is this flipped the right way
+    # MᵀZ = MZⁱ' / IW
+    MᵀZ = ldiv!(ti, IW_factorization, MZⁱ)
 
-    X3 = k̂diagZⁱ .* Zrows
+    k̂diagZⁱ = sum(MZⁱ) .* Zⁱ[target(ti).node, 1]
 
-    k̂diagC̄Zⁱ = k̂diagZⁱ .* C̄ᵣ[target.node, 1]
-    X5 = ((K̂ .* C̄ᵣ)' - (MᵀZ * CW) + (X3 * CW)) / IW - k̂diagC̄Zⁱ .* Zrows # "X1- X2 - X4"
-    X3 .= K̂ᵀZ .- X3
+    X3 = ti.workspace .= k̂diagZⁱ .* Zrows
 
-    kΣ = copy(W) # k-weighted negative covariance matrix
-    kB = copy(W) # k-weighted edge betweenness matrix
+    k̂diagC̄Zⁱ = k̂diagZⁱ .* C̄[target(ti).node, 1]
+    RHS = vec((M .* C̄)' .- (MᵀZ' * CW) .+ (X3' * CW))
+    X5 = ldiv!(ti, IW_adj_factorization, RHS) .- k̂diagC̄Zⁱ .* Zrows # "X1- X2 - X4"
+    X3 .= MᵀZ .- X3
 
-    for i in axes(W, 1)
-        w = W[i, 1]
+    Wt = ti.workspace .= view(W, :, 1)
+    kΣ = ti.workspace .= Wt # k-weighted negative covariance matrix
+    kB = ti.workspace .= Wt # k-weighted edge betweenness matrix
+
+    j = target(ti).node
+    for i in eachindex(Wt)
+        w = Wt[i]
         w > 0 || continue
-        kB[i, 1] *= (Z[j, 1]' * X3[1, i])[1]
-        kΣ[i, 1] *= (Z[j, 1]' * X5[1, i])[1] - (Y[j, 1]' * X3[1, i])[1] - C[i, 1] * kB[i, 1] / w
+        kB[i] *= Z[j] * X3[i]
+        kΣ[i] *= (Z[j] * X5[i]) - (Y[j]' * X3[i])[1] - C[i, 1] * kB[i] / w
     end
 
     kΣ_node = sum(kΣ, dims=2)
-    Ae = sum(A, dims=2)
 
     S_cost = kB + θ * kΣ
-
-    Idx = W .> 0
-    Aⁱ = mapnz(x -> inv(x), A)
-    S_aff = (kΣ_node ./ Ae) .* Idx - kΣ .* Aⁱ
+    S_aff = kΣ_node ./ A_rowsums .* (Wt .> 0) .- kΣ .* view(Aⁱ, :, target(ti).node)
 
     return S_aff, S_cost
 end
-function _sensitivity(::PowerMeanProximity, ti::TargetInit{<:RSP})
-    # Aⁱ = mapnz(inv, A)
-    # rowsums = sum(affinity(ti), dims=2)
-    (; A, Aⁱ, rowsums) = ti
+function _permeability_sensitivity(::PowerMeanProximity, ti::TargetInit{<:RSP})
+    (; A, Aⁱ, A_rowsums, workspace) = ti
+    θ = theta(ti)
     id = target(ti).id
 
-    bet_edge_k = compute(EdgeBetweenness{QualityAndProximityWeighted}(), ti)
-    bet_node_k = compute(Betweenness{QualityAndProximityWeighted}(), ti)
+    bet_edge_k = get_or_compute!(EdgeBetweenness(QualityAndProximityWeighted()), ti)
+    bet_node_k = get_or_compute!(Betweenness(QualityAndProximityWeighted()), ti)
 
-    S_aff = workspace .= (bet_edge_k .* Aⁱ[:, id] .* A[:, id] .> 0 .- (bet_node_k ./ rowsums)) .* θ
     S_cost = workspace .= .-(bet_edge_k)
+    S_aff = workspace .= (bet_edge_k .* view(Aⁱ, :, id) .* (view(A, :, id) .> 0) .- (bet_node_k ./ A_rowsums)) .* θ
 
     return S_aff, S_cost
+
+    # survival_probabilities = workspace .= Z ./ Z[target(ti).node]
+    # return workspace .= -log.(max.(0, survival_probabilities)) ./ θ
+end
+function compute(::PowerMeanProximity, ti::TargetInit{<:RSP})
+    θ = theta(ti)
+    (; survival_probabilities, workspace) = ti
+    return workspace .= survival_probabilities .^ (1 / θ)
 end
 
 _diff_CA_fun(::MinusLog) = x -> -inv(x)

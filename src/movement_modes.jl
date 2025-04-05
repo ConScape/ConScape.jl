@@ -7,8 +7,8 @@ These define the path distribution of all possible paths between source and targ
 """
 abstract type MovementMode end
 
-init(movement_mode::MovementMode, grid::Grid; kw...) =
-    init(Problem(; movement_mode), grid; kw...)
+distance_transformation(mm::MovementMode) = mm.distance_transformation
+diagvalue(mm::MovementMode) = mm.diagvalue
 
 """
     ArrivingMovement
@@ -29,18 +29,23 @@ abstract type AbsorbingMovement <: MovementMode end
 """
     RandomisedShortestPath <: ArrivingMovementMode
 
-Randomised shortest path movement. Intermediate between LeastCost and RandomWalk.
+    RandomisedShortestPath(; theta, distance_transformation, diagvalue, approx)
+
+Randomised shortest path movement. Intermediate between 
+[`LeastCost`](@ref) and [`RandomWalk`](@ref).
 
 Assumes partial knowledge and immortality.
 
 ## Keywords
 
-- `θ`: the probability of teleportation
-- `diagvalue`: the value to use for the diagonal of the proximity matrix
+- `theta`: the inverse temperature (TODO: in more ecological terms)
+- `diagvalue`: the value to use for the diagonal of the proximity matrix.
+    (TODO: explain why its relevent)
 - `approx`: whether to use an approximate algorithm
+    (TODO: more detail)
 """
 @kwdef struct RandomisedShortestPath{
-    PM<:Union{DistanceMeasure,ProximityMeasure,Nothing},DT,T<:Union{Real,Nothing},DV
+    PM<:Union{ProximityMeasure,Nothing},DT,T<:Union{Real,Nothing},DV
 } <: ArrivingMovement
     proximity_measure::PM = ExpectedCost()
     distance_transformation::DT = nothing
@@ -54,28 +59,42 @@ RandomisedShortestPath(proximity_measure; kw...) =
 const RSP = RandomisedShortestPath
 
 proximity_measure(mm::RandomisedShortestPath) = mm.proximity_measure
-distance_transformation(mm::RandomisedShortestPath) = mm.distance_transformation
-diagvalue(mm::RandomisedShortestPath) = mm.diagvalue
 approx(mm::RandomisedShortestPath) = mm.approx
 theta(mm::RandomisedShortestPath) = mm.theta
 
 """
     LeastCost <: ArrivingMovementMode
 
-Identical to RSP with theta of Inf (if that could run).
+    LeastCost(; distance_transformation, diagvalue)
+
+Identical to [`RandomisedShortestPath`](@ref) with `theta` of `Inf`, 
+if that would run.
 
 Assumes infinite knowledge and immortality.
 """
-struct LeastCost <: ArrivingMovement end
+@kwdef struct LeastCost{DT,DV} <: ArrivingMovement 
+    distance_transformation::DT = nothing
+    diagvalue::DV = nothing
+end
+
+const LC = LeastCost
 
 """
     RandomWalk <: ArrivingMovementMode
 
-Identical to RSP with theta of 0 (if that could run).
+    RandomWalk(; distance_transformation, diagvalue)
+
+Identical to [`RandomisedShortestPath`](@ref) with `theta` of `0`, 
+if that could run.
 
 Assumes zero knowledge but immortality.
 """
-struct RandomWalk <: ArrivingMovement end
+@kwdef struct RandomWalk{DT,DV} <: ArrivingMovement 
+    distance_transformation::DT = nothing
+    diagvalue::DV = nothing
+end
+
+const RW = RandomWalk
 
 """
     AbsorbingRandomWalk <: AbsorbingMovementMode

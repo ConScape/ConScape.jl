@@ -10,8 +10,8 @@ _tempdir = mkdir(tempname())
 θ = 0.1
 landscape = "sno_2000"
 # The way the ascii is read in is reversed and rotated from what GDAL does
-affinities = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "affinities_$landscape.asc")), NaN)); dims=X)
-source_qualities = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "qualities_$landscape.asc")), NaN)); dims=X)
+affinities = reverse(rotr90(Raster(joinpath(datadir, "affinities_$landscape.asc"); missingval=NaN)); dims=X)
+source_qualities = reverse(rotr90(Raster(joinpath(datadir, "qualities_$landscape.asc"); missingval=NaN)); dims=X)
 source_qualities[(affinities .> 0) .& isnan.(source_qualities)] .= 1e-20
 rast = RasterStack((; affinities, source_qualities, target_qualities=source_qualities))
 
@@ -22,7 +22,6 @@ measures = (;
     ebetq=EdgeBetweenness(QualityWeighted()),
     ebetk=EdgeBetweenness(QualityAndProximityWeighted()),
     mkld=KullbackLeiblerDivergence(),
-    # sens=ConScape.Sensitivity(; with_regards_to=ConScape.Cost()),
     # eigmax=ConScape.EigMax(),
     # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 )
@@ -286,3 +285,34 @@ end
 # end
 
 # end
+
+measures = (;
+    ec=ExpectedCost(), # what should this do?
+    ch=ConnectedHabitat(),
+    # betq=Betweenness(QualityWeighted()),
+    # betk=Betweenness(QualityAndProximityWeighted()),
+    # ebetq=EdgeBetweenness(QualityWeighted()),
+    # ebetk=EdgeBetweenness(QualityAndProximityWeighted()),
+    # sens=ConScape.Sensitivity(; context=ConScape.Cost()),
+    # mkld=KullbackLeiblerDivergence(),
+)
+
+# RSP
+movement_mode = RandomisedShortestPath(; proximity_measure=PowerMeanProximity(), theta=θ, distance_transformation=MinusLog())
+movement_mode = RandomisedShortestPath(; proximity_measure=ExpectedCost(), theta=θ, distance_transformation=MinusLog())
+problem = ConScape.Problem(; measures, movement_mode);
+res = solve(problem, rast)
+plot(res.ch; size=(1000, 1000))
+
+# Least Cost
+movement_mode = LeastCost()
+problem = ConScape.Problem(; measures, movement_mode);
+@profview solve(problem, rast);
+res = solve(problem, rast)
+using Plots
+plot(res.sens; size=(1000, 1000), clims=(0, 0.1))
+
+# Random Walk
+movement_mode = RandomWalk()
+problem = ConScape.Problem(; measures, movement_mode);
+res = solve(problem, rast)

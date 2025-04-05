@@ -1,7 +1,8 @@
 """
    VectorSolver(; check, threaded)
 
-Use julias default solver over vector colums of the problem.
+Use Julias' default UMFPACK solver, 
+over vector columns for each target of the problem.
 """
 @kwdef struct VectorSolver <: Solver
     check::Bool = true
@@ -29,15 +30,16 @@ TODO: an example that is realistic
 
 ````julia
 using LinearSolve
-distance_transformation = (exp=x -> exp(-x/75), oddsfor=ConScape.OddsFor()),
-problem = ConScape.Problem(; 
-    solver = LinearSolver(KrylovJL_GMRES(precs = (A, p) -> (Diagonal(A), I)))
-    measures = (;
-        func=ConnectedHabitat(),
-        qbetw=Betweenness(QualityWeighted()),
-    ),
-    movement_mode = RandomisedShortestPath(ExpectedCost(), theta=1.0),
+measures = (;
+    func=ConnectedHabitat(),
+    qbetw=Betweenness(QualityWeighted()),
 )
+movement_mode = RandomisedShortestPath(ExpectedCost(); theta=1.0)
+solver = LinearSolver(KrylovJL_GMRES(precs = (A, p) -> (Diagonal(A), I)))
+problem = ConScape.Problem(measures; movement_mode, solver) 
+
+rast = RasterStack((source_qualities="source_qs.tif", target_qualities="target_qs.tif"))
+result = solve(problem, rast)
 ````
 """
 struct LinearSolver{A,K} <: Solver

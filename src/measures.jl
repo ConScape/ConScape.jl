@@ -1,117 +1,230 @@
 abstract type Measure end
 
 """
-    SourceTargetMeasure 
+    GraphMeasure <: Measure
 
-Abstract supertype for source-target measures.
-
-These characterize distance, proximity or path distribution between source and target pixels.
-
-These produce a dense fundamental matrix, but may return a summary of it such as the mean.
+Measure in graph space, that return a sparse array from `solve`.
 """
-abstract type SourceTargetMeasure <: Measure end
+abstract type GraphMeasure <: Measure end
+"""
+    SpatialMeasure <: Measure
 
-abstract type PathDistributionMeasure <: SourceTargetMeasure end
+Measure in physical space, that return a dense raster matrix from `solve`.
+"""
+abstract type SpatialMeasure <: Measure end
+"""
+    PathDistributionMeasure <: Measure
 
-abstract type ProximityMeasure <: SourceTargetMeasure end
-abstract type DistanceMeasure <: SourceTargetMeasure end
+Measures of path distribution, that return a scalar from `solve`.
+"""
+abstract type PathDistributionMeasure <: Measure end
+
+"""
+    ProximityMeasure <: GraphMeasure
+
+Abstract supertype for measures that can be used
+directly as proximities (TODO: explain what proximities are)
+
+The returned value is a sparse array.
+"""
+abstract type ProximityMeasure <: GraphMeasure end
+
+"""
+    DistanceMeasure <: ProximityMeasure
+
+Abstract supertype for measures that need conversion 
+with `distance_transformation` to be used as proximities.
+
+They return a sparse array from `solve`.
+"""
+abstract type DistanceMeasure <: ProximityMeasure end
+
+# Distances and proximities
 
 struct ExpectedCost <: DistanceMeasure end
 struct FreeEnergyDistance <: DistanceMeasure end
+struct HittingTime <: DistanceMeasure end
 struct PowerMeanProximity <: ProximityMeasure end
+
 # TODO: look at theta use for SurvivalProbability, it should be 1
 struct SurvivalProbability <: ProximityMeasure end
 struct KullbackLeiblerDivergence <: PathDistributionMeasure end
-struct HittingTime <: DistanceMeasure end
-
-"""
-    GraphMeasure 
-
-Abstract supertype for graph measures.
-"""
-abstract type GraphMeasure <: Measure end
-
-abstract type SpatialMeasure <: GraphMeasure end
-abstract type PerturbationMeasure <: SpatialMeasure end
 
 # Betweenness
-
-"""
-    BetweennessMeasure 
-
-Measures of node and edge betweenness.
-"""
-abstract type BetweennessMeasure{W} <: SpatialMeasure end
 
 abstract type BetweennessWeighting end
 
 struct Unweighted <: BetweennessWeighting end
+
+"""
+    QualityWeighted <: BetweennessWeighting
+
+    QualityWeighted()
+
+Compute betweenness of nodes or edges weighted by source and target qualities.
+"""
 struct QualityWeighted <: BetweennessWeighting end
+"""
+    ProximityWeighted <: BetweennessWeighting
+
+    ProximityWeighted()
+
+Compute betweenness of nodes or edges weighted by the 
+proxmimity between source qualities s and target qualities t.
+"""
 struct ProximityWeighted <: BetweennessWeighting end
+"""
+    QualityAndProximityWeighted <: BetweennessWeighting
+
+    QualityAndProximityWeighted()
+
+Compute betweenness of nodes or edges weighted by source qualities s 
+and target qualities t, and the proximity between s and t.
+"""
 struct QualityAndProximityWeighted <: BetweennessWeighting end
 
-@kwdef struct Betweenness{W} <: BetweennessMeasure{W}
+"""
+    Betweenness <: SpatialMeasure
+    
+    Betweenness(weighting)
+
+Compute betweenness of all edges weighted by qualities of 
+source s and target t and the proximity between s and t,
+as defined by the [`MovementMode`](@ref)).
+
+## Arguments
+
+- `weighting`: a `BetweennessWeighting`: `Unweighted()`, `QualityWeighted()` 
+    `ProximityWeighted()` or `QualityAndProximityWeighted()`
+
+The value returned from `solve` is a spatial `Raster` or `Matrix`.
+"""
+@kwdef struct Betweenness{W} <: SpatialMeasure
     weighting::W
 end
-@kwdef struct EdgeBetweenness{W} <: BetweennessMeasure{W}
+"""
+    EdgeBetweenness <: GraphMeasure
+
+    EdgeBetweenness(weighting)
+
+Compute betweenness of all edges weighted by qualities of 
+source s and target t and the proximity between s and t. 
+
+- `weighting`: a `BetweennessWeighting`: `Unweighted()`, `QualityWeighted()` 
+    `ProximityWeighted()` or `QualityAndProximityWeighted()`
+
+Returns a sparse matrix where element (i, j) is the betweenness of edge (i, j).
+"""
+@kwdef struct EdgeBetweenness{W} <: GraphMeasure
     weighting::W
 end
 
-weighting(gm::BetweennessMeasure) = gm.weighting
+weighting(gm::Betweenness) = gm.weighting
+weighting(gm::EdgeBetweenness) = gm.weighting
 
 # Sensitivity
 
 abstract type SensitivityContext end # "With regards to"
-
-struct Affinity <: SensitivityContext end
-struct Cost <: SensitivityContext end
-struct Quality <: SensitivityContext end
-abstract type CostAndAffinitySensitivityContext end
+abstract type Permeability <: SensitivityContext end
+abstract type CostAndAffinitySensitivityContext <: Permeability end
+struct Affinity <: Permeability end
+struct Cost <: Permeability end
+struct Quality <: Permeability end
 struct CostAndAffinity <: CostAndAffinitySensitivityContext end
 struct AffinityAndCost <: CostAndAffinitySensitivityContext end
 
-abstract type LandscapeMeasure end
+abstract type SensitivitySummary end
+struct LandscapeSum <: SensitivitySummary end
+struct LandscapeEigen <: SensitivitySummary end
 
-struct LandscapeSum <: LandscapeMeasure end
-struct LandscapeEigen <: LandscapeMeasure end
+abstract type SensitivityChange end
+struct UnitChange <: SensitivityChange end
+struct ProportionalChange <: SensitivityChange end
 
-@kwdef struct Sensitivity{W<:SensitivityContext,LM<:LandscapeMeasure} <: PerturbationMeasure
-    with_regards_to::W
-    landscape_measure::LM = LandscapeSum()
-    unitless::Bool = false
+"""
+    Sensitivity <: SpatialMeasure
+
+    Sensitivity(; context, summary, change)
+
+Compute sensitivity of all nodes. 
+
+## Keywords
+
+- `context`: Five types of node sensitivity are implemented: `Affinity()`, `Cost()`, 
+    `Quality()`, `CostAndAffinity()` and `AffinityAndCost()`.
+- `summary`: Two [`SensitivitySummary`](@ref)s are implemented to summarize the landscape matrix 
+    either through summation ([`LandscapeSum()`](@ref)) or through eigen analysis [`LandscapeEigen()`](@ref). 
+    The default is `LandscapeSum()`.
+- `change`: The results can be provided either as sensitivity w.r.t. `UnitChange()`
+    or w.r.t. `ProportionalChange()`, the latter are also known as elasticities. The default is `UnitChange()`
+
+The value returned from `solve` is a spatial `Raster` or `Matrix`.
+"""
+@kwdef struct Sensitivity{Co<:SensitivityContext,Su<:SensitivitySummary,Ch<:SensitivityChange} <: SpatialMeasure
+    context::Co
+    summary::Su = LandscapeSum()
+    change::Ch = UnitChange()
 end
 
-wrt(gm::Sensitivity) = gm.with_regards_to
-unitless(gm::Sensitivity) = gm.unitless
-landscape_measure(gm::Sensitivity) = gm.landscape_measure
+context(gm::Sensitivity) = gm.context
+change(gm::Sensitivity) = gm.change
+summary(gm::Sensitivity) = gm.summary
 
 # Others
 
+"""
+    ConnectedHabitat <: SpatialMeasure
+
+    ConnectedHabitat()
+
+Compute connected habitat of all sources weighted by qualities of 
+source s and target t and the proximity between s and t, 
+as defined by the [`MovementMode`](@ref)).
+
+The value returned from `solve` is a spatial `Raster` or `Matrix`.
+"""
 struct ConnectedHabitat <: SpatialMeasure end
 
-@kwdef struct Criticality{AV,QT,QS} <: PerturbationMeasure
+@kwdef struct Criticality{AV,QT,QS} <: SpatialMeasure
     avalue::AV = floatmin()
     qˢvalue::QS = 0.0
     qᵗvalue::QT = 0.0
 end
 
-@kwdef struct EigMax{T} <: GraphMeasure
+"""
+    EigMax <: Measure
+
+    Eigmax(tol)
+
+Compute the largest eigenvalue triple (left vector, value, and right vector) 
+of the quality-scaled proximities with respect to the distance/proximity measure 
+in the [`MovementMode`](@ref).
+"""
+@kwdef struct EigMax{T} <: Measure
     tol::T = 1e-14
 end
 
+Base.Symbol(m::Measure) = nameof(typeof(m))
+Base.Symbol(m::Union{Betweenness,EdgeBetweenness}) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))
+# TODO: also needs unitless
+function Base.Symbol(m::Sensitivity) 
+    Symbol(
+        nameof(typeof(m)), :_, 
+        nameof(typeof(context(m))), :_, 
+        nameof(typeof(summary(m))), :_, 
+        nameof(typeof(change(m)))
+    )
+end
+
 # Return type traits
-returntrait(::ConnectedHabitat) = SumDenseSpatial()
-returntrait(::Betweenness) = SumDenseSpatial()
-returntrait(::EdgeBetweenness) = AssignSparse()
-returntrait(::DistanceMeasure) = AssignSparse()
-returntrait(::ProximityMeasure) = AssignSparse()
-returntrait(::KullbackLeiblerDivergence) = SumScalar()
+returntrait(::SpatialMeasure) = SumDenseSpatial()
+returntrait(::GraphMeasure) = AssignSparse()
+returntrait(::PathDistributionMeasure) = SumScalar()
 
 # Workspace allocation traits
 needs_workspaces(::Measure) = 1
-needs_workspaces(::BetweennessMeasure) = 2
-needs_workspaces(::EdgeBetweenness{QualityAndProximityWeighted}) = 3
-needs_workspaces(::EdgeBetweenness{QualityWeighted}) = 4
+needs_workspaces(::Betweenness) = 2
+needs_workspaces(::EdgeBetweenness) = 4
 # Count how many workspaces are needed for a problem
 nworkspaces(p::AbstractProblem) =
     isempty(measures(p)) ? 0 : mapreduce(needs_workspaces, +, measures(p))
