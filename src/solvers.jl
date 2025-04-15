@@ -42,12 +42,22 @@ rast = RasterStack((source_qualities="source_qs.tif", target_qualities="target_q
 result = solve(problem, rast)
 ````
 """
-struct LinearSolver{A,K} <: Solver
+struct LinearSolver{A<:Tuple,K} <: Solver
     args::A
     keywords::K
     threaded::Bool
+    # Constructors error without LinearSolve.jl loaded
+    function LinearSolver(args, kw, threaded) 
+        args isa Tuple || throw(ArgumentError("args must be a Tuple"))
+        threaded isa Bool || throw(ArgumentError("threaded must be a Bool"))
+        error("First run `using LinearSolve` to use LinearSolver")
+    end
+    LinearSolver{A,K}(args::A, kw::K, threaded::Bool) where {A,K} =
+        new{A,K}(args, kw, threaded)
 end
 LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
+
+# See implementation in ext/ConScapeLinearSolveExt.jl
 
 isthreaded(s::Solver) = false
 isthreaded(s::LinearSolver) = s.threaded

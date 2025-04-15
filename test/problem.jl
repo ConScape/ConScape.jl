@@ -1,3 +1,4 @@
+nothing
 using ConScape, Test, SparseArrays, LinearAlgebra
 using Rasters, ArchGDAL
 using OldConScape
@@ -287,32 +288,97 @@ end
 # end
 
 measures = (;
-    ec=ExpectedCost(), # what should this do?
-    ch=ConnectedHabitat(),
-    # betq=Betweenness(QualityWeighted()),
-    # betk=Betweenness(QualityAndProximityWeighted()),
     # ebetq=EdgeBetweenness(QualityWeighted()),
     # ebetk=EdgeBetweenness(QualityAndProximityWeighted()),
-    # sens=ConScape.Sensitivity(; context=ConScape.Cost()),
+    sens_cost=ConScape.Sensitivity(; context=ConScape.Cost()),
+    sens_affinity=ConScape.Sensitivity(; context=ConScape.Affinity()),
+    sens_costandaffinity=ConScape.Sensitivity(; context=ConScape.CostAndAffinity()),
+    sens_affinityandcost=ConScape.Sensitivity(; context=ConScape.AffinityAndCost()),
+    sens_cost_prop=ConScape.Sensitivity(; change=ConScape.ProportionalChange(), context=ConScape.Cost()),
+    sens_affinity_prop=ConScape.Sensitivity(; change=ConScape.ProportionalChange(), context=ConScape.Affinity()),
+    sens_costandaffinity_prop=ConScape.Sensitivity(; change=ConScape.ProportionalChange(), context=ConScape.CostAndAffinity()),
+    sens_affinityandcost_prop=ConScape.Sensitivity(; change=ConScape.ProportionalChange(), context=ConScape.AffinityAndCost()),
     # mkld=KullbackLeiblerDivergence(),
+    # ec=ExpectedCost(), # what should this do?
+    ch=ConnectedHabitat(),
+    betq=Betweenness(QualityWeighted()),
+    betk=Betweenness(QualityAndProximityWeighted()),
 )
 
+measures = (;
+    # ebetq=EdgeBetweenness(QualityWeighted()),
+    # ebetk=EdgeBetweenness(QualityAndProximityWeighted()),
+    # mkld=KullbackLeiblerDivergence(),
+    # ec=ExpectedCost(), # what should this do?
+    # ch=ConnectedHabitat(),
+    betk=Betweenness(ProximityWeighted()),
+    betm=Betweenness(QualityAndProximityWeighted()),
+    betq=Betweenness(QualityWeighted()),
+    betu=Betweenness(ConScape.Unweighted()),
+)
+
+using Plots
 # RSP
-movement_mode = RandomisedShortestPath(; proximity_measure=PowerMeanProximity(), theta=θ, distance_transformation=MinusLog())
-movement_mode = RandomisedShortestPath(; proximity_measure=ExpectedCost(), theta=θ, distance_transformation=MinusLog())
-problem = ConScape.Problem(; measures, movement_mode);
-res = solve(problem, rast)
-plot(res.ch; size=(1000, 1000))
+mm_pmp = RandomisedShortestPath(; 
+    proximity_measure=PowerMeanProximity(), 
+    distance_transformation=ExpMinusAlpha(1.0),
+    theta=0.01, 
+)
+mm_ec = RandomisedShortestPath(; 
+    proximity_measure=ExpectedCost(), 
+    distance_transformation=ExpMinusAlpha(1),
+    theta=0.01, 
+)
+problem_pmp = ConScape.Problem(; 
+    measures, movement_mode=mm_pmp, 
+    costfunction=ConScape.MinusLog()
+)
+problem_ec = ConScape.Problem(; 
+    measures, movement_mode=mm_ec, 
+    costfunction=ConScape.MinusLog()
+)
+rsp_ec = solve(problem_ec, rast)
+rsp_pmp = solve(problem_pmp, rast)
+plot(rsp_ec; size=(1200, 900), layout=(4, 3))#, clims=(0, 2000))
+plot(rsp_pmp; size=(1200, 900), layout=(4, 3))#, clims=(0, 2000))
+plot(rsp_ec.sens_affinityandcost; size=(1200, 900))
+collect(skipmissing(rsp_ec.sens_affinityandcost))
+# plot(rast)
 
 # Least Cost
-movement_mode = LeastCost()
+
+# Least Cost
+movement_mode = LeastCost(;
+    distance_transformation=ExpMinusAlpha(2.0),
+)
 problem = ConScape.Problem(; measures, movement_mode);
-@profview solve(problem, rast);
-res = solve(problem, rast)
-using Plots
-plot(res.sens; size=(1000, 1000), clims=(0, 0.1))
+lc = solve(problem, rast)
+plot(lc; size=(1200, 700))
 
 # Random Walk
+measures = (;
+    # ec=ExpectedCost(),
+    ch=ConnectedHabitat(),
+    # ebetq=EdgeBetweenness(QualityWeighted()),
+    # ebetk=EdgeBetweenness(QualityAndProximityWeighted()),
+    # mkld=KullbackLeiblerDivergence(),
+    # betk=Betweenness(ProximityWeighted()),
+    # betm=Betweenness(QualityAndProximityWeighted()),
+    # betq=Betweenness(QualityWeighted()),
+    # betu=Betweenness(ConScape.Unweighted()),
+)
+using LinearSolve
 movement_mode = RandomWalk()
-problem = ConScape.Problem(; measures, movement_mode);
-res = solve(problem, rast)
+problem = ConScape.Problem(; measures, movement_mode, solver=LinearSolver(SimpleGMRES()));
+rw = solve(problem, rast)
+rw.ec[:, 1]
+rw.ec
+plot(rw.ch)
+
+using Plots
+for i in 1500:2000
+    @show i
+    v = rw.ec[:, i]
+    any(>(0), v) || continue
+    display(Plots.heatmap(reshape(v, size(rast)); size=(1200, 700)))
+end

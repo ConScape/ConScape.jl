@@ -47,6 +47,15 @@ update_output!(output, ::AssignDenseSpatial, v::Number, tp) = output[target(tp).
 update_output!(output, ::SumScalar, v::Number, tp) = output[] += v
 update_output!(output, ::SumDenseSpatial, v::AbstractVector, tp) = view(output, source_ids(tp)) .+= v
 update_output!(output, ::SumDenseSpatial, v::AbstractMatrix, tp) = output .+= v
-update_output!(output, ::AssignDense, v::AbstractVector, tp) = view(output, :, target(tp).id) .= v
 # Not sure this one makes sense
-update_output!(output, ::AssignSparse, v::AbstractVector, tp) = output[LinearIndices(size(tp))[source_ids(tp)], target(tp).id] .= v
+update_output!(output, ::AssignSparse, v::AbstractVector, tp) = 
+    output[LinearIndices(size(tp))[source_ids(tp)], target(tp).grid_id] .= v
+function update_output!(output, ::AssignDense, v::AbstractVector, tp)
+    targetcol = target(tp).grid_id
+    lininds = LinearIndices(size(tp))
+    for (i, s) in enumerate(source_ids(tp))
+        sourcerow = lininds[s]
+        output[sourcerow, targetcol] = v[i]
+    end
+    return output
+end

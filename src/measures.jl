@@ -1,3 +1,8 @@
+"""
+    Measure
+
+Abstract supertype for all ConScape.jl measures.
+"""
 abstract type Measure end
 
 """
@@ -23,17 +28,17 @@ abstract type PathDistributionMeasure <: Measure end
     ProximityMeasure <: GraphMeasure
 
 Abstract supertype for measures that can be used
-directly as proximities (TODO: explain what proximities are)
+as proximities (TODO: explain what proximities are)
 
-The returned value is a sparse array.
+They return a sparse array from `solve`.
 """
 abstract type ProximityMeasure <: GraphMeasure end
 
 """
     DistanceMeasure <: ProximityMeasure
 
-Abstract supertype for measures that need conversion 
-with `distance_transformation` to be used as proximities.
+Abstract supertype for measures that can be used as proximities,
+but first need conversion with a `distance_transformation`.
 
 They return a sparse array from `solve`.
 """
@@ -45,9 +50,8 @@ struct ExpectedCost <: DistanceMeasure end
 struct FreeEnergyDistance <: DistanceMeasure end
 struct HittingTime <: DistanceMeasure end
 struct PowerMeanProximity <: ProximityMeasure end
-
-# TODO: look at theta use for SurvivalProbability, it should be 1
 struct SurvivalProbability <: ProximityMeasure end
+
 struct KullbackLeiblerDivergence <: PathDistributionMeasure end
 
 # Betweenness
@@ -82,6 +86,18 @@ Compute betweenness of nodes or edges weighted by source qualities s
 and target qualities t, and the proximity between s and t.
 """
 struct QualityAndProximityWeighted <: BetweennessWeighting end
+"""
+    CustomWeighted <: BetweennessWeighting
+
+    CustomWeighted(weight)
+
+Holds and arbitrary array of custom weights. 
+
+Used internally.
+"""
+struct CustomWeighted{W} <: BetweennessWeighting 
+    weight::W
+end
 
 """
     Betweenness <: SpatialMeasure
@@ -218,13 +234,15 @@ end
 
 # Return type traits
 returntrait(::SpatialMeasure) = SumDenseSpatial()
-returntrait(::GraphMeasure) = AssignSparse()
+returntrait(::GraphMeasure) = AssignDense()
 returntrait(::PathDistributionMeasure) = SumScalar()
 
 # Workspace allocation traits
-needs_workspaces(::Measure) = 1
+needs_workspaces(::Measure) = 2
 needs_workspaces(::Betweenness) = 2
 needs_workspaces(::EdgeBetweenness) = 4
+needs_workspaces(::Sensitivity{<:Quality}) = 2
+needs_workspaces(::Sensitivity{<:Permeability}) = 6
 # Count how many workspaces are needed for a problem
 nworkspaces(p::AbstractProblem) =
     isempty(measures(p)) ? 0 : mapreduce(needs_workspaces, +, measures(p))

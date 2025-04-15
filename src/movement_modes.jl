@@ -77,6 +77,8 @@ Assumes infinite knowledge and immortality.
     diagvalue::DV = nothing
 end
 
+proximity_measure(mm::LeastCost) = ExpectedCost()
+
 const LC = LeastCost
 
 """
@@ -93,6 +95,8 @@ Assumes zero knowledge but immortality.
     distance_transformation::DT = nothing
     diagvalue::DV = nothing
 end
+
+proximity_measure(mm::RandomWalk) = ExpectedCost()
 
 const RW = RandomWalk
 
