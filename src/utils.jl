@@ -176,6 +176,11 @@ function mapnz(f, A::AbstractArray)
     return B
 end
 
+_prepare_qualities(A::AbstractMatrix) = _no_nan_f64.(_unwrap_raster(A))
+_no_nan_f64(x) = Float64(x) # == isnan(x) ? 0.0 : Float64(x)
+_unwrap_raster(R::Raster) = parent(R)
+_unwrap_raster(R::AbstractMatrix) = R
+
 _maybe_raster(mat::Raster, g::Initialisation) = mat
 _maybe_raster(mat::AbstractMatrix, g::Initialisation) =
     _maybe_raster(mat, dims(g))
@@ -184,6 +189,34 @@ _maybe_raster(mats::Union{Tuple,NamedTuple}, g::Initialisation) =
 _maybe_raster(x, _) = x
 _maybe_raster(mat::Matrix{T}, dims::Tuple) where T =
     Raster(mat, dims; missingval=T(NaN))
+
+# Compute a vector of the cartesian indices of nonzero target qualities and
+# the corresponding node id corresponding to the indices
+_target_spatial_ids(target_qauality::AbstractMatrix, source_spatial_ids::AbstractVector) = 
+    source_spatial_ids
+_target_spatial_ids(target_quality::Raster, source_spatial_ids::AbstractVector) = 
+    _target_spatial_ids(parent(target_quality), source_spatial_ids)
+function _target_spatial_ids(target_quality::SparseMatrixCSC, source_spatial_ids::AbstractVector)
+    is, js, _ = findnz(target_quality)
+    return intersect!(CartesianIndex.(is, js), source_spatial_ids)
+end
+
+function _target_ids(target_quality_spatial::AbstractMatrix, source_spatial_ids::Vector{CartesianIndex{2}}, all_spatial_ids::Vector{CartesianIndex{2}})
+    # Get spatial indices (CartesianIndex) of valid targets that are also spatial indices of sources
+    target_spatial_ids = _target_spatial_ids(target_quality_spatial, source_spatial_ids)
+    # Find the node ids (Int) for the source row corresponding with spatial indices
+    target_nodes = findall(source_spatial_ids) do id
+        id in target_spatial_ids
+    end
+    target_grid_ids = findall(all_spatial_ids) do id
+        id in target_spatial_ids
+    end
+    # Return Vector{NamedTuple} each with target.spatial and target.node
+    return map(target_spatial_ids, target_grid_ids, eachindex(target_nodes), target_nodes) do spatial, grid_id, subgrid_id, node
+        (; spatial, grid_id, subgrid_id, node)
+    end
+end
+
 
 function _fill_matrix(values, g::Initialisation)
     matrix = fill(NaN, size(g))
@@ -254,7 +287,8 @@ function split_subgraphs(g::Grid)
 
         # Get new source and target ids for subgraph
         source_ids = g.source_ids[scci]
-        target_ids = _target_ids(g.target_quality_spatial, source_ids)
+        all_spatial_ids = vec(collect(CartesianIndices(size(g))))
+        target_ids = _target_ids(g.target_quality_spatial, source_ids, all_spatial_ids)
 
         # Get source and target quality vectors for subgraph
         source_quality_vector = [g.source_quality_spatial[i] for i in source_ids]

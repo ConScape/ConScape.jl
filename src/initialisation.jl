@@ -101,7 +101,8 @@ function Grid(size::Tuple{Int,Int};
     # Initially just every node
 
     # Prune
-    source_ids = vec(collect(CartesianIndices(size)))
+    all_spatial_ids = vec(collect(CartesianIndices(size)))
+    source_ids = all_spatial_ids
     if prune
         nonzerocells = findall(!isnan ∘ !iszero, vec(sum(affinitymatrix, dims=1)))
         source_ids = source_ids[nonzerocells]
@@ -109,7 +110,7 @@ function Grid(size::Tuple{Int,Int};
     end
 
     # Subset of source_ids with valid quality
-    target_ids = _target_ids(target_qualities, source_ids)
+    target_ids = _target_ids(target_qualities, source_ids, all_spatial_ids)
     # Initially just all spatial source qualities
     source_quality_vector = vec(source_quality_spatial)
     # Subset of spatial target qualities with valid quality
@@ -127,7 +128,13 @@ function Grid(size::Tuple{Int,Int};
     )
 end
 function Grid(rast::RasterStack;
-    affinitymatrix=ConScape.graph_matrix_from_raster(rast.affinities),
+    affinitymatrix=ConScape.graph_matrix_from_raster(rast.affinities; matrix_type=AffinityMatrix()),
+    costfunction=nothing,
+    costmatrix=if haskey(rast, :costs) 
+        ConScape.graph_matrix_from_raster(rast.costs; matrix_type=CostMatrix()) 
+    else
+        mapnz(costfunction, affinitymatrix)
+    end,
     source_qualities=rast.source_qualities,
     target_qualities=get(rast, :target_qualities, source_qualities),
     kw...
