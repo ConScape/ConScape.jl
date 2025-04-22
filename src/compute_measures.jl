@@ -99,20 +99,40 @@ end
     end
 end
 
+# Variable generation for TargetInit
+function _proximitymatrix(ti::TargetInit{<:RSP})
+    pm = proximity_measure(ti)
+    proximities = get_or_compute!(ti, pm)
+    if pm isa DistanceMeasure
+        dt = distance_transformation(ti)
+        if !isnothing(dt)
+            proximities .= dt.(proximities)
+        end
+    end
+    _maybe_set_diagonal!(proximities, diagvalue(ti), target(ti).node)
+    return proximities
+end
+function _fundamentalmatrix(ti::TargetInit{<:RSP})
+    workspace1, workspace2 = workspaces(ti)
+    b = _rhs!(workspace1, nsources(ti), target(ti))
+    b_copy = _rhs!(workspace2, nsources(ti), target(ti))
+    return ldiv!(solver(ti), b, ti.IW_factorization, b_copy)
+end
+function _fundamental_rows(ti::TargetInit{<:RSP})
+    b = _rhs!(ti.workspace, nsources(ti), target(ti))
+    return ldiv!(ti, ti.IW_adj_factorization, b)
+end
+
 
 ######################################################################################
 # Proximities
 
-# TODO: the loop here doesn't decompose to single targets, so the full Z matrix seems to be needed.
-# this is a problem for memory use in e.g. BatchProblem, D may be large fraction of 
-# the available memory per node on the cluster (~3gb per core)
-
 function compute(
     ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}
 )
-    (; PC_rowsums, IP) = ti
+    (; IP) = ti
     node = target(ti).node
-    PC_rowsums, v = workspaces(ti) 
+    PC_rowsums, v = workspaces(ti)
     # Set target rowsum of PC to zero
     PC_rowsums .= ti.PC_rowsums
     PC_rowsums[node] = 0
@@ -120,13 +140,16 @@ function compute(
     v .= view(IP, node, :)
     IP[node, :] .= zero(eltype(PC_rowsums))
     IP[node, node] = 1
-    # Factorize I - P (TODO: a faster way to factorize this)
+    # Factorize I - P 
+    # TODO: use a WoodburyMatrix for IP
     F = init(solver(ti), IP)
     # Restore the target column of IP
     IP[node, :] = v
     # Solve (I - P) \ PC_rowsums
     return ldiv!(ti, F, PC_rowsums)
 end
+
+# RSP
 function compute(::ExpectedCost, ti::TargetInit{<:RSP})
     (; C̄) = ti
     # Subtract the cost at the target from all sources
@@ -334,14 +357,14 @@ end
 
 _combine_sensitivity(::Affinity, S_e_aff, S_e_cost, ti) = S_e_aff
 _combine_sensitivity(::Cost, S_e_aff, S_e_cost, ti) = S_e_cost
-function _combine_sensitivity(::AffinityAndCost, S_e_aff, S_e_cost, ti)
+function _combine_sensitivity(::CostToAffinity, S_e_aff, S_e_cost, ti)
     f = _diff_CA(costfunction(ti))
     C = view(costmatrix(ti), :, target(ti).node)
     # TODO: what happens with the zeros in `costmatrix``
     # -inv(0.0) * 1.0 === NaN so we generate a lot of nans here
     return ti.workspace .= S_e_aff .+ S_e_cost .* f.(C)# .* C .!= 0
 end
-function _combine_sensitivity(::CostAndAffinity, S_e_aff, S_e_cost, ti)
+function _combine_sensitivity(::AffinityToCost, S_e_aff, S_e_cost, ti)
     f = _diff_AC(costfunction(ti))
     A = view(affinitymatrix(ti), :, target(ti).node)   
     return ti.workspace .= S_e_cost .+ S_e_aff .* f.(A)
@@ -408,9 +431,9 @@ _diff_KD(x::ExpMinusAlpha) = k -> -k * x.alpha
 _diff_KD(::ExpMinus) = k -> -k
 _diff_KD(::Inv) = k -> -k ^ 2
 
-_maybe_scale(a, ::ProportionalChange, ::Union{Affinity,AffinityAndCost}, ti) =
+_maybe_scale(a, ::ProportionalChange, ::Union{Affinity,AffinityToCost}, ti) =
     ti.workspace .= a .* view(affinitymatrix(ti), :, target(ti).node)
-_maybe_scale(a, ::ProportionalChange, ::Union{Cost,CostAndAffinity}, ti) =
+_maybe_scale(a, ::ProportionalChange, ::Union{Cost,CostToAffinity}, ti) =
     ti.workspace .= a .* view(costmatrix(ti), :, target(ti).node)
 _maybe_scale(a, ::UnitChange, ::Permeability, ti) = a
 

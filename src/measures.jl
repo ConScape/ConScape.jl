@@ -146,8 +146,8 @@ abstract type CostAndAffinitySensitivityContext <: Permeability end
 struct Affinity <: Permeability end
 struct Cost <: Permeability end
 struct Quality <: Permeability end
-struct CostAndAffinity <: CostAndAffinitySensitivityContext end
-struct AffinityAndCost <: CostAndAffinitySensitivityContext end
+struct CostToAffinity <: CostAndAffinitySensitivityContext end
+struct AffinityToCost <: CostAndAffinitySensitivityContext end
 
 abstract type SensitivitySummary end
 struct LandscapeSum <: SensitivitySummary end

@@ -49,11 +49,11 @@ It is possible to also supply matrices of `source_qualities` and `target_qualiti
 
 Alternatively, it is possible to supply a matrix to `costs` directly. If `prune=true` (the default), 
 """
-struct Grid{D<:Union{Tuple,Nothing},F<:Union{Nothing,Transformation},SQ,TQ} <: Initialisation
+struct Grid{D<:Union{Tuple,Nothing},F<:Union{Nothing,Transformation},C<:AbstractMatrix,A<:AbstractMatrix,SQ,TQ} <: Initialisation
     size::Tuple{Int,Int}
     costfunction::F
-    costmatrix::SparseMatrixCSC{Float64,Int}
-    affinitymatrix::SparseMatrixCSC{Float64,Int}
+    costmatrix::C
+    affinitymatrix::A
     source_quality_spatial::SQ
     target_quality_spatial::TQ
     source_quality_vector::Vector{Float64}
@@ -64,7 +64,7 @@ struct Grid{D<:Union{Tuple,Nothing},F<:Union{Nothing,Transformation},SQ,TQ} <: I
 end
 Grid(nrows::Int, ncols::Int; kw...) = Grid((nrows, ncols); kw...)
 function Grid(size::Tuple{Int,Int};
-    affinitymatrix::SparseMatrixCSC{Float64,Int},
+    affinitymatrix::AbstractMatrix,
     qualities::AbstractMatrix=ones(size),
     source_qualities::AbstractMatrix=qualities,
     target_qualities::AbstractMatrix=qualities,
@@ -321,7 +321,7 @@ theta(mm::TargetInit) = theta(problem(mm))
 # All TargetInit allow retreiving proberties with `getproperty`
 # from the parent `GridInit` or calculated and stored in 
 # the `TargetInit`
-function Base.getproperty(ti::TargetInit, x::Symbol)
+@inline function Base.getproperty(ti::TargetInit, x::Symbol)
     if x === :workspace
         return take!(workspaces(ti))
     elseif x === :θ 
@@ -390,6 +390,7 @@ function _probabilitymatrix(A::SparseMatrixCSC)
     P = Diagonal(source_scaling) * A
     return P, source_sums
 end
+# Substochastic
 function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
     LinearAlgebra.checksquare(Pref)
     W = Pref .* exp.(-θ .* C)
@@ -406,30 +407,6 @@ function _inv!(Zⁱ::AbstractArray, Z::AbstractArray)
     end
 end
 
-# Variable generation for TargetInit
-function _proximitymatrix(ti::TargetInit)
-    pm = proximity_measure(ti)
-    proximities = get_or_compute!(ti, pm)
-    if pm isa DistanceMeasure
-        dt = distance_transformation(ti)
-        if !isnothing(dt)
-            proximities .= dt.(proximities)
-        end
-    end
-    _maybe_set_diagonal!(proximities, diagvalue(ti), target(ti).node)
-    return proximities
-end
-function _fundamentalmatrix(ti::TargetInit{<:RSP})
-    workspace1, workspace2 = workspaces(ti)
-    b = _rhs!(workspace1, nsources(ti), target(ti))
-    b_copy = _rhs!(workspace2, nsources(ti), target(ti))
-    return ldiv!(solver(ti), b, ti.IW_factorization, b_copy)
-end
-function _fundamental_rows(ti::TargetInit{<:RSP})
-    b = ti.workspace
-    _rhs!(b, nsources(ti), target(ti))
-    ldiv!(ti, ti.IW_adj_factorization, b)
-end
 function _check_z(ti::TargetInit{<:RSP})
     # Check that values in Z are not too small
     # TODO: does this make sense for single targets
@@ -462,6 +439,7 @@ init(problem::Problem, rast::RasterStack; kw...) = MultiGridInit(problem, rast; 
 init(problem::Problem, grid::Grid; kw...) = MultiGridInit(problem, grid; kw...)
 init(gi::GridInit, target::Union{Int,TargetID}) = TargetInit(gi, target)
 init(mgi::MultiGridInit, subgrid_id::Int; kw...) = GridInit(mgi, subgrid_id; kw...)
+
 
 solve(p::Problem, input::Union{Grid,RasterStack}; kw...) = 
     solve(init(p, input; kw...))
