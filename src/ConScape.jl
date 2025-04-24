@@ -8,6 +8,7 @@ using Rasters
 using SimpleWeightedGraphs
 using SparseArrays
 using SortTileRecursiveTree
+using WoodburyMatrices
 
 import GeometryOps as GO
 import GeometryOps.GeoInterface as GI
@@ -55,6 +56,7 @@ abstract type AbstractProblem end
 
 include("transformations.jl")
 include("workspaces.jl")
+include("readonlyarray.jl")
 include("measures.jl")
 include("movement_modes.jl")
 include("problem.jl")

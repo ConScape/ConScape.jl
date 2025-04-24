@@ -3,7 +3,9 @@ function get_or_compute!(ti::TargetInit, m::Measure)
     x = Symbol(m)
     haskey(st, x) && return st[x]
     output = compute(m, ti)
-    st[x] = output
+    if returntrait(m) isa Union{AssignDense,SumDenseSpatial}
+        st[x] = output
+    end
     return output
 end
 @inline function get_or_compute!(ti::TargetInit{<:RSP}, x::Symbol)::Vector{Float64}
@@ -12,61 +14,58 @@ end
     output = if x === :Z # "fundamental matrix"
         _fundamentalmatrix(ti)
     elseif x === :Zⁱ # elementwise inverse of Z
-        _inv!(ti.workspace, ti.Z)
-    elseif x === :Q
-        (; qˢ, qᵗ, workspace) = ti
-        workspace .= qˢ .* qᵗ
+        ReadOnlyArray(_inv!(ti.workspace, ti.Z))
+    elseif x === :Zrows
+        _fundamentalrowmatrix(ti)
     elseif x === :Y # Unadjusted expected cost
         (; CW, Z, IW_factorization, workspace) = ti
         # Solve: (I - W) \ (C .* W) * Z ./ Z
-        ldiv!(ti, IW_factorization, mul!(workspace, CW, Z))
-    elseif x === :C̄ # Unadjusted expected cost
-        (; Y, Zⁱ, workspace) = ti
-        workspace .= Y .* Zⁱ
-    elseif x === :QZⁱ 
-        (; Q, Zⁱ, workspace) = ti
-        workspace .= Q .* Zⁱ
+        ReadOnlyArray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
+    elseif x === :Q
+        _qualitymatrix(ti)
     elseif x === :K
         _proximitymatrix(ti)
     elseif x === :M
-        (; qˢ, K, qᵗ, workspace) = ti
-        workspace .= qˢ .* K .* qᵗ
-    elseif x === :MZⁱ 
-        (; M, Zⁱ, workspace) = ti
-        workspace .= M .* Zⁱ 
-    elseif x === :Zrows
-        _fundamental_rows(ti)
-    elseif x === :expected_costs
-        compute(ExpectedCost(), ti)
-    elseif x === :free_energy_distances
-        compute(FreeEnergyDistance(), ti)
-    elseif x === :survival_probabilities
-        compute(SurvivalProbability(), ti)
-    elseif x === :power_mean_proximities
-        compute(PowerMeanProximity(), ti)
+        _landscapematrix(ti)
     else
         error("Unknown property $x")
     end
     st[x] = output
     return output
 end
-@inline function get_or_compute!(ti::TargetInit{<:RandomWalk}, x::Symbol)::Vector{Float64}
+@inline function get_or_compute!(ti::TargetInit{<:RandomWalk}, x::Symbol)
     st = storage(ti)
     haskey(st, x) && return st[x]
     # Either retrieve from storage, or calculate and store
     output = if x === :Z
-        (; IP, p, workspace) = ti
-        # TODO: non-square verson
-        inv(IP .+ p')
-    elseif x === :H
-        (; Z, p, workspace) = ti
-        # TODO: non-square verson
-        (diag(Z)' .- Z) ./ p'
+        _fundamentalmatrix(ti)
+    elseif x === :Zⁱ
+        _inv!(ti.workspace, ti.Z)
+    elseif x === :Zrows
+        _fundamentalrowmatrix(ti)
+    elseif x === :IW_factorization
+        _woodburysubtochasticmatrix(ti)
+    elseif x === :IW_adj_factorization
+        ti.IW_factorization'
+    elseif x === :W
+        # TODO less allocation
+        W = copy(ti.P);
+        t = target(ti).node
+        W[t, :] .= 0; # set target node as killing (t row set to 0)
+        W
+    elseif x === :CW
+        (; W) = ti
+        CW = costmatrix(ti) .* W
     elseif x === :K
         _proximitymatrix(ti)
     elseif x === :M
-        (; qˢ, K, qᵗ, workspace) = ti
-        workspace .= qˢ .* K .* qᵗ
+        _landscapematrix(ti)
+    elseif x === :Q
+        _qualitymatrix(ti)
+    elseif x === :Y # Unadjusted expected cost
+        (; CW, Z, IW_factorization, workspace) = ti
+        # Solve: (I - W) \ (C .* W) * Z ./ Z
+        ReadOnlyArray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
     else
         error("Unknown property $x")
     end
@@ -77,30 +76,29 @@ end
     st = storage(ti)
     haskey(st, x) && return st[x]
     # Either retrieve from storage, or calculate and store
-    if x == :shortest_paths
+    output = if x == :shortest_paths
         # TODO: this is very slow, use Eikonal.jl instead
         return Graphs.dijkstra_shortest_paths(ti.cost_weighted_digraph, target(ti).node)::Graphs.DijkstraState{Float64,Int}
     elseif x == :K # "proximity vector"
         (; shortest_paths, workspace) = ti
-        output = if isnothing(distance_transformation(ti))
+        if isnothing(distance_transformation(ti))
             workspace .= 1.0 # TODO is this right? not shortest_paths.dists?
         else
             workspace .= distance_transformation(ti).(shortest_paths.dists)
-        end
-        return (st[x] = output)::Vector{Float64}
+        end |> ReadOnlyArray
     elseif x === :M # "landscape vector"
-        (; Q, K, workspace) = ti
-        return (st[x] = workspace .= Q .* K)::Vector{Float64}
+        _landscapematrix(ti)
     elseif x === :Q
-        (; qˢ, qᵗ, workspace) = ti
-        (workspace .= qˢ .* qᵗ)::Vector{Float64}
+        _qualitymatrix(ti)
     else
         error("Unknown property $x")
     end
+    st[x] = output
+    return output
 end
 
 # Variable generation for TargetInit
-function _proximitymatrix(ti::TargetInit{<:RSP})
+function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     pm = proximity_measure(ti)
     proximities = get_or_compute!(ti, pm)
     if pm isa DistanceMeasure
@@ -110,19 +108,50 @@ function _proximitymatrix(ti::TargetInit{<:RSP})
         end
     end
     _maybe_set_diagonal!(proximities, diagvalue(ti), target(ti).node)
-    return proximities
+    return ReadOnlyArray(proximities)
 end
-function _fundamentalmatrix(ti::TargetInit{<:RSP})
+function _fundamentalmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     workspace1, workspace2 = workspaces(ti)
     b = _rhs!(workspace1, nsources(ti), target(ti))
     b_copy = _rhs!(workspace2, nsources(ti), target(ti))
-    return ldiv!(solver(ti), b, ti.IW_factorization, b_copy)
+    return ReadOnlyArray(ldiv!(solver(ti), b, ti.IW_factorization, b_copy))
 end
-function _fundamental_rows(ti::TargetInit{<:RSP})
+function _fundamentalrowmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     b = _rhs!(ti.workspace, nsources(ti), target(ti))
-    return ldiv!(ti, ti.IW_adj_factorization, b)
+    return ReadOnlyArray(ldiv!(ti, ti.IW_adj_factorization, b))
+end
+function _landscapematrix(ti::TargetInit)
+    (; qˢ, K, qᵗ, workspace) = ti
+    return ReadOnlyArray(workspace .= qˢ .* K .* qᵗ)
+end
+function _qualitymatrix(ti::TargetInit)
+    (; qˢ, qᵗ, workspace) = ti
+    return ReadOnlyArray(workspace .= qˢ .* qᵗ)
+end
+function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
+    (; P, IP, IP_factorization) = ti
+    t = target(ti).node
+    n = LinearAlgebra.checksquare(IP)
+    # Prepare a Woodbury matrix to cheaply zero out row t, without factorization
+    U = fill!(reshape(ti.workspace, (n, 1)), 0.0)
+    V = fill!(reshape(ti.workspace, (1, n)), 0.0)
+    U[t] = 1 # Identity
+    V .= .- (IP[t:t, :])       # So that IP[t, :] + UCV[t, :] .== 0
+    V[t] = -P[t, t] # So that IP[t, t] + UCV[t, t] = 1
+    C = 1 # Identity
+    # lu(I - W)
+    # @assert IP + U * C * V .- (I - W)
+    return Woodbury(IP_factorization, U, C, V)
 end
 
+# Custom `inv` broadcast that avoids Inf
+_inv(Z::AbstractArray) = _inv!(similar(Z), Z)
+function _inv!(Zⁱ::AbstractArray, Z::AbstractArray)
+    broadcast!(Zⁱ, Z) do x
+        x = inv(x)
+        isfinite(x) ? x : floatmax(eltype(Z))
+    end |> ReadOnlyArray
+end
 
 ######################################################################################
 # Proximities
@@ -130,40 +159,33 @@ end
 function compute(
     ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}
 )
-    (; IP) = ti
+    (; IW_factorization) = ti
     node = target(ti).node
-    PC_rowsums, v = workspaces(ti)
+    PC_rowsums = ti.workspace
     # Set target rowsum of PC to zero
     PC_rowsums .= ti.PC_rowsums
     PC_rowsums[node] = 0
-    # Remove target column from IP
-    v .= view(IP, node, :)
-    IP[node, :] .= zero(eltype(PC_rowsums))
-    IP[node, node] = 1
-    # Factorize I - P 
-    # TODO: use a WoodburyMatrix for IP
-    F = init(solver(ti), IP)
-    # Restore the target column of IP
-    IP[node, :] = v
-    # Solve (I - P) \ PC_rowsums
-    return ldiv!(ti, F, PC_rowsums)
+    # Solve (I - W) \ PC_rowsums
+    return ldiv!(ti, IW_factorization, PC_rowsums)
 end
 
 # RSP
 function compute(::ExpectedCost, ti::TargetInit{<:RSP})
-    (; C̄) = ti
+    (; Y, Zⁱ) = ti
+    C̄ = ti.workspace .= Y .* Zⁱ
     # Subtract the cost at the target from all sources
     C̄ .-= C̄[target(ti).node]
     return C̄
 end
 function compute(::FreeEnergyDistance, ti::TargetInit{<:RSP})
-    (; θ, survival_probabilities, workspace) = ti
-    return workspace .= -log.(max.(0, survival_probabilities)) ./ θ
+    (; θ, workspace) = ti
+    sp = get_or_compute!(ti, SurvivalProbability())
+    return workspace .= -log.(max.(0, sp)) ./ θ
 end
 function compute(::PowerMeanProximity, ti::TargetInit{<:RSP})
-    (; θ, survival_probabilities, workspace) = ti
-
-    return workspace .= survival_probabilities .^ (1 / θ)
+    (; θ, workspace) = ti
+    sp = get_or_compute!(ti, SurvivalProbability())
+    return workspace .= sp .^ (1 / θ)
 end
 function compute(::SurvivalProbability, ti::TargetInit{<:RSP})
     (; Z, workspace) = ti
@@ -198,7 +220,7 @@ function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LeastCost})
             fromᵢ, toᵢ = from[i], to[i]
             notdone |= (fromᵢ != toᵢ)
             fromᵢ == toᵢ && continue
-            output[i] += -log(probability[fromᵢ, toᵢ])
+            output[i] += -log(P[fromᵢ, toᵢ])
             from[i] = parents[toᵢ]
         end
         if !notdone
@@ -209,12 +231,13 @@ function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LeastCost})
     return sum(output .*= qˢ) * qᵗ # qs' * output * qt
 end
 function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:RandomWalk})
-    # Trivially returns zero ?
-    return 0.0
+    return 0.0 # Trivially returns zero
 end
 function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:RSP})
-    (; θ, free_energy_distances, expected_costs, qˢ, qᵗ, workspace) = ti
-    diff = workspace .= free_energy_distances .- expected_costs
+    (; θ, qˢ, qᵗ, workspace) = ti
+    fed = get_or_compute!(ti, FreeEnergyDistance())
+    ec = get_or_compute!(ti, ExpectedCost())
+    diff = workspace .= fed .- ec
     return sum(diff .*= qˢ) * qᵗ * θ # qˢ' * diff * qᵗ * θ
 end
 
@@ -253,13 +276,8 @@ function compute(m::Betweenness, ti::TargetInit{<:LeastCost})
     end
     return btw
 end
-# RandomWalk 
-function compute(m::Betweenness, ti::TargetInit{<:RandomWalk})
-    (; Z1, Z, H, p, workspace) = ti
-    return workspace .= Z1 .- Z .+ H .* p[target(ti).node] .* _weight(m, ti)
-end
-# RandomShortestPath
-function compute(m::Betweenness, ti::TargetInit{<:RSP})
+# RandomShortestPath / RandomWalk (differences are only in IW and weights)
+function compute(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; Z, Zⁱ, IW_adj_factorization, workspace) = ti
     weight = _weight(m, ti)
     XZⁱt = workspace .= weight .* Zⁱ
@@ -288,15 +306,10 @@ _weight(w::CustomWeighted, ti::TargetInit) = w.weight
 
 # TODO: implement
 
-# RandomWalk
-function compute(eb::EdgeBetweenness, ti::TargetInit{<:RandomWalk})
-    return get_or_compute!(ti, Betweenness(weighting(eb))) * pref[target(ti).spatial]
-end
-
-# RandomShortestPath
-function compute(::EdgeBetweenness{QualityWeighted}, ti::TargetInit{<:RSP})
+# RandomShortestPath / RandomWalk
+function compute(::EdgeBetweenness{QualityWeighted}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; Z, Zⁱ, Zrows, W, IW_adj_factorization, qˢ, qᵗ, workspace) = ti
-    QZⁱ = workspace .= ti.QZⁱ
+    QZⁱ = workspace .= qˢ .* Zⁱ .* qᵗ
 
     k = sum(qˢ) .* qᵗ # TODO: is this a bug? why not sum(QZⁱ) as below
     QZⁱᵀZ = ldiv!(ti, IW_adj_factorization, QZⁱ)
@@ -304,7 +317,7 @@ function compute(::EdgeBetweenness{QualityWeighted}, ti::TargetInit{<:RSP})
     return _combine_edge_betweenness(W, Z, RHS, target(ti))
 end
 function compute(
-    m::EdgeBetweenness, ti::TargetInit{<:RSP}
+    m::EdgeBetweenness, ti::TargetInit{<:Union{RSP,RandomWalk}}
 )
     (; W, Z, Zⁱ, Zrows, IW_adj_factorization, workspace) = ti
     weight = _weight(m, ti)
@@ -329,7 +342,7 @@ end
 
 ######################################################################################
 # Sensitivity
-function compute(m::Sensitivity{<:Quality}, ti::TargetInit{<:RSP})
+function compute(m::Sensitivity{<:Quality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; qˢ, qᵗ, K, workspace) = ti
     # TODO make this non-square and single-target
     # Need a summed source proximities vector
@@ -340,7 +353,7 @@ function compute(m::Sensitivity{<:Quality}, ti::TargetInit{<:RSP})
     end
     return target_sensitivity
 end
-function compute(m::Sensitivity{<:Permeability}, ti::TargetInit{<:RSP})
+function compute(m::Sensitivity{<:Permeability}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     st = storage(ti)
     if haskey(st, :S_e_aff)
         S_e_aff, S_e_cost = st[:S_e_aff], st[:S_e_cost]
@@ -370,12 +383,15 @@ function _combine_sensitivity(::AffinityToCost, S_e_aff, S_e_cost, ti)
     return ti.workspace .= S_e_cost .+ S_e_aff .* f.(A)
 end
 
-function _permeability_sensitivity(::ExpectedCost, ti::TargetInit{<:RSP})
-    (; θ, qˢ, qᵗ, K, Aⁱ, A_rowsums, C, Y, C̄, W, CW, IW_factorization, IW_adj_factorization, Z, Zⁱ, Zrows) = ti
+function _permeability_sensitivity(::ExpectedCost, ti::TargetInit)
+    (; θ, qˢ, qᵗ, K, Aⁱ, A_rowsums, C, Y, W, CW, IW_factorization, IW_adj_factorization, Z, Zⁱ, Zrows) = ti
     node = target(ti).node
     Md = ti.workspace .= _diff_KD(distance_transformation(ti)).(K) .* qˢ .* qᵗ
+    C̄ = ti.workspace .= Y .* Zⁱ
     MdZⁱ = Md .*= Zⁱ
+
     MdᵀZ = ldiv!(ti, IW_factorization, MdZⁱ) # MdᵀZ = MdZⁱ' / IW
+    
 
     k̂diagZⁱ = sum(MdZⁱ) .* Zⁱ[node]
 
@@ -406,7 +422,7 @@ function _permeability_sensitivity(::ExpectedCost, ti::TargetInit{<:RSP})
 
     return S_aff, S_cost
 end
-function _permeability_sensitivity(m::PowerMeanProximity, ti::TargetInit{<:RSP})
+function _permeability_sensitivity(m::PowerMeanProximity, ti::TargetInit)
     (; θ, A, Aⁱ, A_rowsums) = ti
     node = target(ti).node
 

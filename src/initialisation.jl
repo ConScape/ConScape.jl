@@ -297,7 +297,6 @@ From the parent `GridInit`, the available variables are:
 For target dense vectors:
 
 `Z`, `Zⁱ`, `QZⁱ`, `K`, `M`, `MZⁱ`, `Zrows`,
-`expected_costs`, `free_energy_distances`, `survival_probabilities`, `power_mean_proximities`,
 """
 struct TargetInit{MM,GI<:GridInit{MM}} <: Initialisation
     gridinit::GI
@@ -350,8 +349,8 @@ theta(mm::TargetInit) = theta(problem(mm))
 end
 
 function gridinit_precalculation(problem::Problem{<:RSP}, grid::Grid)
-    probability, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
-    W = _W(probability, theta(problem), costmatrix(grid))
+    P, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
+    W = _W(P, theta(problem), costmatrix(grid))
     IW = I - W
     IW_factorization = init(solver(problem), IW)
     Aⁱ = mapnz(inv, affinitymatrix(grid))
@@ -368,10 +367,10 @@ function gridinit_precalculation(problem::Problem{<:RSP}, grid::Grid)
     end
     CW = costmatrix(grid) .* W
 
-    return (; probability, W, IW, IW_adj, CW, IW_factorization, IW_adj_factorization, Aⁱ, A_rowsums)
+    return (; P, W, IW, IW_adj, CW, IW_factorization, IW_adj_factorization, Aⁱ, A_rowsums)
 end
 function gridinit_precalculation(::Problem{<:LeastCost}, grid::Grid)
-    probability, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
+    P, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
     # TODO: use a raster based shortest path algorithm from Geomorphometry.jl
     # disjkstra is especially slow due to allocations,
     # searchsorted for index lookups, and Dict getindex/setindex!.
@@ -379,15 +378,16 @@ function gridinit_precalculation(::Problem{<:LeastCost}, grid::Grid)
     dsp1 = dijkstra_shortest_paths(cost_weighted_digraph, 1)
     parents = dsp1.parents
     path_allocs = Vector{eltype(parents)}[Vector{eltype(parents)}() for _ in 1:length(parents)]
-    (; probability, A_rowsums, cost_weighted_digraph, path_allocs)
+    (; P, A_rowsums, cost_weighted_digraph, path_allocs)
 end
 function gridinit_precalculation(problem::Problem{<:RandomWalk}, grid::Grid)
-    probability, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
-    stationary_distribution = _stationary_distribution(solver(problem), probability)
-    PC = probability .* costmatrix(grid)
+    P, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
+    Aⁱ = mapnz(inv, affinitymatrix(grid))
+    PC = P .* costmatrix(grid)
     PC_rowsums = sum(PC; dims=2)
-    IP = I - probability
-    return (; probability, A_rowsums, stationary_distribution, PC, PC_rowsums, IP)
+    IP = I - P
+    IP_factorization = init(solver(problem), IP)
+    return (; Aⁱ, A_rowsums, P, PC, PC_rowsums, IP, IP_factorization)
 end
 
 # Variable generation for GridInit
@@ -403,15 +403,6 @@ function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
     W = Pref .* exp.(-θ .* C)
     replace!(W.nzval, NaN => 0.0)
     return W
-end
-
-# Custom `inv` broadcast that avoids Inf
-_inv(Z::AbstractArray) = _inv!(similar(Z), Z)
-function _inv!(Zⁱ::AbstractArray, Z::AbstractArray)
-    broadcast!(Zⁱ, Z) do x
-        x = inv(x)
-        isfinite(x) ? x : floatmax(eltype(Z))
-    end
 end
 
 function _check_z(ti::TargetInit{<:RSP})

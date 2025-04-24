@@ -97,6 +97,7 @@ Assumes zero knowledge but immortality.
 end
 
 proximity_measure(mm::RandomWalk) = ExpectedCost()
+theta(mm::RandomWalk) = 0
 
 const RW = RandomWalk
 

@@ -17,6 +17,7 @@ SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
 SortTileRecursiveTree = "746ee33f-1797-42c2-866d-db2fce69d14d"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+WoodburyMatrices = "efce3f68-66dc-5838-9240-27a6d6f5f9b6"
 
 [weakdeps]
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
@@ -38,6 +39,7 @@ ProgressLogging = "0.1"
 Rasters = "0.14"
 SimpleWeightedGraphs = "1.1"
 SortTileRecursiveTree = "0.1.2"
+WoodburyMatrices = "1.0.0"
 julia = "1.10"
 
 [extras]

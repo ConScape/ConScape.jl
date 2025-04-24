@@ -23,9 +23,9 @@ struct AffinityMatrix <: MatrixType end
 struct CostMatrix <: MatrixType end
 
 # TODO document these equations
-weightedval(::TargetWeight, ::CostMatrix, baseval, targetval, distance) =
-    targetval / distance
 weightedval(::TargetWeight, ::AffinityMatrix, baseval, targetval, distance) =
+    targetval / distance
+weightedval(::TargetWeight, ::CostMatrix, baseval, targetval, distance) =
     targetval * distance
 weightedval(::AverageWeight, ::CostMatrix, baseval, targetval, distance) =
     2 / ((inv(baseval) + inv(targetval)) * distance)
@@ -373,3 +373,47 @@ function _get_target_qualities(rast::AbstractRasterStack)
         end
     end
 end
+
+_maybe_set_diagonal!(proximitymatrix, diagvalue::Nothing, targetnodes) = nothing
+function _maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnodes::AbstractVector)
+    for (j, i) in enumerate(targetnodes)
+        proximitymatrix[i, j] = diagvalue
+    end
+end
+_maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnode::Int) = 
+    proximitymatrix[targetnode] = diagvalue
+
+# Fill a vector with zeros, and one for the target node
+function _rhs!(workspace, n::Int, target::TargetID)
+    fill!(workspace, 0.0)
+    workspace[target.node] = 1.0
+    return workspace
+end
+
+# Reshape arrays to a new size dstructively
+# This only makes sense if arrays are sorted large to small
+function _reshape!(A::Array, size::Tuple{Vararg{Int}})
+    len = prod(size)
+    if Base.size(A) == size
+        A
+    else # if length(A) >= len
+        # TODO make sure this doesn't allocate when the array is larger
+        # We may need julia 1.11 to do this properly
+        v = vec(A)
+        resize!(v, len)
+        reshape(v, size)
+    end
+end
+
+_allocate_workspaces!(x, problem::Problem, grid::Grid) =
+    _allocate_workspaces!(x, problem, nsources(grid))
+_allocate_workspaces!(x::Nothing, problem::Problem, length::Int) =
+    Workspaces(length, nworkspaces(problem) + 20)
+_allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
+    free!(resize!(workspaces, length))
+
+_maybe_new_outputs(mes, mgi) =
+    mes === measures(mgi) ? outputs(mgi) : allocate_output(mes, mgi)
+
+# _newstoragedict(::Workspaces{W}) where W = Dict{Symbol,W}()
+_newstoragedict(::Workspaces{W}) where W = Dict{Symbol,Any}()
