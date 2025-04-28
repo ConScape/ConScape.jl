@@ -11,6 +11,27 @@ whole spatial problems are solved.
 `solve` on `MultiGridInit` iterates over 
 subgraphs, generating a `GridInit` for each
 and solving it into the same output object.
+
+## Example
+
+To construct a `MultiGridInit` :
+
+```julia
+mgi = init(problem, rast)
+```
+
+To solve measures in the `Problem`:
+
+```julia
+results = solve(mgi)
+```
+
+To solve arbitrary measures:
+
+```julia
+ec = solve(ExpectedCost(), mgi)
+ec, ch = solve((ExpectedCost(), ConnectedHabitat()), mgi)
+```
 """
 struct MultiGridInit{P<:Problem,G<:Grid,SG<:Grid,W<:AbstractVector,S<:Dict,O} <: Initialisation
     problem::P
@@ -58,6 +79,28 @@ in `solve` and `compute` methods.
 
 As we often iterate over single targets it is necessary to precalculate
 and store expensive variables such as sparse factorization once for all targets.
+
+## Example
+
+To construct a `GridInit` :
+
+```julia
+multigridinit = init(problem, rast)
+gi = init(multigridinit, 1)
+````
+
+To solve measures in the `Problem` for this subgraph:
+
+```julia
+results = solve(gi)
+```
+
+To solve arbitrary measures for this subgraph:
+
+```julia
+ec = solve(ExpectedCost(), gi)
+ec, ch = solve((ExpectedCost(), ConnectedHabitat()), gi)
+```
 """
 struct GridInit{MM,P<:Problem{MM},G<:Grid,O<:Union{NamedTuple,Tuple},W<:AbstractArray,S<:Dict,Pr} <: Initialisation
     problem::P
@@ -135,6 +178,31 @@ For target dense vectors:
 
 `Z`, `Zⁱ`, `QZⁱ`, `K`, `M`, `MZⁱ`, `Zrows`,
 `expected_costs`, `free_energy_distances`, `survival_probabilities`, `power_mean_proximities`,
+
+## Example
+
+To construct a `TargetInit` :
+
+```julia
+multigridinit = init(problem, rast)
+subgrid = 1
+gridinit = init(multigridinit, subgrid)
+target_idx = 7 
+ti = init(gridinit, target_idx)
+````
+
+To solve measures in the `Problem` for this target:
+
+```julia
+results = solve(ti)
+```
+
+To solve arbitrary measures for this target:
+
+```julia
+ec = solve(ExpectedCost(), ti)
+ec, ch = solve((ExpectedCost(), ConnectedHabitat()), ti)
+```
 """
 struct TargetInit{MM,GI<:GridInit{MM}} <: Initialisation
     gridinit::GI
@@ -367,8 +435,8 @@ init(mgi::MultiGridInit, subgrid_id::Int; kw...) = GridInit(mgi, subgrid_id; kw.
 
 # Allow solving all the levels of precalculated object with specific measures
 solve(p::Initialisation; kw...) = solve(measures(p), p; kw...)
-solve(measure::Measure, mgi::Initialisation; kw...) =
-    only(values(solve((measure,), mgi; kw...)))
+solve(measure::Measure, init::Initialisation; kw...) =
+    only(values(solve((measure,), init; kw...)))
 solve(measures::Union{NamedTuple,Tuple}, g::Grid; verbose=false, kw...) = 
     solve(Problem(measures; kw...), g::Grid; verbose)
 solve(measure::Measure, movement_mode::MovementMode, g::Grid; verbose=false, kw...) = 

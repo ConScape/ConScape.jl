@@ -10,6 +10,16 @@ abstract type MovementMode end
 init(movement_mode::MovementMode, grid::Grid; kw...) =
     init(Problem(; movement_mode), grid; kw...)
 
+const PROXIMITY_KEYWORD = """
+- `proximity_measure`: the measure to use for the probability of arrival at the target.
+    By default this is `ExpectedCost()`
+- `distance_transformation`: the transformation to apply to a distance matrix to 
+    convert it to a proximity matrix. [`DistanceMeasure`](@ref)s like `ExpectedCost()` and 
+    `FreeEnergyDistance()` use this transformation, but `ProximityMeasure`s like 
+    `PowerMeanProximity()` or `SurvivalProbability()` do not.
+- `diagvalue`: The value to use for the diagonal of the proximity matrix.
+"""
+
 """
     ArrivingMovement
 
@@ -35,9 +45,9 @@ Assumes partial knowledge and immortality.
 
 ## Keywords
 
-- `θ`: the probability of teleportation
-- `diagvalue`: the value to use for the diagonal of the proximity matrix
-- `approx`: whether to use an approximate algorithm
+$PROXIMITY_KEYWORDS
+- `theta`: The probability of arrival at the target.
+- `approx`: Whether to use an approximate algorithm, `false` by default.
 """
 @kwdef struct RandomisedShortestPath{
     PM<:Union{DistanceMeasure,ProximityMeasure,Nothing},DT,T<:Union{Real,Nothing},DV
@@ -62,20 +72,38 @@ theta(mm::RandomisedShortestPath) = mm.theta
 """
     LeastCost <: ArrivingMovementMode
 
-Identical to RSP with theta of Inf (if that could run).
+Identical to RSP with theta of Inf, if that could run without numerical errors.
 
 Assumes infinite knowledge and immortality.
+
+## Keywords
+
+$PROXIMITY_KEYWORDS
 """
-struct LeastCost <: ArrivingMovement end
+struct LeastCost <: ArrivingMovement 
+    proximity_measure::PM = ExpectedCost()
+    distance_transformation::DT = nothing
+    theta::T = nothing
+end
 
 """
     RandomWalk <: ArrivingMovementMode
 
-Identical to RSP with theta of 0 (if that could run).
+Identical to RSP with theta of 0, if that could run without numerical errors.
+
+Performance is usually 2-3 times slower than RSP>
 
 Assumes zero knowledge but immortality.
+
+## Keywords
+
+$PROXIMITY_KEYWORDS
 """
-struct RandomWalk <: ArrivingMovement end
+struct RandomWalk <: ArrivingMovement 
+    proximity_measure::PM = ExpectedCost()
+    distance_transformation::DT = nothing
+    theta::T = nothing
+end
 
 """
     AbsorbingRandomWalk <: AbsorbingMovementMode

@@ -17,12 +17,40 @@ This lazy specification allows ConScape to minimise the work
 required to calculate multiple outputs: habitat connectivity
 betweenness metrics etc can use the same memory allocations and solves.
 
-# Keywords
+## Keywords
 
 - `measures`: A NamedTuple of [`GraphMeasure`](@ref)s.
 - `movement_mode`: A [`MovementMode`](@ref).
 - `solver`: A [`Solver`](@ref) specification, `VectorSolver` by default.
     [`LinearSolver`](@ref) allows for the use of any LinearSolve.jl solvers.
+
+## Initialising and solving
+
+Problems are solved with `solve`:
+
+```julia
+problem = ConScape.Problem(measures; movement_mode)
+rast = RasterStack((source_qualities=qualpath, affinities=affinitypath))
+result = solve(problem, rast)
+```
+
+For interactive work you can use `init`:
+
+```julia
+# Init for all subgraphs of the grid made from rast
+multiinit = init(problem, rast)
+# Init for the first subgraph
+singleinit = init(multiinit, 1)
+# Init for a single target
+targetinit = init(singleinit, 1)
+
+And `solve` will work at each level:
+
+```julia
+solve(multiinit)
+solve(singleinit)
+solve(targetinit) 
+```
 """
 @kwdef struct Problem{MM<:MovementMode,M,S<:Solver,C} <: AbstractProblem
     movement_mode::MM = RandomisedShortestPath()

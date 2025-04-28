@@ -10,19 +10,28 @@ solver(p::AbstractWindowedProblem) = solver(problem(p))
 shape(p::AbstractWindowedProblem) = p.shape
 
 """
-    WindowedProblem(problem::AbstractProblem; size, centers, θ)
+    WindowedProblem(problem::AbstractProblem; kw...)
 
 Combine multiple compute operations into a single object, 
-to be run over the same windowed grids.
+to be run over windowed grids.
 
-`problem` is usually a [`Problem`](@ref) object but can be any `AbstractProblem`.
+## Arguments
 
-# Keywords
+`problem`: A [`Problem`](@ref) object.
 
-- `problem`: The radius of the window.
-- `centersize`: the size of the target square.
-- `buffer`: the area outside the source window.
-- `threaded`: Whether to run in parallel. `false` by default
+## Keywords
+
+- `centersize::Int`: The size of one side of the square of target 
+    pixels, in the center of the window.
+- `buffer`: The maximum number of pixels outside the target square.
+- `shape`: whether to make the shape of the window a :square or a :circle.
+    using `:circle` will give faster runtime and leave less artifacts.
+- `threaded`: Whether to run windows in parallel on separate threads. `false` by default.
+- `mosaic_return`: Whether to `mosaic` returned spatial rasters from each window, 
+    or return them as a vector. This can be useful for diagnostics. `true` by default.
+- `gc`: Whether to run the garbage collector between windows. This may be important in
+    restricted memory environments, such as a small node on a SLURM cluster. 
+    `true` by default. It may improve performance to set to `false`.
 """
 @kwdef struct WindowedProblem{P} <: AbstractWindowedProblem{P}
     problem::P
@@ -202,12 +211,13 @@ become expensive using `Problem` directly.
 If `problem` is a `WindowedProblem` IO overheads should be negligible in
 comparison to the workload of running `solve` for all windows in a batch.
 
-# Keywords
+## Keywords
 
 - `nwindows`: When `problem` is a `WindowedProblem`, the number of windows to use.
     When used, `centersize` and `buffer` are not needed.
-- `centersize`: The size of the target square
-- `buffer`: The area outside taret square
+- `centersize`: The size of the target square.
+- `buffer`: The number of pixels outside target square. If using a `WindowedProblem`,
+    this is not needed, but if passed it must match.
 - `datapath`: The path to store the output rasters.
 - `grain`: amount of thinning to apply to the target qualities. `nothing` by default.
     if `2 is used`, the target qualities will be sampled every 2x2 pixels, and should run 4x faster.
@@ -220,33 +230,32 @@ BatchProblem is designed so that `init`, `init!`, `solve` and `solve!` can all b
 
 # Example
 
-Calculating `init!` for `BatchProblem` is relatively expensive, and should be done once for all batches if possible.
-This happens inside `solve` and `init` unless a [`ProblemAssessment`](@ref) object is passed in.
-
-Running [`assess`](@ref) first is the best option, and is inteded to allow assesment of the scale of the 
+Calculating `init` for `BatchProblem` is relatively expensive. Running [`assess`](@ref) 
+first is the best option, and is intended to allow assessment of the scale of the 
 problem, as it may require hundreds or thousands of CPU hours to complete. 
 
 With this approach, batches can be run with:
 
 ```julia
-usign ConScape, JSON3, MyConScapeApp
-batch_problem = define_my_batch()
-rast = get_my_rasterstack()
+using ConScape, JSON3, MyConScapeApp
+batchproblem = MyConScapeApp.define_my_batchproblem()
+rast = MyConScapeApp.get_my_rasterstack()
 assessment = assess(batchproblem, rast) # Will take a long time
 JSON3.write("assessment.json")
 ```
 
 Noticed we defined our own application package MyConScapeApp. This is a good way to 
-share functions like `define_my_batch` accross multiple task launches on a cluster. 
-See the ConScape GitHub organisation for working examples of packages like this.
+share functions like `define_my_batchproblem` accross multiple task launches on a cluster. 
+See the ConScape GitHub organisation for working examples of packages like this, ConScapeJobs.
 
 ```julia
 usign ConScape, Rasters, MyConScapeApp
 batch_problem = define_my_batch()
 rast = get_my_rasterstack()
 assessment = JSON3.read("assessment.json")
-# And here we pass the assesment to `solve`
-solve(batch_problem, rast, assessment, batch)
+batch_id = 1
+# And here we pass the assesment and batch id to `solve`
+solve(batch_problem, rast, assessment, batch_id)
 ```
 
 Finally, when all batches have run we can mosaic the results together
@@ -255,8 +264,8 @@ Finally, when all batches have run we can mosaic the results together
 usign ConScape, Rasters, MyConScapeApp
 batch_problem = define_my_batch()
 rast = get_my_rasterstack()
-# And here we pass the assesment to `solve`
-mosaic(batch_problem; to=rast)
+# Setting `to` to the original raster ensures the output matches it spatially.
+mosaic(batch_problem; to=rast, filename="dest_filename.tif")
 ```
 """
 @kwdef struct BatchProblem{P} <: AbstractWindowedProblem{P}
@@ -391,19 +400,19 @@ solve(bi::BatchInit; verbose=false) =
 """
     batch_paths(p::BatchProblem, x::RasterStack)
     batch_paths(p::BatchProblem, size::Tuple{Int,Int})
+    batch_paths(p::BatchInit, a::NestedAssessment)
     batch_paths(p::BatchInit)
 
 Get a `Vector` of `String` folder paths for each batch.
 
-Note this will include paths for all possible windows,
-even those that will not run as batch jobs.
-
-To get only paths that will be written too disk, use 
-`batch_paths(bi)[bi.batch_indices]` where `bi` is a `BatchInit`.
+If a `BatchProblem` and a `NestedAssessment` from `assess` are used, 
+or a `BatchInit` is used directly, the paths will be only those that 
+need to run (i.e. that are not empty). Otherwise this will include paths 
+for all possible windows, even those that will not run as batch jobs.
 """
 batch_paths(p::BatchProblem, x::Union{RasterStack,Tuple{Int,Int}}; batch_ranges=window_ranges(p, x)) = 
     [_batch_path(p, rs) for rs in batch_ranges]
-batch_paths(bi::BatchInit) = [_batch_path(p, rs) for rs in bi.batch_ranges]
+batch_paths(bi::BatchInit) = [_batch_path(p, rs) for rs in bi.batch_ranges[i] for i in bi.batch_indices]
 
 function _batch_path(p, ranges::Tuple)
     corners = map(first, ranges)
