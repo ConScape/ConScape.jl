@@ -54,8 +54,8 @@ $PROXIMITY_KEYWORDS
 } <: ArrivingMovement
     proximity_measure::PM = ExpectedCost()
     distance_transformation::DT = nothing
-    theta::T = nothing
     diagvalue::DV = nothing
+    theta::T = nothing
     approx::Bool = false
 end
 RandomisedShortestPath(proximity_measure; kw...) =
@@ -80,11 +80,7 @@ Assumes infinite knowledge and immortality.
 
 $PROXIMITY_KEYWORDS
 """
-struct LeastCost <: ArrivingMovement 
-    proximity_measure::PM = ExpectedCost()
-    distance_transformation::DT = nothing
-    theta::T = nothing
-end
+struct LeastCost <: ArrivingMovement end
 
 """
     RandomWalk <: ArrivingMovementMode
@@ -99,11 +95,7 @@ Assumes zero knowledge but immortality.
 
 $PROXIMITY_KEYWORDS
 """
-struct RandomWalk <: ArrivingMovement 
-    proximity_measure::PM = ExpectedCost()
-    distance_transformation::DT = nothing
-    theta::T = nothing
-end
+struct RandomWalk <: ArrivingMovement end
 
 """
     AbsorbingRandomWalk <: AbsorbingMovementMode

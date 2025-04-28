@@ -12,75 +12,39 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 
 ```julia
 # TODO remove `replace_missing` and use missingval=NaN in the next Rasters.jl breaking release
-mov_prob = replace_missing(Raster(joinpath(datadir, "mov_prob_1000.asc")), NaN)
-hab_qual = replace_missing(Raster(joinpath(datadir, "hab_qual_1000.asc")), NaN)
+rast = RasterStack((
+        source_quality=joinpath(datadir, "hab_qual_1000.asc"),
+        affinity=joinpath(datadir, "mov_prob_1000.asc"),
+    );
+    missingval=NaN
+)
 ```
 
 ```julia
 # hack for the sensitivity:
-non_matches = findall(xor.(isnan.(mov_prob), isnan.(hab_qual)))
-mov_prob[non_matches] .= 1e-20
-hab_qual[non_matches] .= 1e-20;
+matches = boolmask(rast)
+rast.source_quality[Not(matches)] .= 1e-20
+rast.affinity[Not(matches)] .= 1e-20;
 ```
 
 ```julia
-delete!(meta_p, "nodata_value")
-delete!(meta_q, "nodata_value")
+heatmap(rast)
 ```
 
-```julia
-meta_p==meta_q
-```
-
-```julia
-g = ConScape.Grid(size(mov_prob)...,
-                  affinities=ConScape.graph_matrix_from_raster(mov_prob),
-                  qualities=hab_qual,
-                  costs=ConScape.MinusLog(), )
-```
-
-```julia
-plot(ConScape.outdegrees(g); title="Permeabilty")
-# savefig("figure_grid_outdeg.png")
-```
-
-```julia
-heatmap(g.source_qualities; title="Qualities")
-# savefig("figure_grid_qualities.png")
-```
-
-```julia
-g.source_qualities
-```
-
-```julia
-g.target_qualities
-```
-
-```julia
-g.affinities
-```
-
-```julia
-(g.nrows, g.ncols, g.nrows * g.ncols)
-```
 
 # Step 2: Habitat creation
 
 ```julia
-h = ConScape.GridRSP(g, θ=1.0);
+movement_mode=RandomisedShortestPath(
+    theta=1.0,
+)
+problem = ConScape.Problem(; movement_mode, costfunction=ConScape.MinusLog())
 ```
 
 show distance:
 
 ```julia
-tmp = zeros(5345)
-tmp[4300] = 1
-plot(Raster(tmp, g), title="Target (or is it Source?) Pixel")
-```
-
-```julia
-dists = ConScape.expected_cost(h);
+dists = ConScape.solve(ExpectedCost(), problem)
 ```
 
 ```julia
