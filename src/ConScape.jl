@@ -7,7 +7,14 @@ using LinearAlgebra
 using Rasters
 using SimpleWeightedGraphs
 using SparseArrays
+using SortTileRecursiveTree
+using WoodburyMatrices
+
+import GeometryOps as GO
+import GeometryOps.GeoInterface as GI
+
 using Rasters.DimensionalData
+using Rasters.Extents
 
 import CommonSolve
 import CommonSolve: solve, init
@@ -32,19 +39,24 @@ export WindowedProblem, BatchProblem
     Solver
 
 Abstract supertype for ConScape solvers.
+
+These essentially determin how sparse systems of linear 
+equations are solved, indide `ldiv!` calls.
+
+[`VectorSolver`](@ref) and [`LinearSolver`](@ref) are the two implementations.
 """
-abstract type AbstractProblem end
 abstract type Solver end
 
-# Randomized shortest path algorithms
-# Grid struct and methods
+"""
+    AbstractProblem
+
+Abstract supertype for ConScape problem specifications.
+"""
+abstract type AbstractProblem end
+
 include("transformations.jl")
-# Grid struct and methods
-include("grid.jl")
-# Utilities
-include("utils.jl")
-# Problems
 include("workspaces.jl")
+include("readonlyarray.jl")
 include("measures.jl")
 include("movement_modes.jl")
 include("problem.jl")
@@ -54,6 +66,7 @@ include("solvers.jl")
 include("compute_measures.jl")
 include("windows.jl")
 include("assessment.jl")
+include("utils.jl")
 include("simulations.jl")
 
 end

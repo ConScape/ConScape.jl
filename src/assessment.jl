@@ -26,6 +26,23 @@ Abstract supertype for problem assessments.
 
 These calculate the computation size of an 
 `AbstractWindowedProblem` for a specific `RasterStack`.
+
+As large assessments are expensive to compute, it is 
+recommended to write them to disk using e.g. JSON3.jl:
+
+```julia
+using JSON3, ConScape
+... # problem and rast definition
+assessment = assess(problem, rast)
+JSON3.write("assessment.json", assessment)
+```
+
+And later read them again, here for when the assessment
+was for a nested windowed problem:
+```
+using JSON3, ConScape
+assessment = JSON3.read("assessment.json", NestedAssessment)
+````
 """
 abstract type ProblemAssessment end
 
@@ -191,9 +208,9 @@ end
 """
     reassess(p::BatchProblem, a::NestedAssessment)
 
-Re-asses an existing nested assesment of a [`BatchProblem`](@ref).
+Re-asses an existing nested assessment of a [`BatchProblem`](@ref).
 
-The returned `NestedAssessment` will exclude any batches that 
+The returned `NestedAssessment` will have removed batches that 
 already have a data folder (assumed to be successfully completed).
 """
 function reassess(p::BatchProblem, a::NestedAssessment)

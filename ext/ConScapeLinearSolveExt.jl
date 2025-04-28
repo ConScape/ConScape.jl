@@ -3,6 +3,11 @@ module ConScapeLinearSolveExt
 using ConScape
 using LinearSolve
 import CommonSolve
+import LinearAlgebra
+
+# Now LinearSolve.jl is imported, add a working LinearSolver constructor
+ConScape.LinearSolver(args::A, kw::K, threaded::Bool) where {A<:Tuple,K} =
+    LinearSolver{A,K}(args, kw, threaded)
 
 function CommonSolve.init(solver::LinearSolver, A::AbstractMatrix)
     b = zeros(eltype(A), size(A, 2))
@@ -12,7 +17,7 @@ function CommonSolve.init(solver::LinearSolver, A::AbstractMatrix)
     # TODO what is needed here?
     # Create a channel to store problem b vectors for threads
     # see https://juliafolds2.github.io/OhMyThreads.jl/stable/literate/tls/tls/
-    if isthreaded(solver)
+    if ConScape.isthreaded(solver)
         nbuffers = Threads.nthreads()
         channel = Channel{Tuple{typeof(linsolve),Vector{Float64}}}(nbuffers)
         for i in 1:nbuffers
@@ -33,7 +38,7 @@ end
 function LinearAlgebra.ldiv!(s::LinearSolver, B, init, B_copy)
     # TODO: for now we define a Z matrix, but later modify ops 
     # to run column by column without materialising Z
-    if isthreaded(s)
+    if ConScape.isthreaded(s)
         channel = init
         # Get column memory from the channel
         linsolve = take!(channel)
@@ -50,4 +55,5 @@ function LinearAlgebra.ldiv!(s::LinearSolver, B, init, B_copy)
     end
     return B
 end
+
 end

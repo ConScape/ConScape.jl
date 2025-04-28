@@ -7,8 +7,8 @@ These define the path distribution of all possible paths between source and targ
 """
 abstract type MovementMode end
 
-init(movement_mode::MovementMode, grid::Grid; kw...) =
-    init(Problem(; movement_mode), grid; kw...)
+distance_transformation(mm::MovementMode) = mm.distance_transformation
+diagvalue(mm::MovementMode) = mm.diagvalue
 
 """
     ArrivingMovement
@@ -27,30 +27,35 @@ allowing simulation of mortality.
 abstract type AbsorbingMovement <: MovementMode end
 
 const PROXIMITY_KEYWORDS = """
-- `proximity_measure`: the measure to use for the probability of arrival at the target.
-    By default this is `ExpectedCost()`
 - `distance_transformation`: the transformation to apply to a distance matrix to 
     convert it to a proximity matrix. [`DistanceMeasure`](@ref)s like `ExpectedCost()` and 
     `FreeEnergyDistance()` use this transformation, but `ProximityMeasure`s like 
     `PowerMeanProximity()` or `SurvivalProbability()` do not.
 - `diagvalue`: The value to use for the diagonal of the proximity matrix.
+    (TODO: explain why its relevent)
 """
 
 """
     RandomisedShortestPath <: ArrivingMovementMode
 
-Randomised shortest path movement. Intermediate between LeastCost and RandomWalk.
+    RandomisedShortestPath(; kw...)
+
+Randomised shortest path movement. Intermediate between 
+[`LeastCost`](@ref) and [`RandomWalk`](@ref).
 
 Assumes partial knowledge and immortality.
 
 ## Keywords
 
+- `proximity_measure`: the measure to use for the probability of arrival at the target.
+    By default this is `ExpectedCost()`
 $PROXIMITY_KEYWORDS
-- `theta`: The probability of arrival at the target.
+- `theta`: the inverse temperature (TODO: in more ecological terms)
 - `approx`: Whether to use an approximate algorithm, `false` by default.
+    (TODO: more detail)
 """
 @kwdef struct RandomisedShortestPath{
-    PM<:Union{DistanceMeasure,ProximityMeasure,Nothing},DT,T<:Union{Real,Nothing},DV
+    PM<:Union{ProximityMeasure,Nothing},DT,T<:Union{Real,Nothing},DV
 } <: ArrivingMovement
     proximity_measure::PM = ExpectedCost()
     distance_transformation::DT = nothing
@@ -64,15 +69,16 @@ RandomisedShortestPath(proximity_measure; kw...) =
 const RSP = RandomisedShortestPath
 
 proximity_measure(mm::RandomisedShortestPath) = mm.proximity_measure
-distance_transformation(mm::RandomisedShortestPath) = mm.distance_transformation
-diagvalue(mm::RandomisedShortestPath) = mm.diagvalue
 approx(mm::RandomisedShortestPath) = mm.approx
 theta(mm::RandomisedShortestPath) = mm.theta
 
 """
     LeastCost <: ArrivingMovementMode
 
-Identical to RSP with theta of Inf, if that could run without numerical errors.
+    LeastCost(; kw...)
+
+Identical to [`RandomisedShortestPath`](@ref) with `theta` of `Inf`, 
+if that could run without numerical problems.
 
 Assumes infinite knowledge and immortality.
 
@@ -80,14 +86,25 @@ Assumes infinite knowledge and immortality.
 
 $PROXIMITY_KEYWORDS
 """
-struct LeastCost <: ArrivingMovement end
+@kwdef struct LeastCost{DT,DV} <: ArrivingMovement 
+    distance_transformation::DT = nothing
+    diagvalue::DV = nothing
+end
+
+proximity_measure(mm::LeastCost) = ExpectedCost()
+
+const LC = LeastCost
 
 """
     RandomWalk <: ArrivingMovementMode
 
-Identical to RSP with theta of 0, if that could run without numerical errors.
+    RandomWalk(; kw...)
+
 
 Performance is usually 2-3 times slower than RSP>
+
+Identical to [`RandomisedShortestPath`](@ref) with `theta` of `0`, 
+if that could run without numerical problems.
 
 Assumes zero knowledge but immortality.
 
@@ -95,7 +112,15 @@ Assumes zero knowledge but immortality.
 
 $PROXIMITY_KEYWORDS
 """
-struct RandomWalk <: ArrivingMovement end
+@kwdef struct RandomWalk{DT,DV} <: ArrivingMovement 
+    distance_transformation::DT = nothing
+    diagvalue::DV = nothing
+end
+
+proximity_measure(mm::RandomWalk) = ExpectedCost()
+theta(mm::RandomWalk) = 0
+
+const RW = RandomWalk
 
 """
     AbsorbingRandomWalk <: AbsorbingMovementMode

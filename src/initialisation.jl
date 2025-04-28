@@ -1,3 +1,167 @@
+const TargetID = @NamedTuple{spatial::CartesianIndex{2},grid_id::Int,subgrid_id::Int,node::Int}
+const SourceID = CartesianIndex{2}
+
+abstract type Initialisation end
+
+costfunction(p::Initialisation) = costfunction(grid(p))
+costmatrix(p::Initialisation) = costmatrix(grid(p))
+affinitymatrix(p::Initialisation) = affinitymatrix(grid(p))
+source_quality_vector(p::Initialisation) = source_quality_vector(grid(p))
+target_quality_vector(p::Initialisation) = target_quality_vector(grid(p))
+source_quality_spatial(p::Initialisation) = source_quality_spatial(grid(p))
+target_quality_spatial(p::Initialisation) = target_quality_spatial(grid(p))
+source_ids(p::Initialisation) = source_ids(grid(p))
+target_ids(p::Initialisation) = target_ids(grid(p))
+movement_mode(p::Initialisation) = movement_mode(problem(p))
+solver(p::Initialisation) = solver(problem(p))
+measures(p::Initialisation) = measures(problem(p))
+proximity_measure(p::Initialisation) = proximity_measure(problem(p))
+distance_transformation(p::Initialisation) = distance_transformation(problem(p))
+diagvalue(p::Initialisation) = diagvalue(problem(p))
+approx(p::Initialisation) = approx(problem(p))
+theta(p::Initialisation) = theta(problem(p))
+
+nsources(p::Initialisation) = length(source_ids(p))
+ntargets(p::Initialisation) = length(target_ids(p))
+sparse_size(p::Initialisation) = nsources(p), ntargets(p) 
+
+Base.size(p::Initialisation) = Base.size(grid(p))
+DimensionalData.dims(p::Initialisation) = dims(grid(p))
+
+"""
+    Grid(size::Tuple{Int,Int}; kw...)
+
+Construct a `Grid` from an `affinitymatrix` matrix of type `SparseMatrixCSC`. 
+
+# Keywords
+
+- `affinitymatrix`: nothing
+- `qualities::Matrix`: ones(nrows, ncols)
+- `source_qualities::Matrix`: qualities
+- `target_qualities::AbstractMatrix`: qualities
+- `costfunction`: `MinusLog()` by default.
+- `costmatrix`: optionally specify a sparse cost matrix. 
+    By default it is calculated from `costfunction.(affinitymatrix)`
+- `prune`: if the affinity and cost matrices will be pruned 
+    to exclude unreachable nodes. `true` by default.
+
+It is possible to also supply matrices of `source_qualities` and `target_qualities` as well as
+
+Alternatively, it is possible to supply a matrix to `costs` directly. If `prune=true` (the default), 
+"""
+struct Grid{D<:Union{Tuple,Nothing},F<:Union{Nothing,Transformation},C<:AbstractMatrix,A<:AbstractMatrix,SQ,TQ} <: Initialisation
+    size::Tuple{Int,Int}
+    costfunction::F
+    costmatrix::C
+    affinitymatrix::A
+    source_quality_spatial::SQ
+    target_quality_spatial::TQ
+    source_quality_vector::Vector{Float64}
+    target_quality_vector::Vector{Float64}
+    source_ids::Vector{SourceID}
+    target_ids::Vector{TargetID}
+    dims::D
+end
+Grid(nrows::Int, ncols::Int; kw...) = Grid((nrows, ncols); kw...)
+function Grid(size::Tuple{Int,Int};
+    affinitymatrix::AbstractMatrix,
+    qualities::AbstractMatrix=ones(size),
+    source_qualities::AbstractMatrix=qualities,
+    target_qualities::AbstractMatrix=qualities,
+    costfunction::Union{Transformation,Nothing}=MinusLog(),
+    costmatrix=mapnz(costfunction, affinitymatrix),
+    check=false,
+    prune=true,
+)
+    if prod(size) != LinearAlgebra.checksquare(affinitymatrix)
+        n = Base.size(affinitymatrix, 1)
+        throw(ArgumentError("grid size $size is incompatible with size of affinity matrix ($n, $n)"))
+    end
+    if prod(size) != LinearAlgebra.checksquare(costmatrix)
+        n = Base.size(costmatrix, 1)
+        throw(ArgumentError("grid size $size is incompatible with size of cost matrix ($n, $n)"))
+    end
+
+    # This is too expensive to calculate for small target grids
+    if check
+        if any(t -> t < 0, nonzeros(costmatrix))
+            throw(ArgumentError("The cost graph can have only non-negative edge weights. Perhaps you should change the cost function?"))
+        end
+        cost_digraph = SimpleDiGraph(costmatrix)
+        affinity_digraph = SimpleDiGraph(affinitymatrix)
+
+        if ne(difference(cost_digraph, affinity_digraph)) > 0
+            throw(ArgumentError("cost graph contains edges not present in the affinity graph"))
+        end
+    end
+
+    source_quality_spatial = _prepare_qualities(source_qualities)
+    target_quality_spatial = _prepare_qualities(target_qualities)
+
+    # Initially just every node
+
+    # Prune
+    all_spatial_ids = vec(collect(CartesianIndices(size)))
+    source_ids = all_spatial_ids
+    if prune
+        nonzerocells = findall(!isnan ∘ !iszero, vec(sum(affinitymatrix, dims=1)))
+        source_ids = source_ids[nonzerocells]
+        affinitymatrix = affinitymatrix[nonzerocells, nonzerocells]
+    end
+
+    # Subset of source_ids with valid quality
+    target_ids = _target_ids(target_qualities, source_ids, all_spatial_ids)
+    # Initially just all spatial source qualities
+    source_quality_vector = vec(source_quality_spatial)
+    # Subset of spatial target qualities with valid quality
+    target_quality_vector = [target_quality_spatial[t.spatial] for t in target_ids]
+
+    return Grid(
+        size,
+        costfunction,
+        costmatrix,
+        affinitymatrix,
+        source_quality_spatial, target_quality_spatial,
+        source_quality_vector, target_quality_vector,
+        source_ids, target_ids,
+        dims(source_qualities),
+    )
+end
+function Grid(rast::RasterStack;
+    affinitymatrix=ConScape.graph_matrix_from_raster(rast.affinities; matrix_type=AffinityMatrix()),
+    costfunction=nothing,
+    costmatrix=if haskey(rast, :costs) 
+        ConScape.graph_matrix_from_raster(rast.costs; matrix_type=CostMatrix()) 
+    else
+        mapnz(costfunction, affinitymatrix)
+    end,
+    source_qualities=rast.source_qualities,
+    target_qualities=get(rast, :target_qualities, source_qualities),
+    kw...
+)
+    Grid(size(rast); affinitymatrix, source_qualities, target_qualities, kw...)
+end
+Grid(p::AbstractProblem, rast::RasterStack; kw...) =
+    Grid(rast; costfunction=costfunction(p), kw...)
+
+affinitymatrix(g::Grid) = g.affinitymatrix
+costmatrix(g::Grid) = g.costmatrix
+costfunction(g::Grid) = g.costfunction
+source_quality_spatial(g::Grid) = g.source_quality_spatial
+target_quality_spatial(g::Grid) = g.target_quality_spatial
+source_quality_vector(g::Grid) = g.source_quality_vector
+target_quality_vector(g::Grid) = g.target_quality_vector
+source_ids(g::Grid) = g.source_ids
+target_ids(g::Grid) = g.target_ids
+
+Base.size(g::Grid) = g.size
+function Base.show(io::IO, ::MIME"text/plain", g::Grid)
+    print(io, summary(g), " of size ", g.size)
+end
+
+DimensionalData.dims(g::Grid) = g.dims
+
+
 """
     MultiGridInit
 
@@ -118,7 +282,6 @@ struct GridInit{MM,P<:Problem{MM},G<:Grid,O<:Union{NamedTuple,Tuple},W<:Abstract
         new{MM,P,G,O,W,S,Pr}(problem, grid, outputs, workspaces, storage, precalculation)
     end
 end
-
 function GridInit(problem::Problem, grid::Grid;
     outputs=allocate_output(problem, grid),
     workspaces=nothing, 
@@ -172,12 +335,11 @@ From the parent `Grid`, the available variables are:
 
 From the parent `GridInit`, the available variables are:
 
-`probability`, `W`, `IW`, `CW`, `IW_factorization`, `IW_adj`, `IW_adj_factorization`,
+`P`, `W`, `IW`, `CW`, `IW_factorization`, `IW_adj`, `IW_adj_factorization`,
 
 For target dense vectors:
 
-`Z`, `Zⁱ`, `QZⁱ`, `K`, `M`, `MZⁱ`, `Zrows`,
-`expected_costs`, `free_energy_distances`, `survival_probabilities`, `power_mean_proximities`,
+`Z`, `Zⁱ`, `Zrows`, `Q`, `K`, `M`.
 
 ## Example
 
@@ -216,14 +378,14 @@ struct TargetInit{MM,GI<:GridInit{MM}} <: Initialisation
 end
 TargetInit(gi::GridInit, target::Int) = TargetInit(gi, target_ids(gi)[target])
 
-gridinit(tp::TargetInit) = getfield(tp, :gridinit)
-target(tp::TargetInit) = getfield(tp, :target)
+gridinit(ti::TargetInit) = getfield(ti, :gridinit)
+target(ti::TargetInit) = getfield(ti, :target)
 
-outputs(tp::TargetInit) = outputs(gridinit(tp))
-grid(tp::TargetInit) = grid(gridinit(tp))
-problem(tp::TargetInit) = problem(gridinit(tp))
-storage(tp::TargetInit) = storage(gridinit(tp))
-workspaces(tp::TargetInit) = workspaces(gridinit(tp))
+outputs(ti::TargetInit) = outputs(gridinit(ti))
+grid(ti::TargetInit) = grid(gridinit(ti))
+problem(ti::TargetInit) = problem(gridinit(ti))
+storage(ti::TargetInit) = storage(gridinit(ti))
+workspaces(ti::TargetInit) = workspaces(gridinit(ti))
 
 proximity_measure(mm::TargetInit) = proximity_measure(problem(mm))
 diagvalue(mm::TargetInit) = diagvalue(problem(mm))
@@ -233,30 +395,34 @@ theta(mm::TargetInit) = theta(problem(mm))
 # All TargetInit allow retreiving proberties with `getproperty`
 # from the parent `GridInit` or calculated and stored in 
 # the `TargetInit`
-function Base.getproperty(tp::TargetInit, x::Symbol)
+@inline function Base.getproperty(ti::TargetInit, x::Symbol)
     if x === :workspace
-        return take!(workspaces(tp))
+        return take!(workspaces(ti))
+    elseif x === :θ 
+        return theta(ti)
     elseif x === :qᵗ
-        return target_quality_vector(tp)[target(tp).id]
+        return target_quality_vector(ti)[target(ti).subgrid_id]
     elseif x === :qˢ
-        return source_quality_vector(tp)
+        return source_quality_vector(ti)
     elseif x === :A
-        return affinitymatrix(tp)
+        return affinitymatrix(ti)
     elseif x === :C
-        return costmatrix(tp)
-    elseif hasproperty(gridinit(tp).precalculation, x)
-        return Base.getproperty(gridinit(tp).precalculation, x)
+        return costmatrix(ti)
+    elseif hasproperty(gridinit(ti).precalculation, x)
+        return Base.getproperty(gridinit(ti).precalculation, x)
     end
     # Defer to `get_or_compute` for all other properties
     # We wrap the output in a `ReadOnlyArray` to prevent bugs.
-    return get_or_compute(tp, x)
+    return get_or_compute!(ti, x)
 end
 
 function gridinit_precalculation(problem::Problem{<:RSP}, grid::Grid)
-    probability = _probabilitymatrix(affinitymatrix(grid))
-    W = _W(probability, theta(problem), costmatrix(grid))
+    P, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
+    W = _W(P, theta(problem), costmatrix(grid))
     IW = I - W
     IW_factorization = init(solver(problem), IW)
+    Aⁱ = mapnz(inv, affinitymatrix(grid))
+    # TODO: is cost and affinity the right way around here?
     if solver(problem) isa VectorSolver
         IW_adj = IW'
         # Use adjoint factorization of A rather than recalculating for A'
@@ -269,163 +435,70 @@ function gridinit_precalculation(problem::Problem{<:RSP}, grid::Grid)
     end
     CW = costmatrix(grid) .* W
 
-    return (; probability, W, IW, CW, IW_factorization, IW_adj, IW_adj_factorization)
+    return (; P, W, IW, IW_adj, CW, IW_factorization, IW_adj_factorization, Aⁱ, A_rowsums)
 end
 function gridinit_precalculation(::Problem{<:LeastCost}, grid::Grid)
-    probability = _probabilitymatrix(affinitymatrix(grid))
+    P, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
+    # TODO: use a raster based shortest path algorithm from Geomorphometry.jl
+    # disjkstra is especially slow due to allocations,
+    # searchsorted for index lookups, and Dict getindex/setindex!.
     cost_weighted_digraph = SimpleWeightedDiGraph(costmatrix(grid))
-    (; probability, cost_weighted_digraph)
+    dsp1 = dijkstra_shortest_paths(cost_weighted_digraph, 1)
+    parents = dsp1.parents
+    path_allocs = Vector{eltype(parents)}[Vector{eltype(parents)}() for _ in 1:length(parents)]
+    (; P, A_rowsums, cost_weighted_digraph, path_allocs)
 end
 function gridinit_precalculation(problem::Problem{<:RandomWalk}, grid::Grid)
-    stationary_distribution = _stationary_distribution(grid.Pref, solver(problem))
-    probability = _probabilitymatrix(affinitymatrix(grid))
-    return (; probability, stationary_distribution)
-end
-
-@inline function get_or_compute(tp::TargetInit{<:RSP}, x::Symbol)::Vector{Float64}
-    st = storage(tp)
-    if haskey(st, x)
-        return st[x]
-    end
-    output = if x === :Z # "fundamental matrix"
-        _fundamentalmatrix(tp)
-    elseif x === :Zⁱ # elementwise inverse of Z
-        _inv!(tp.workspace, tp.Z)
-    elseif x === :Q
-        (; qˢ, qᵗ, workspace) = tp
-        workspace .= qˢ .* qᵗ
-    elseif x === :QZⁱ 
-        (; Q, Zⁱ, workspace) = tp
-        workspace .= Q .* Zⁱ
-    elseif x === :K
-        _proximitymatrix(tp)
-    elseif x === :M
-        (; qˢ, K, qᵗ, workspace) = tp
-        workspace .= qˢ .* K .* qᵗ
-    elseif x === :MZⁱ 
-        (; M, Zⁱ, workspace) = tp
-        workspace .= M .* Zⁱ 
-    elseif x === :Zrows
-        _fundamental_rows(tp)
-    elseif x === :expected_costs
-        compute(ExpectedCost(), tp)
-    elseif x === :free_energy_distances
-        compute(FreeEnergyDistance(), tp)
-    elseif x === :survival_probabilities
-        compute(SurvivalProbability(), tp)
-    elseif x === :power_mean_proximities
-        compute(PowerMeanProximity(), tp)
-    else
-        error("Unknown property $x")
-    end
-    st[x] = output
-    return output
-end
-@inline function get_or_compute(tp::TargetInit{<:RandomWalk}, x::Symbol)::Vector{Float64}
-    # Either retrieve from storage, or calculate and store
-    get!(storage(tp), x) do
-        if x === :Z
-            inv(IP .+ p')
-        elseif x === :H
-            (diag(Z)' .- Z) ./ p'
-        else
-            error("Unknown property $x")
-        end
-    end
-end
-@inline function get_or_compute(tp::TargetInit{<:LeastCost}, x::Symbol)::Vector{Float64}
-    # Either retrieve from storage, or calculate and store
-    get!(storage(tp), x) do
-        if x == :shortest_paths
-            Graphs.dijkstra_shortest_paths(gridinit(tp).cost_weighted_digraph, target(tp).spatial)
-        elseif x == :shortest_paths_en
-            Graphs.enumerate_paths(tp.shorted_paths)
-        elseif x == :K # "proximity matrix"
-            (; shortest_paths, workspace) = tp
-            if isnothing(distance_transformation(tp))
-                workspace1 .= 1.0 # TODO is this right? not shortest_paths.dists?
-            else
-                workspace1 .= distance_transformation(cm).(shortest_paths.dists)
-            end
-        elseif x === :M # "landscape matrix"
-            (; qˢ, K, qᵗ, workspace) = tp
-            workspace .= qˢ .* K .* qᵗ
-        else
-            error("Unknown property $x")
-        end
-    end
+    P, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
+    Aⁱ = mapnz(inv, affinitymatrix(grid))
+    PC = P .* costmatrix(grid)
+    PC_rowsums = sum(PC; dims=2)
+    IP = I - P
+    IP_factorization = init(solver(problem), IP)
+    return (; Aⁱ, A_rowsums, P, PC, PC_rowsums, IP, IP_factorization)
 end
 
 # Variable generation for GridInit
 function _probabilitymatrix(A::SparseMatrixCSC)
     source_sums = vec(sum(A, dims=2))
     source_scaling = inv.(source_sums)
-    return Diagonal(source_scaling) * A
+    P = Diagonal(source_scaling) * A
+    return P, source_sums
 end
+# Substochastic
 function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
     LinearAlgebra.checksquare(Pref)
-    W = Pref .* exp.((-).(θ) .* C)
+    W = Pref .* exp.(-θ .* C)
     replace!(W.nzval, NaN => 0.0)
     return W
 end
 
-# Custom `inv` broadcast that avoids Inf
-_inv(Z::AbstractArray) = _inv!(similar(Z), Z)
-function _inv!(Zⁱ::AbstractArray, Z::AbstractArray)
-    broadcast!(Zⁱ, Z) do x
-        x = inv(x)
-        isfinite(x) ? x : floatmax(eltype(Z))
-    end
-end
-
-# Variable generation for TargetInit
-function _proximitymatrix(tp::TargetInit{<:RSP})
-    pm = proximity_measure(tp)
-    proximities = compute(pm, tp)
-    if pm isa DistanceMeasure
-        dt = distance_transformation(tp)
-        if !isnothing(dt)
-            proximities .= dt.(proximities)
-        end
-    end
-    _maybe_set_diagonal!(proximities, diagvalue(tp), target(tp).node)
-    return proximities
-end
-function _fundamentalmatrix(tp::TargetInit{<:RSP})
-    workspace1, workspace2 = workspaces(tp)
-    b = _rhs!(workspace1, nsources(tp), target(tp))
-    b_copy = _rhs!(workspace2, nsources(tp), target(tp))
-    return ldiv!(solver(tp), b, tp.IW_factorization, b_copy)
-end
-function _fundamental_rows(tp::TargetInit{<:RSP})
-    (; IW_adj_factorization) = tp
-    b, b_copy = workspaces(tp)
-    _rhs!(b, nsources(tp), target(tp))
-    _rhs!(b_copy, nsources(tp), target(tp))
-    ldiv!(solver(tp), b, IW_adj_factorization, b_copy)
-end
-function _check_z(tp::TargetInit{<:RSP})
+function _check_z(ti::TargetInit{<:RSP})
     # Check that values in Z are not too small
     # TODO: does this make sense for single targets
-    if check(tp) && minimum(tp.Z) * minimum(nonzeros(tp.CW)) == 0
+    if check(ti) && minimum(ti.Z) * minimum(nonzeros(ti.CW)) == 0
         @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
     end
 end
 
 # Computes the stationary distribution of a random walk following the transition probability matrix
-function _stationary_distribution(P::SparseMatrixCSC, solver::Solver)
+function _stationary_distribution(solver::Solver, P::SparseMatrixCSC)
     # Input: the transition probability matrix P
     # Output: the stationary distribution of the random walk
     n = LinearAlgebra.checksquare(P)
     PI = P' - I
+    PI_factorization = init(solver, PI)
     PI[1, :] .= 1
     v = zeros(n)
-    v[1] = 1
-    return ldiv!(solver, PI, v)
+    v1 = zeros(n)
+    v[1] = v1[1] = 1
+    return ldiv!(solver, v, PI_factorization, v1)
 end
 
 # `init` and `solve`
 
+init(movement_mode::MovementMode, grid::Grid; kw...) =
+    init(Problem(; movement_mode), grid; kw...)
 init(m::Union{Measure,Tuple,NamedTuple}, problem::Problem, rast::RasterStack; kw...) = 
     init(m, problem, init(problem, rast); kw...)
 init(problem::Problem, rast::RasterStack; kw...) = MultiGridInit(problem, rast; kw...)
@@ -433,6 +506,9 @@ init(problem::Problem, grid::Grid; kw...) = MultiGridInit(problem, grid; kw...)
 init(gi::GridInit, target::Union{Int,TargetID}) = TargetInit(gi, target)
 init(mgi::MultiGridInit, subgrid_id::Int; kw...) = GridInit(mgi, subgrid_id; kw...)
 
+
+solve(p::Problem, input::Union{Grid,RasterStack}; kw...) = 
+    solve(init(p, input; kw...))
 # Allow solving all the levels of precalculated object with specific measures
 solve(p::Initialisation; kw...) = solve(measures(p), p; kw...)
 solve(measure::Measure, init::Initialisation; kw...) =
@@ -449,7 +525,9 @@ function solve(measures::Union{NamedTuple,Tuple}, mgi::MultiGridInit;
         # Intitalise sparse matrices and precalculate e.g. LU factorizations
         solve(measures, init(mgi, subgrid_id; outputs))
     end
-    out = _maybe_raster(outputs, mgi)
+    out = map(outputs, measures) do o, m
+        returntrait(m) isa DenseSpatial ? _maybe_raster(o, mgi) : o
+    end
     if all(map(o -> o isa Raster, out))
         return RasterStack(out)
     else
@@ -464,62 +542,18 @@ function solve(measures::Union{NamedTuple,Tuple}, gi::GridInit;
         # Precalculate for this target and graph measures
         solve(measures, init(gi, target_id))
     end
-    return _maybe_raster(outputs, gi)
+    return map(outputs, measures) do o, m
+        returntrait(m) isa DenseSpatial ? _maybe_raster(o, gi) : o
+    end
 end
 function solve(measures::Union{NamedTuple,Tuple}, ti::TargetInit;
     outputs=outputs(ti)
 )
     # Compute everything for this target and graph measures
     map(measures, outputs) do measure, output
-        # Compute a measure for this target
-        v = compute(measure, ti)
-        # any(isinf, v) && error("Inf values in computed value for $measure at target $(target(ti))")
+        # Dont compute the same measure multiple times
+        v = get_or_compute!(ti, measure)
         # Write values to output object
         update_output!(output, measure, v, ti)
     end
 end
-
-# General utility functions
-
-_maybe_set_diagonal!(proximitymatrix, diagvalue::Nothing, targetnodes) = nothing
-function _maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnodes::AbstractVector)
-    for (j, i) in enumerate(targetnodes)
-        proximitymatrix[i, j] = diagvalue
-    end
-end
-_maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnode::Int) = 
-    proximitymatrix[targetnode] = diagvalue
-
-# Fill a vector with zeros, and one for the target node
-function _rhs!(workspace, n::Int, target::TargetID)
-    fill!(workspace, 0.0)
-    workspace[target.node] = 1.0
-    return workspace
-end
-
-# Reshape arrays to a new size dstructively
-# This only makes sense if arrays are sorted large to small
-function _reshape!(A::Array, size::Tuple{Vararg{Int}})
-    len = prod(size)
-    if Base.size(A) == size
-        A
-    else # if length(A) >= len
-        # TODO make sure this doesn't allocate when the array is larger
-        # We may need julia 1.11 to do this properly
-        v = vec(A)
-        resize!(v, len)
-        reshape(v, size)
-    end
-end
-
-_allocate_workspaces!(x, problem::Problem, grid::Grid) =
-    _allocate_workspaces!(x, problem, nsources(grid))
-_allocate_workspaces!(x::Nothing, problem::Problem, length::Int) =
-    Workspaces(length, nworkspaces(problem) + 20)
-_allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
-    free!(resize!(workspaces, length))
-
-_maybe_new_outputs(mes, mgi) =
-    mes === measures(mgi) ? outputs(mgi) : allocate_output(mes, mgi)
-
-_newstoragedict(::Workspaces{W}) where W = Dict{Symbol,W}()

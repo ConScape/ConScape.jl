@@ -1,7 +1,8 @@
 """
    VectorSolver(; check, threaded)
 
-Use julias default solver over vector colums of the problem.
+Use Julias' default UMFPACK solver, 
+over vector columns for each target of the problem.
 """
 @kwdef struct VectorSolver <: Solver
     check::Bool = true
@@ -29,23 +30,34 @@ TODO: an example that is realistic
 
 ````julia
 using LinearSolve
-distance_transformation = (exp=x -> exp(-x/75), oddsfor=ConScape.OddsFor()),
-problem = ConScape.Problem(; 
-    solver = LinearSolver(KrylovJL_GMRES(precs = (A, p) -> (Diagonal(A), I)))
-    measures = (;
-        func=ConnectedHabitat(),
-        qbetw=Betweenness(QualityWeighted()),
-    ),
-    movement_mode = RandomisedShortestPath(ExpectedCost(), theta=1.0),
+measures = (;
+    func=ConnectedHabitat(),
+    qbetw=Betweenness(QualityWeighted()),
 )
+movement_mode = RandomisedShortestPath(ExpectedCost(); theta=1.0)
+solver = LinearSolver(KrylovJL_GMRES(precs = (A, p) -> (Diagonal(A), I)))
+problem = ConScape.Problem(measures; movement_mode, solver) 
+
+rast = RasterStack((source_qualities="source_qs.tif", target_qualities="target_qs.tif"))
+result = solve(problem, rast)
 ````
 """
-struct LinearSolver{A,K} <: Solver
+struct LinearSolver{A<:Tuple,K} <: Solver
     args::A
     keywords::K
     threaded::Bool
+    # Constructors error without LinearSolve.jl loaded
+    function LinearSolver(args, kw, threaded) 
+        args isa Tuple || throw(ArgumentError("args must be a Tuple"))
+        threaded isa Bool || throw(ArgumentError("threaded must be a Bool"))
+        error("First run `using LinearSolve` to use LinearSolver")
+    end
+    LinearSolver{A,K}(args::A, kw::K, threaded::Bool) where {A,K} =
+        new{A,K}(args, kw, threaded)
 end
 LinearSolver(args...; threaded=false, kw...) = LinearSolver(args, kw, threaded)
+
+# See implementation in ext/ConScapeLinearSolveExt.jl
 
 isthreaded(s::Solver) = false
 isthreaded(s::LinearSolver) = s.threaded
