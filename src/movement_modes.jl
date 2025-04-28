@@ -10,16 +10,6 @@ abstract type MovementMode end
 init(movement_mode::MovementMode, grid::Grid; kw...) =
     init(Problem(; movement_mode), grid; kw...)
 
-const PROXIMITY_KEYWORD = """
-- `proximity_measure`: the measure to use for the probability of arrival at the target.
-    By default this is `ExpectedCost()`
-- `distance_transformation`: the transformation to apply to a distance matrix to 
-    convert it to a proximity matrix. [`DistanceMeasure`](@ref)s like `ExpectedCost()` and 
-    `FreeEnergyDistance()` use this transformation, but `ProximityMeasure`s like 
-    `PowerMeanProximity()` or `SurvivalProbability()` do not.
-- `diagvalue`: The value to use for the diagonal of the proximity matrix.
-"""
-
 """
     ArrivingMovement
 
@@ -35,6 +25,16 @@ MovementMode where individuals may not arrive at the target,
 allowing simulation of mortality.
 """
 abstract type AbsorbingMovement <: MovementMode end
+
+const PROXIMITY_KEYWORDS = """
+- `proximity_measure`: the measure to use for the probability of arrival at the target.
+    By default this is `ExpectedCost()`
+- `distance_transformation`: the transformation to apply to a distance matrix to 
+    convert it to a proximity matrix. [`DistanceMeasure`](@ref)s like `ExpectedCost()` and 
+    `FreeEnergyDistance()` use this transformation, but `ProximityMeasure`s like 
+    `PowerMeanProximity()` or `SurvivalProbability()` do not.
+- `diagvalue`: The value to use for the diagonal of the proximity matrix.
+"""
 
 """
     RandomisedShortestPath <: ArrivingMovementMode
