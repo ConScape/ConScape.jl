@@ -18,8 +18,8 @@ measures(p::Initialisation) = measures(problem(p))
 proximity_measure(p::Initialisation) = proximity_measure(problem(p))
 distance_transformation(p::Initialisation) = distance_transformation(problem(p))
 diagvalue(p::Initialisation) = diagvalue(problem(p))
-approx(p::Initialisation) = approx(problem(p))
-theta(p::Initialisation) = theta(problem(p))
+approx(p::Initialisation) = approx(movement_mode(p))
+theta(p::Initialisation) = theta(movement_mode(p))
 
 nsources(p::Initialisation) = length(source_ids(p))
 ntargets(p::Initialisation) = length(target_ids(p))
@@ -155,9 +155,8 @@ source_ids(g::Grid) = g.source_ids
 target_ids(g::Grid) = g.target_ids
 
 Base.size(g::Grid) = g.size
-function Base.show(io::IO, ::MIME"text/plain", g::Grid)
-    print(io, summary(g), " of size ", g.size)
-end
+Base.show(io::IO, ::MIME"text/plain", g::Grid) =
+    print(io, "Grid of size ", g.size)
 
 DimensionalData.dims(g::Grid) = g.dims
 
@@ -265,7 +264,6 @@ end
 
 grid(gi::GridInit) = gi.grid
 problem(gi::GridInit) = gi.problem
-probability(gi::GridInit) = gi.probability
 workspaces(gi::GridInit) = gi.workspaces
 outputs(gi::GridInit) = gi.outputs
 storage(gi::GridInit) = gi.storage
@@ -318,11 +316,6 @@ grid(ti::TargetInit) = grid(gridinit(ti))
 problem(ti::TargetInit) = problem(gridinit(ti))
 storage(ti::TargetInit) = storage(gridinit(ti))
 workspaces(ti::TargetInit) = workspaces(gridinit(ti))
-
-proximity_measure(mm::TargetInit) = proximity_measure(problem(mm))
-diagvalue(mm::TargetInit) = diagvalue(problem(mm))
-approx(mm::TargetInit) = approx(problem(mm))
-theta(mm::TargetInit) = theta(problem(mm))
 
 # All TargetInit allow retreiving proberties with `getproperty`
 # from the parent `GridInit` or calculated and stored in 
@@ -405,13 +398,13 @@ function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
     return W
 end
 
-function _check_z(ti::TargetInit{<:RSP})
-    # Check that values in Z are not too small
-    # TODO: does this make sense for single targets
-    if check(ti) && minimum(ti.Z) * minimum(nonzeros(ti.CW)) == 0
-        @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
-    end
-end
+# function _check_z(ti::TargetInit{<:RSP})
+#     # Check that values in Z are not too small
+#     # TODO: does this make sense for single targets
+#     if check(ti) && minimum(ti.Z) * minimum(nonzeros(ti.CW)) == 0
+#         @warn "Warning: Z-matrix contains too small values, which can lead to inaccurate results! Check that the graph is connected or try decreasing θ."
+#     end
+# end
 
 # Computes the stationary distribution of a random walk following the transition probability matrix
 function _stationary_distribution(solver::Solver, P::SparseMatrixCSC)
@@ -431,8 +424,8 @@ end
 
 init(movement_mode::MovementMode, grid::Grid; kw...) =
     init(Problem(; movement_mode), grid; kw...)
-init(m::Union{Measure,Tuple,NamedTuple}, problem::Problem, rast::RasterStack; kw...) = 
-    init(m, problem, init(problem, rast); kw...)
+# init(m::Union{Measure,Tuple,NamedTuple}, problem::Problem, rast::RasterStack; kw...) = 
+    # init(m, init(problem, rast); kw...)
 init(problem::Problem, rast::RasterStack; kw...) = MultiGridInit(problem, rast; kw...)
 init(problem::Problem, grid::Grid; kw...) = MultiGridInit(problem, grid; kw...)
 init(gi::GridInit, target::Union{Int,TargetID}) = TargetInit(gi, target)

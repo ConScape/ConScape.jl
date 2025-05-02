@@ -99,6 +99,11 @@ struct CustomWeighted{W} <: BetweennessWeighting
     weight::W
 end
 
+const WEIGHTING_ARGUMENT = """
+- `weighting`: a [`BetweennessWeighting`](@ref): `Unweighted()`, `QualityWeighted()` 
+    `ProximityWeighted()` or `QualityAndProximityWeighted()`
+"""
+
 """
     Betweenness <: SpatialMeasure
     
@@ -110,8 +115,7 @@ as defined by the [`MovementMode`](@ref)).
 
 ## Arguments
 
-- `weighting`: a `BetweennessWeighting`: `Unweighted()`, `QualityWeighted()` 
-    `ProximityWeighted()` or `QualityAndProximityWeighted()`
+$WEIGHTING_ARGUMENT
 
 The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
@@ -126,8 +130,7 @@ end
 Compute betweenness of all edges weighted by qualities of 
 source s and target t and the proximity between s and t. 
 
-- `weighting`: a `BetweennessWeighting`: `Unweighted()`, `QualityWeighted()` 
-    `ProximityWeighted()` or `QualityAndProximityWeighted()`
+$WEIGHTING_ARGUMENT
 
 Returns a sparse matrix where element (i, j) is the betweenness of edge (i, j).
 """
@@ -141,17 +144,17 @@ weighting(gm::EdgeBetweenness) = gm.weighting
 # Sensitivity
 
 abstract type SensitivityContext end # "With regards to"
+struct Quality <: SensitivityContext end
 abstract type Permeability <: SensitivityContext end
 abstract type CostAndAffinitySensitivityContext <: Permeability end
 struct Affinity <: Permeability end
 struct Cost <: Permeability end
-struct Quality <: Permeability end
 struct CostToAffinity <: CostAndAffinitySensitivityContext end
 struct AffinityToCost <: CostAndAffinitySensitivityContext end
 
-abstract type SensitivitySummary end
-struct LandscapeSum <: SensitivitySummary end
-struct LandscapeEigen <: SensitivitySummary end
+abstract type TopologicalMetric end
+struct Sum <: TopologicalMetric end
+struct Eigen <: TopologicalMetric end
 
 abstract type SensitivityChange end
 struct UnitChange <: SensitivityChange end
@@ -176,9 +179,9 @@ Compute sensitivity of all nodes.
 
 The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
-@kwdef struct Sensitivity{Co<:SensitivityContext,Su<:SensitivitySummary,Ch<:SensitivityChange} <: SpatialMeasure
+@kwdef struct Sensitivity{Co<:SensitivityContext,TM<:TopologicalMetric,Ch<:SensitivityChange} <: SpatialMeasure
     context::Co
-    summary::Su = LandscapeSum()
+    summary::TM = Sum()
     change::Ch = UnitChange()
 end
 

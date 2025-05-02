@@ -97,8 +97,7 @@ that holds another `AbstractWindowedProblem`.
 end
 
 function Base.show(io::IO, mime::MIME"text/plain", a::ProblemAssessment)
-    summary(io, a)
-    println(io)
+    println(io, typeof(a))
     println(io, "Shape: $(a.shape)")
     println(io, "Number of jobs: $(a.njobs)")
     # Use SparseArrays nice matrix printing for the mask

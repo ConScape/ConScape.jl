@@ -45,12 +45,12 @@ Assumes partial knowledge and immortality.
     (TODO: more detail)
 """
 @kwdef struct RandomisedShortestPath{
-    PM<:Union{ProximityMeasure,Nothing},DT,T<:Union{Real,Nothing},DV
+    PM<:ProximityMeasure,DT,DV,T<:Real
 } <: ArrivingMovement
     proximity_measure::PM = ExpectedCost()
     distance_transformation::DT = nothing
-    theta::T = nothing
     diagvalue::DV = nothing
+    theta::T
     approx::Bool = false
 end
 RandomisedShortestPath(proximity_measure; kw...) =

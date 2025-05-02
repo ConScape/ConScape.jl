@@ -39,8 +39,8 @@ sparse matrix factorizations, and solves.
     movement_mode::MM = RandomisedShortestPath()
     measures::M = ()
     solver::S = VectorSolver()
-    costfunction::C = MinusLog()
-    grain::Union{Nothing,Int} = nothing
+    costfunction::C = MinusLog() # TODO move to RSP
+    grain::Union{Nothing,Int} = nothing # Better name here - target_density?
 end
 Problem(measures::Union{Tuple,NamedTuple}; kw...) = 
     Problem(; measures, kw...)

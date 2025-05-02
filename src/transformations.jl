@@ -54,5 +54,5 @@ Base.inv(::Inv) = Inv()
 Base.inv(::OddsAgainst) = OddsFor()
 Base.inv(::OddsFor) = OddsAgainst()
 # TODO test and clarify this 
-Base.inv(t::MinusLogAlpha) = ExpMinus(t.alpha)
-Base.inv(t::ExpMinusAlpha) = MinusLog(t.alpha)
+Base.inv(t::MinusLogAlpha) = ExpMinusAlpha(t.alpha)
+Base.inv(t::ExpMinusAlpha) = MinusLogAlpha(t.alpha)

@@ -197,7 +197,7 @@ end
 # Mean Kullback-Leibler Divergence
 
 function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LeastCost})
-    (; probability, cost_weighted_digraph, qˢ, qᵗ) = ti
+    (; cost_weighted_digraph, P, qˢ, qᵗ) = ti
     output = ti.workspace
     from = Vector{Int}(undef, length(output))
     to = Vector{Int}(undef, length(output))

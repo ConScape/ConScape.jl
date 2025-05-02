@@ -403,9 +403,9 @@ To get only paths that will be written too disk, use
 """
 batch_paths(p::BatchProblem, x::Union{RasterStack,Tuple{Int,Int}}; batch_ranges=window_ranges(p, x)) = 
     [_batch_path(p, rs) for rs in batch_ranges]
-batch_paths(bi::BatchInit) = [_batch_path(p, rs) for rs in bi.batch_ranges]
+batch_paths(bi::BatchInit) = [_batch_path(problem(bi), rs) for i in bi.batch_indices for rs in bi.batch_ranges[i]]
 
-function _batch_path(p, ranges::Tuple)
+function _batch_path(p, ranges::Tuple{<:UnitRange{Int},<:UnitRange{Int}})
     corners = map(first, ranges)
     dirname = "batch_" * join(corners, '_')
     return joinpath(p.datapath, dirname)
@@ -446,14 +446,17 @@ function window_ranges(p::Union{BatchProblem,WindowedProblem}, size::Tuple)
     # Define the corners of each window
     corners = CartesianIndices(size)[begin:cs1:end-2buffer, begin:cs2:end-2buffer]
     # Create an iterator of ranges for retreiving each window
-    return [map((i, s, ws) -> i:min(s, i + ws - 1), Tuple(c), size, windowsize) for c in corners]
+    _to_ranges(i, s, ws) = (i:min(s, i + ws - 1))::UnitRange{Int}
+    return [map(_to_ranges, Tuple(c), size, windowsize)::NTuple{2} for c in corners]
 end
 
 _get_window_with_zeroed_buffer(wi::Union{WindowedInit,BatchInit}, args...; kw...) =
     _get_window_with_zeroed_buffer(problem(wi), wi.rast, args...; kw...)
 _get_window_with_zeroed_buffer(p::AbstractWindowedProblem, rast::RasterStack; kw...) =
     _get_window_with_zeroed_buffer(p, rast, axes(rast); kw...)
-function _get_window_with_zeroed_buffer(p::AbstractWindowedProblem, rast::RasterStack, rs;
+function _get_window_with_zeroed_buffer(
+    p::AbstractWindowedProblem, rast::RasterStack, 
+    rs::Tuple{<:AbstractUnitRange,<:AbstractUnitRange};
     shape=shape(p)
 )
     window = view(rast, rs...)

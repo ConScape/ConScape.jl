@@ -65,7 +65,7 @@ function graph_matrix_from_raster(R::AbstractMatrix;
             (!(1 <= i + ki <= m) || !(1 <= j + kj <= n)) && continue
             # Target node
             targetval = R[i + ki, j + kj]
-            # Don't include zero or NaN similaritiers
+            # Don't include zero or NaN similarities
             iszero(targetval) || isnan(targetval) && continue
             # Add edge
             val = weightedval(weight, matrix_type, baseval, targetval, distance)
@@ -137,7 +137,7 @@ Input:
 =#
 function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, impossible_affinity=1e-20)
     # Find the indices of the coordinates in the source_ids vector
-    node_list_idx = [findfirst(isequal(n), source_ids(g)) for n in node_list]
+    node_list_idx = [findfirst(isequal(n), source_ids(g))::Int for n in node_list]
 
     # Copy affinities and qualities for modification
     affinitymatrix = copy(g.affinitymatrix)
@@ -201,22 +201,9 @@ function _target_spatial_ids(target_quality::SparseMatrixCSC, source_spatial_ids
     return intersect!(CartesianIndex.(is, js), source_spatial_ids)
 end
 
-function _target_ids(target_quality_spatial::AbstractMatrix, source_spatial_ids::Vector{CartesianIndex{2}}, all_spatial_ids::Vector{CartesianIndex{2}})
-    # Get spatial indices (CartesianIndex) of valid targets that are also spatial indices of sources
-    target_spatial_ids = _target_spatial_ids(target_quality_spatial, source_spatial_ids)
-    # Find the node ids (Int) for the source row corresponding with spatial indices
-    target_nodes = findall(source_spatial_ids) do id
-        id in target_spatial_ids
-    end
-    target_grid_ids = findall(all_spatial_ids) do id
-        id in target_spatial_ids
-    end
-    # Return Vector{NamedTuple} each with target.spatial and target.node
-    return map(target_spatial_ids, target_grid_ids, eachindex(target_nodes), target_nodes) do spatial, grid_id, subgrid_id, node
-        (; spatial, grid_id, subgrid_id, node)
-    end
-end
+function _target_ids(g.target_quality_spatial, source_ids, all_spatial_ids)
 
+end
 
 function _fill_matrix(values, g::Initialisation)
     matrix = fill(NaN, size(g))
@@ -225,8 +212,9 @@ function _fill_matrix(values, g::Initialisation)
 end
 
 function Raster(values::AbstractVector, p::Initialisation; kwargs...)
-    isnothing(dims(p)) && throw(ArgumentError("Grid dims are `nothing` - it was not initialised with a Raster"))
-    return Raster(_fill_matrix(values, p), dims(p); kwargs...)
+    ds = dims(p)
+    isnothing(ds) && throw(ArgumentError("Grid dims are `nothing` - it was not initialised with a Raster"))
+    return Raster(_fill_matrix(values, p), ds::Tuple; kwargs...)
 end
 
 function outdegrees(p::Initialisation)
@@ -235,6 +223,7 @@ function outdegrees(p::Initialisation)
 end
 
 function indegrees(p::Initialisation; kwargs...)
+    g = grid(p)
     values = sum(affinitymatrix(g), dims=1)
     _maybe_raster(_fill_matrix(values, p), p)
 end
@@ -341,20 +330,15 @@ function coarse_graining(rast::AbstractRasterStack, npix; kw...)
     return Base.setindex(rast, target_qualities, :target_qualities)
 end
 function coarse_graining(M::AbstractMatrix, npix;
-    source_ids=_id_gc_list(size(M)...)
+    source_ids=CartesianIndices(size(M))
 )
     nrows, ncols = size(M)
     getrows = (floor(Int, npix / 2)+1):npix:(nrows-ceil(Int, npix / 2)+1)
     getcols = (floor(Int, npix / 2)+1):npix:(ncols-ceil(Int, npix / 2)+1)
     coarse_target_rc = Base.product(getrows, getcols)
-    coarse_target_ids = vec(
-        [
-        findfirst(
-            isequal(CartesianIndex(ij)),
-            source_ids
-        ) for ij in coarse_target_rc
-    ]
-    )
+    coarse_target_ids = [
+        findfirst(isequal(CartesianIndex(ij)), source_ids)::Int for ij in coarse_target_rc
+    ] |> vec
     coarse_target_rc = [ij for ij in coarse_target_rc if !ismissing(ij)]
     filter!(!ismissing, coarse_target_ids)
     V = [sum_neighborhood(M, ij, npix) for ij in coarse_target_rc]
@@ -399,7 +383,7 @@ function _reshape!(A::Array, size::Tuple{Vararg{Int}})
     else # if length(A) >= len
         # TODO make sure this doesn't allocate when the array is larger
         # We may need julia 1.11 to do this properly
-        v = vec(A)
+        v = vec(A)::Vector
         resize!(v, len)
         reshape(v, size)
     end

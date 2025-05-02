@@ -12,7 +12,7 @@ g = ConScape.perm_wall_sim(30, 60, corridorwidths=(3,2), costs=ConScape.MinusLog
 ConScape.plot_outdegrees(g)
 ```
 
-From a `Grid`, we can now create a `GridRSP` which we can use to compute the randomized shortest path based quality weighted betweenness with the temperature parameter `θ=0.2`.
+Now solve the quality-weighted betweenness:
 
 ```@example 1
 h = ConScape.GridRSP(g, θ=0.2)
@@ -66,3 +66,7 @@ ConScape.writeasc
 ```
 
 This package is derived from the Python package [reindeers](https://bitbucket.org/rdevooght/reindeers.git).
+=======
+bet_q = ConScape.solve(Betweenness(ConScape.QualityWeighted()), g)
+ConScape.heatmap(bet_q)
+```
