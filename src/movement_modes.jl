@@ -26,10 +26,19 @@ allowing simulation of mortality.
 """
 abstract type AbsorbingMovement <: MovementMode end
 
+const PROXIMITY_KEYWORDS = """
+- `distance_transformation`: the transformation to apply to a distance matrix to 
+    convert it to a proximity matrix. [`DistanceMeasure`](@ref)s like `ExpectedCost()` and 
+    `FreeEnergyDistance()` use this transformation, but `ProximityMeasure`s like 
+    `PowerMeanProximity()` or `SurvivalProbability()` do not.
+- `diagvalue`: The value to use for the diagonal of the proximity matrix.
+    (TODO: explain why its relevent)
+"""
+
 """
     RandomisedShortestPath <: ArrivingMovementMode
 
-    RandomisedShortestPath(; theta, distance_transformation, diagvalue, approx)
+    RandomisedShortestPath(; kw...)
 
 Randomised shortest path movement. Intermediate between 
 [`LeastCost`](@ref) and [`RandomWalk`](@ref).
@@ -38,10 +47,11 @@ Assumes partial knowledge and immortality.
 
 ## Keywords
 
+- `proximity_measure`: the measure to use for the probability of arrival at the target.
+    By default this is `ExpectedCost()`
+$PROXIMITY_KEYWORDS
 - `theta`: the inverse temperature (TODO: in more ecological terms)
-- `diagvalue`: the value to use for the diagonal of the proximity matrix.
-    (TODO: explain why its relevent)
-- `approx`: whether to use an approximate algorithm
+- `approx`: Whether to use an approximate algorithm, `false` by default.
     (TODO: more detail)
 """
 @kwdef struct RandomisedShortestPath{
@@ -65,12 +75,16 @@ theta(mm::RandomisedShortestPath) = mm.theta
 """
     LeastCost <: ArrivingMovementMode
 
-    LeastCost(; distance_transformation, diagvalue)
+    LeastCost(; kw...)
 
 Identical to [`RandomisedShortestPath`](@ref) with `theta` of `Inf`, 
-if that would run.
+if that could run without numerical problems.
 
 Assumes infinite knowledge and immortality.
+
+## Keywords
+
+$PROXIMITY_KEYWORDS
 """
 @kwdef struct LeastCost{DT,DV} <: ArrivingMovement 
     distance_transformation::DT = nothing
@@ -84,12 +98,19 @@ const LC = LeastCost
 """
     RandomWalk <: ArrivingMovementMode
 
-    RandomWalk(; distance_transformation, diagvalue)
+    RandomWalk(; kw...)
+
+
+Performance is usually 2-3 times slower than RSP>
 
 Identical to [`RandomisedShortestPath`](@ref) with `theta` of `0`, 
-if that could run.
+if that could run without numerical problems.
 
 Assumes zero knowledge but immortality.
+
+## Keywords
+
+$PROXIMITY_KEYWORDS
 """
 @kwdef struct RandomWalk{DT,DV} <: ArrivingMovement 
     distance_transformation::DT = nothing

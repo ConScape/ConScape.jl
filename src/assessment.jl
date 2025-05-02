@@ -268,3 +268,5 @@ function _assessment_keywords(p::BatchProblem, rast, a::NestedAssessment)
     end
     return (; batch_indices=a.indices, window_indices, sparse_sizes)
 end
+
+batch_paths(p::BatchProblem, a::NestedAssessment) = batch_paths(p, size(a))[a.indices]

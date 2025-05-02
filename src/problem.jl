@@ -21,19 +21,47 @@ required to calculate multiple outputs: connectivity, betweenness
 and sensitivity (etc) measures can use the same memory allocations,
 sparse matrix factorizations, and solves.
 
-# Keywords
+## Keywords
 
 - `measures`: A NamedTuple of [`Measure`](@ref)s.
 - `movement_mode`: A [`MovementMode`](@ref), [`RandomisedShortestPath`](@ref)
     by default.
 - `solver`: A [`Solver`](@ref) specification, `VectorSolver` by default.
-    [`LinearSolver`](@ref) allows the use of any LinearSolve.jl solvers,
+    [`LinearSolver`](@ref) allows for the use of any LinearSolve.jl solvers,
     when LinearSolve.jl is loaded.
 - `costfunction`: A function to transform affinities to costs, usually
-    a [`Transformation`](@ref) but custom function also work. The 
-    default is [`MinusLog`](@ref).
+    a [`Transformation`](@ref) but custom function also work. 
+    The default is [`MinusLog`](@ref).
 - `grain::Int`: used to apply coarse_graining to target qualities, 
     to reduce computational requirements.
+
+## Initialising and solving
+
+Problems are solved with `solve`:
+
+```julia
+problem = ConScape.Problem(measures; movement_mode)
+rast = RasterStack((source_qualities=qualpath, affinities=affinitypath))
+result = solve(problem, rast)
+```
+
+For interactive work you can use `init`:
+
+```julia
+# Init for all subgraphs of the grid made from rast
+multiinit = init(problem, rast)
+# Init for the first subgraph
+singleinit = init(multiinit, 1)
+# Init for a single target
+targetinit = init(singleinit, 1)
+
+And `solve` will work at each level:
+
+```julia
+solve(multiinit)
+solve(singleinit)
+solve(targetinit) 
+```
 """
 @kwdef struct Problem{MM<:MovementMode,M,S<:Solver,C} <: AbstractProblem
     movement_mode::MM = RandomisedShortestPath()
