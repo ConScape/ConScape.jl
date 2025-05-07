@@ -48,6 +48,7 @@ abstract type DistanceMeasure <: ProximityMeasure end
 
 struct ExpectedCost <: DistanceMeasure end
 struct FreeEnergyDistance <: DistanceMeasure end
+struct EuclidianDistance <: DistanceMeasure end
 struct HittingTime <: DistanceMeasure end
 struct PowerMeanProximity <: ProximityMeasure end
 struct SurvivalProbability <: ProximityMeasure end

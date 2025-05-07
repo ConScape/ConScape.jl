@@ -34,9 +34,9 @@ measures = (;
     func=ConnectedHabitat(),
     qbetw=Betweenness(QualityWeighted()),
 )
-movement_mode = RandomisedShortestPath(ExpectedCost(); theta=1.0)
+movement = RandomisedShortestPath(ExpectedCost(); theta=1.0)
 solver = LinearSolver(KrylovJL_GMRES(precs = (A, p) -> (Diagonal(A), I)))
-problem = ConScape.Problem(measures; movement_mode, solver) 
+problem = ConScape.Problem(measures; movement, solver) 
 
 rast = RasterStack((source_qualities="source_qs.tif", target_qualities="target_qs.tif"))
 result = solve(problem, rast)

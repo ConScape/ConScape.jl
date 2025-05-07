@@ -3,7 +3,6 @@ const SourceID = CartesianIndex{2}
 
 abstract type Initialisation end
 
-costfunction(p::Initialisation) = costfunction(grid(p))
 costmatrix(p::Initialisation) = costmatrix(grid(p))
 affinitymatrix(p::Initialisation) = affinitymatrix(grid(p))
 source_quality_vector(p::Initialisation) = source_quality_vector(grid(p))
@@ -12,14 +11,15 @@ source_quality_spatial(p::Initialisation) = source_quality_spatial(grid(p))
 target_quality_spatial(p::Initialisation) = target_quality_spatial(grid(p))
 source_ids(p::Initialisation) = source_ids(grid(p))
 target_ids(p::Initialisation) = target_ids(grid(p))
-movement_mode(p::Initialisation) = movement_mode(problem(p))
+movement(p::Initialisation) = movement(problem(p))
+costfunction(p::Initialisation) = costfunction(movement(p))
 solver(p::Initialisation) = solver(problem(p))
 measures(p::Initialisation) = measures(problem(p))
 proximity_measure(p::Initialisation) = proximity_measure(problem(p))
 distance_transformation(p::Initialisation) = distance_transformation(problem(p))
 diagvalue(p::Initialisation) = diagvalue(problem(p))
-approx(p::Initialisation) = approx(movement_mode(p))
-theta(p::Initialisation) = theta(movement_mode(p))
+approx(p::Initialisation) = approx(movement(p))
+theta(p::Initialisation) = theta(movement(p))
 
 nsources(p::Initialisation) = length(source_ids(p))
 ntargets(p::Initialisation) = length(target_ids(p))
@@ -49,7 +49,7 @@ It is possible to also supply matrices of `source_qualities` and `target_qualiti
 
 Alternatively, it is possible to supply a matrix to `costs` directly. If `prune=true` (the default), 
 """
-struct Grid{D<:Union{Tuple,Nothing},F<:Union{Nothing,Transformation},C<:AbstractMatrix,A<:AbstractMatrix,SQ,TQ} <: Initialisation
+struct Grid{D<:Union{Tuple,Nothing},F,C<:AbstractMatrix,A<:AbstractMatrix,SQ,TQ} <: Initialisation
     size::Tuple{Int,Int}
     costfunction::F
     costmatrix::C
@@ -110,7 +110,7 @@ function Grid(size::Tuple{Int,Int};
     end
 
     # Subset of source_ids with valid quality
-    target_ids = target_ids(target_qualities, source_ids, all_spatial_ids)
+    target_ids = _target_ids(target_qualities, source_ids, all_spatial_ids)
     # Initially just all spatial source qualities
     source_quality_vector = vec(source_quality_spatial)
     # Subset of spatial target qualities with valid quality
@@ -128,25 +128,26 @@ function Grid(size::Tuple{Int,Int};
     )
 end
 function Grid(rast::RasterStack;
-    affinitymatrix=ConScape.graph_matrix_from_raster(rast.affinities; matrix_type=AffinityMatrix()),
+    affinitymatrix=graph_matrix_from_raster(_get_affinities(rast); matrix_type=AffinityMatrix()),
     costfunction=nothing,
     costmatrix=if haskey(rast, :costs) 
-        ConScape.graph_matrix_from_raster(rast.costs; matrix_type=CostMatrix()) 
+        graph_matrix_from_raster(rast.costs; matrix_type=CostMatrix()) 
+    elseif isnothing(costfunction)
+        affinitymatrix # Not used
     else
         mapnz(costfunction, affinitymatrix)
     end,
-    source_qualities=rast.source_qualities,
-    target_qualities=get(rast, :target_qualities, source_qualities),
+    source_qualities=_get_source_qualities(rast),
+    target_qualities=_get_target_qualities(rast),
     kw...
 )
-    Grid(size(rast); affinitymatrix, source_qualities, target_qualities, kw...)
+    Grid(size(rast); affinitymatrix, costmatrix, costfunction, source_qualities, target_qualities, kw...)
 end
 Grid(p::AbstractProblem, rast::RasterStack; kw...) =
     Grid(rast; costfunction=costfunction(p), kw...)
 
 affinitymatrix(g::Grid) = g.affinitymatrix
 costmatrix(g::Grid) = g.costmatrix
-costfunction(g::Grid) = g.costfunction
 source_quality_spatial(g::Grid) = g.source_quality_spatial
 target_quality_spatial(g::Grid) = g.target_quality_spatial
 source_quality_vector(g::Grid) = g.source_quality_vector
@@ -160,6 +161,14 @@ Base.show(io::IO, ::MIME"text/plain", g::Grid) =
 
 DimensionalData.dims(g::Grid) = g.dims
 
+# Handle qualities being just `qualities` or
+# separated init `source_qualities` and `target_qualities`
+_get_source_qualities(rast::RasterStack) = 
+    haskey(rast, :source_qualities) ? rast.source_qualities : rast.qualities
+_get_target_qualities(rast::RasterStack) = 
+    haskey(rast, :target_qualities) ? rast.target_qualities : haskey(rast, :qualities) ? rast.qualities : rast.source_qualities
+_get_affinities(rast::RasterStack) =
+    haskey(rast, :permeabilities) ? rast.permeabilities : rast.affinities
 
 """
     MultiGridInit
@@ -233,6 +242,7 @@ subgrids(mgi::MultiGridInit) = mgi.subgrids
 workspaces(mgi::MultiGridInit) = mgi.workspaces
 outputs(mgi::MultiGridInit) = mgi.outputs
 storage(mgi::MultiGridInit) = mgi.storage
+ngrids(gi::MultiGridInit) = length(subgrids(gi))
 
 """
     GridInit
@@ -310,6 +320,8 @@ problem(gi::GridInit) = gi.problem
 workspaces(gi::GridInit) = gi.workspaces
 outputs(gi::GridInit) = gi.outputs
 storage(gi::GridInit) = gi.storage
+nsources(gi::GridInit) = nsources(grid(gi))
+ntargets(gi::GridInit) = ntargets(grid(gi))
 
 """
     TargetInit
@@ -490,10 +502,10 @@ end
 
 # `init` and `solve`
 
-init(movement_mode::MovementMode, grid::Grid; kw...) =
-    init(Problem(; movement_mode), grid; kw...)
-# init(m::Union{Measure,Tuple,NamedTuple}, problem::Problem, rast::RasterStack; kw...) = 
-    # init(m, init(problem, rast); kw...)
+init(movement::MovementMode, grid::Grid; kw...) =
+    init(Problem(; movement), grid; kw...)
+init(m::Union{Measure,Tuple,NamedTuple}, problem::Problem, rast::RasterStack; kw...) = 
+    init(m, init(problem, rast); kw...)
 init(problem::Problem, rast::RasterStack; kw...) = MultiGridInit(problem, rast; kw...)
 init(problem::Problem, grid::Grid; kw...) = MultiGridInit(problem, grid; kw...)
 init(gi::GridInit, target::Union{Int,TargetID}) = TargetInit(gi, target)
@@ -502,14 +514,23 @@ init(mgi::MultiGridInit, subgrid_id::Int; kw...) = GridInit(mgi, subgrid_id; kw.
 
 solve(p::Problem, input::Union{Grid,RasterStack}; kw...) = 
     solve(init(p, input; kw...))
-# Allow solving all the levels of precalculated object with specific measures
-solve(p::Initialisation; kw...) = solve(measures(p), p; kw...)
-solve(measure::Measure, init::Initialisation; kw...) =
-    only(values(solve((measure,), init; kw...)))
-solve(measures::Union{NamedTuple,Tuple}, g::Grid; verbose=false, kw...) = 
+solve(m::Union{Measure,Tuple,NamedTuple}, p::Problem, input::Union{Grid,RasterStack}; kw...) = 
+    solve(m, init(p, input; kw...))
+solve(measures::Union{NamedTuple,Tuple}, g::Union{Grid,RasterStack}; verbose=false, kw...) = 
     solve(Problem(measures; kw...), g::Grid; verbose)
-solve(measure::Measure, movement_mode::MovementMode, g::Grid; verbose=false, kw...) = 
-    only(solve(Problem((m=measure,); movement_mode, kw...), g::Grid; verbose))
+function solve(
+    m::Union{Tuple,NamedTuple}, movement::MovementMode, g::Union{Grid,RasterStack}; 
+    verbose=false, kw...
+) 
+    solve(Problem(m; movement, kw...), g; verbose)
+end
+solve(m::Measure, movement::MovementMode, g::Union{Grid,RasterStack}; verbose=false, kw...) =
+    only(values(solve(Problem(m; movement, kw...), g; verbose)))
+
+# Allow solving all the levels of precalculated object with specific measures
+solve(p::Initialisation, args...; kw...) = solve(measures(p), p, args...; kw...)
+solve(measure::Measure, init::Initialisation, args...; kw...) =
+    only(values(solve((measure,), init, args...; kw...)))
 function solve(measures::Union{NamedTuple,Tuple}, mgi::MultiGridInit; 
     outputs=_maybe_new_outputs(measures, mgi), kw...
 )
@@ -539,6 +560,8 @@ function solve(measures::Union{NamedTuple,Tuple}, gi::GridInit;
         returntrait(m) isa DenseSpatial ? _maybe_raster(o, gi) : o
     end
 end
+solve(measures::Union{NamedTuple,Tuple}, gi::GridInit, i::Int; kw...) =
+    solve(measures, init(gi, target_ids(gi)[i]); kw...)
 function solve(measures::Union{NamedTuple,Tuple}, ti::TargetInit;
     outputs=outputs(ti)
 )

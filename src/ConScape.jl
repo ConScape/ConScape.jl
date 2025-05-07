@@ -19,9 +19,9 @@ using Rasters.Extents
 import CommonSolve
 import CommonSolve: solve, init
 
-export RandomisedShortestPath, LeastCost, RandomWalk
+export RandomisedShortestPath, LeastCost, RandomWalk, RSP, LC, RW
 
-export ExpectedCost, FreeEnergyDistance, SurvivalProbability, PowerMeanProximity, KullbackLeiblerDivergence
+export ExpectedCost, FreeEnergyDistance, EuclidianDistance, SurvivalProbability, PowerMeanProximity, KullbackLeiblerDivergence
 
 export Betweenness, EdgeBetweenness, ConnectedHabitat, Criticality, EigMax, Sensitivity
 

@@ -156,6 +156,12 @@ end
 ######################################################################################
 # Proximities
 
+function compute(::EuclidianDistance, ti::TargetInit)
+    _hypot(a::CartesianIndex, b::CartesianIndex) = _hypot(Tuple(a), Tuple(b))
+    _hypot((a1, a2)::Tuple, (b1, b2)::Tuple) = hypot((b1 - a1), (b2 - a2))
+    return ti.workspace .= _hypot.(source_ids(ti), (target(ti).spatial,))
+end
+
 function compute(
     ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}
 )

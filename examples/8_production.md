@@ -1,0 +1,274 @@
+
+# Production: running ConScape.jl at scale
+
+ConScape is now designed for running at very large scales
+ with high resolution, such as 50m pixels for a whole country. 
+
+However, this will not work if a the exploratory approach
+used in the other examples is scaled up naively.
+
+For best performance at scale all details of a `solve` for 
+all required `Measure`s should be included in a single `Problem`.
+
+Then, to limit the size of each solve to below a 1000 * 1000 
+Raster is prudent, and as the solve becomes expensive, saving
+an intermediate file reduces the chance of catastropic errors
+losing large amounts of computation.
+
+To do this we wrap a problem in a `BatchProblem` (one window saved
+to disk per batch) or a `WindowedProblem` wrapped in a `BatchProblem`,
+(many windows mosaiced then saved to disk each batch).
+
+This example will document this workflow.
+
+For production scripts for running this on a slurm cluster, see the 
+ConScapeJobs repository in the ConScape github organisation.
+
+```julia
+using ConScape
+using Rasters
+using ArchGDAL # We use GDAL for tiff files, but NCDatasets or ZarrDatasets could be used instead
+using Plots
+using JSON3
+```
+
+# Data import
+
+```julia
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+Unlike our other examples, we load these files with `lazy=true` assuming they 
+will be very large. With a batch problem, there is no need to load the whole
+raster dataset for each windowed job. ConScape will later read just the range 
+that it needs from the lazy raster.
+
+```julia
+rast = RasterStack((permeabilities=joinpath(datadir, "mov_prob_1000.asc"),
+                    qualities=joinpath(datadir, "hab_qual_1000.asc"));
+    missingval=NaN,
+    lazy=true, # Very important keyword for large datasets on a cluster
+)
+```
+
+## Padding
+
+Using BatchProblem or WindowedProblem we lose the buffer edge around the Raster -
+no targets are calculated in this regions.
+
+It may be inconvenient to write a new file that pads this reason, and in Julia
+it is unnesessary. We can just lazily pad the underlying DiskArray.
+
+```julia
+buffer = 200
+rast = Rasters.DiskArrays.pad(rast, (X=(buffer, buffer), Y=(buffer, buffer)))
+```
+
+# Problem definition
+
+For large batches, always write all measures in one problem,
+and call `solve` once. This means computations will be shared
+accross all measures.
+
+First define measures as a `NamedTuple`. These names will 
+be the layer names of the output `RasterStack`.
+
+```julia
+measures = (;
+    ch=ConScape.ConnectedHabitat(),
+    betq=ConScape.Betweenness(QualityWeighted()),
+    betm=ConScape.Betweenness(QualityAndProximityWeighted()),
+)
+```
+
+Then define a movement mode:
+```julia
+movement = RandomisedShortestPath(; theta=1.0)
+```
+
+And define the complete Problem:
+
+```julia
+problem = ConScape.Problem(; measures, movement, solver=VectorSolver())
+```
+
+# WindowedProblem
+
+To split the raster into multiple overlapping windows, we can
+use a `WindowedProblem`, that simply wraps a regular `Problem` and
+adds windowing parameters.
+
+These are `buffer` and `centersize`, and `threaded`. 
+The `buffer` is the amount of source pixels around the target pixels.
+The number will depend on the decay parameters used for proximity
+calculations. The buffer size should capture all pixels where values
+may be significantly larger than zero.
+
+Here 2e use the buffer of `200` that we used for the file padding,
+and centersize of `10` means 10 x 10 targets will be run for each window. 
+
+As the number of targets decreases the relative cost of initialising
+sources increases, and performance will decline. As the number increases,
+the memory use increases. Try a few numbers separately to find a sweet-spot 
+for you particular problem and infrastructure. `20` may be a good starting point.
+We use `10` here because of the small rasters used for demonstration purposes.
+
+If you run ConScape.jl on a node with multiple cores, you usually want
+`threaded=true` here, to utilise all of them. Also make sure Julia is run
+with threads by checking:
+
+```julia
+Threads.nthreads()
+```
+
+And calling julia with `julia --threads=8` etc. `--threads=auto` may lead to
+two threads per physical core, which may not improve efficiency of ConScape.jl
+as CPUs will likely be well utilised by a single thread.
+
+
+Now, define the windowed problem:
+
+```julia
+windowed_problem = WindowedProblem(problem; 
+    centersize=10, buffer=20, threaded=false
+)
+```
+
+Run it to show that it works
+```
+@time result = solve(windowed_problem, rast)
+plot(result)
+```
+
+# Batch problems
+
+Large scale computations usually occurr accross separate "nodes" of a cluster.
+These are not separate CPU cores that can be threaded accross windows,
+but physically separate machines connected on a network.
+
+Usually, tasks are broeken into multiple separate batches and combined afterwards,
+such as with slurm array batches.
+
+To facilitate this workflow ConScape.jl defines `BatchProblem`.
+
+It has the key properties:
+
+- batches can be assessed and thinned to only those that need to run.
+- batch numbers are always _sequential_ so they are easy to specify in slurm scripts.
+- each batch is written to a separate folder of raster files.
+- progress can be reassessed after errors.
+- `solve` is run using an ID: `solve(batch_problem, rast, id)` so only that subsection
+    is run.
+- `solve` is usually run with an assessment: `solve(batch_problem, assessment, rast, id)` required 
+    batch ids are not recalculated (which will often often take longer than running the job itself!)
+
+```julia
+batch_problem = BatchProblem(problem; 
+    datapath=".", centersize=10, buffer, threaded=false
+)
+```
+
+# Batch assessment
+
+Usually in very large rasters there will be many windows that contain only zeros
+or missing values, and do not need to be run.
+
+For Norway, a long diagonal country, over 80% of the possible batches do not run.
+Prefiltering these jobs reduces the number of launches and lets us know when we
+are really finished by knowing a-priori which output paths must contain data.
+
+The `assess` function carries out this assessment, checking all windows for data
+and recording which need to run.
+
+```julia
+assessment = assess(batch_problem, rast)
+```
+
+Usually, the result should be written to disk to be used accross separate nodes.
+
+JSON is an easy, human readble format for saving assements.
+
+```juila
+JSON3.write("assessment.json", assessment)
+```
+
+Later you can read this directly into a `NestedAssessment` object`:
+
+```juila
+assessment = JSON3.read("assessment.json", NestedAssessment)
+```
+
+# Reassessment
+
+When all jobs for a `BatchProblem` appear to be finished, we need to 
+check that they actually are! Many kinds of errors may have occurred.
+
+The `reassess` function cheaply reassesses the situation from
+a BatchProblem definition and a previous output of `assess` or
+`reassess`, like a `NestedAssessment`. It simply checks that 
+the output folders exist (TODO: it should actually check that each file exists?).
+
+```juila
+assessment = reassess(batch_problem, assessment)
+```
+
+It is prudent to always save a copy of the original (expensive)
+output of `assess` if overwriting the working assessment file
+with the output of `reassess` - as information is lost in 
+the reassessment.
+
+
+# Mosaicing outputs
+
+After running batch problems `Rasters.mosaic` can be used to recombine them into 
+a single contiguous raster. In ConScape.jl spatial outputs with overlapping sources
+but non-overlapping targets can always be summed. 
+
+We can get all the paths that would produce output
+using `ConScape.batch_paths`:
+
+```julia
+output_paths = ConScape.batch_paths(batch_problem, assessment)
+```
+
+```julia
+# RasterStack will load all files in a folder
+output_rasts = RasterStack.(output_paths;
+    lazy=true, # This may be many GB in memory
+    missingval=NaN, # faster than the default `missing` but only for Float64
+)
+```
+
+Using the `to` command means we get a raster for identical spatial region
+of the input. Otherwise the padding may be included to return a larger raster, 
+or if windows allow a whole edge were empty they the raster may be smaller than the original.
+
+In the simplest case, this command is all you need:
+
+```julia
+output = mosaic(sum, output_rasters; to=rast)
+```
+
+But at very large scales this may cause problems. If the output is very large 
+you may want to write directly to disk. Then, a sparse tiff file that
+gradually fills up (as mosaicing occurs) needs progressively more and more disk space.
+
+```julia
+mosaic(sum, output_rasters; 
+    to=rast,
+    filename="dest_file.tiff",
+    read=true, # Read each raster as we go instead of lazily broadcasting it
+    gc=50, # On a cluster it may help to manually garbage collect memory every N rasters
+    options=["BIGTIFF" => "YES"], # Pass options to GDAL
+)
+```
+
+Also see production examples in ConScapeJobs.jl. 
+
+Notably this application:
+- wraps all batch problem and data loads in a function so they
+   are identical for all purposes
+- facilitates working with multiple datasets at once (e.g. multiple species / parameters)
+   with named batch commands, e.g.: `sbatch run.sh reindeer_alpine`
+- adds a compilation directive so that code is precompiled for exactly your dataset, 
+    saving the minute or so that each node would take to compile the task

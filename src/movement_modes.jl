@@ -9,6 +9,7 @@ abstract type MovementMode end
 
 distance_transformation(mm::MovementMode) = mm.distance_transformation
 diagvalue(mm::MovementMode) = mm.diagvalue
+costfunction(::MovementMode) = nothing # Only RSP has a costfunction
 
 """
     ArrivingMovement
@@ -50,16 +51,20 @@ Assumes partial knowledge and immortality.
 - `proximity_measure`: the measure to use for the probability of arrival at the target.
     By default this is `ExpectedCost()`
 $PROXIMITY_KEYWORDS
+- `costfunction`: A function to transform affinities to costs, usually
+    a [`Transformation`](@ref) but custom function also work. 
+    The default is [`MinusLog`](@ref).
 - `theta`: the inverse temperature (TODO: in more ecological terms)
 - `approx`: Whether to use an approximate algorithm, `false` by default.
     (TODO: more detail)
 """
 @kwdef struct RandomisedShortestPath{
-    PM<:ProximityMeasure,DT,DV,T<:Real
+    PM<:ProximityMeasure,DT,DV,C,T<:Real
 } <: ArrivingMovement
     proximity_measure::PM = ExpectedCost()
     distance_transformation::DT = nothing
     diagvalue::DV = nothing
+    costfunction::C = MinusLog()
     theta::T
     approx::Bool = false
 end
@@ -71,6 +76,7 @@ const RSP = RandomisedShortestPath
 proximity_measure(mm::RandomisedShortestPath) = mm.proximity_measure
 approx(mm::RandomisedShortestPath) = mm.approx
 theta(mm::RandomisedShortestPath) = mm.theta
+costfunction(mm::RandomisedShortestPath) = mm.costfunction
 
 """
     LeastCost <: ArrivingMovementMode
@@ -91,7 +97,7 @@ $PROXIMITY_KEYWORDS
     diagvalue::DV = nothing
 end
 
-proximity_measure(mm::LeastCost) = ExpectedCost()
+proximity_measure(::LeastCost) = ExpectedCost()
 
 const LC = LeastCost
 
@@ -100,11 +106,10 @@ const LC = LeastCost
 
     RandomWalk(; kw...)
 
-
-Performance is usually 2-3 times slower than RSP>
-
 Identical to [`RandomisedShortestPath`](@ref) with `theta` of `0`, 
 if that could run without numerical problems.
+
+Performance is usually 2-3 times slower than RSP.
 
 Assumes zero knowledge but immortality.
 
@@ -117,8 +122,7 @@ $PROXIMITY_KEYWORDS
     diagvalue::DV = nothing
 end
 
-proximity_measure(mm::RandomWalk) = ExpectedCost()
-theta(mm::RandomWalk) = 0
+proximity_measure(::RandomWalk) = ExpectedCost()
 
 const RW = RandomWalk
 

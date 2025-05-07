@@ -129,13 +129,13 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
     window_ranges = ConScape.window_ranges(p, rast)
 
     # Convert everything to Bool at the batch level so window assessments are fast
-    inner_targets = view(rast.target_qualities, target_ranges...)
+    inner_targets = view(_get_target_qualities(rast), target_ranges...)
     warnings = AssessmentWarnings(
-        any(isnan, rast.source_qualities),
+        any(isnan, _get_source_qualities(rast)),
         any(isnan, inner_targets),
     )
     inner_target_bools = isnothing(inner_target_bools) ? _isvalid.(inner_targets) : inner_target_bools
-    source_qualities = _isvalid.(rast.source_qualities)
+    source_qualities = _isvalid.(_get_source_qualities(rast))
     target_qualities = falses(size(rast))
     target_qualities[target_ranges...] .= inner_target_bools
     bool_rast = RasterStack((; source_qualities, target_qualities), dims(rast))
@@ -183,10 +183,10 @@ function assess(
             )
         end
         # We only need qualities for the assessment
-        window_rast = rast[(:source_qualities, :target_qualities)][rs...]
+        window_rast = RasterStack(_get_source_qualities(rast), _get_target_qualities(rast))[rs...]
         target_ranges = _target_ranges(p, window_rast)
         # Convert targets to bool as early as possible
-        inner_targets = view(window_rast.target_qualities, target_ranges...)
+        inner_targets = view(_get_target_qualities(window_rast), target_ranges...)
         inner_target_bools = _isvalid.(inner_targets)
         assessments[i] = if count(inner_target_bools) > 0
             assess(p.problem, window_rast; inner_target_bools, target_ranges, nthreads, kw...)

@@ -31,7 +31,6 @@ Abstract type hierarchy:
 
 ```@docs
 Measure
-GraphMeasure
 ```
 
 ### Distances and proximities
