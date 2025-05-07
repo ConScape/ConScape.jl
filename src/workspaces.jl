@@ -29,7 +29,9 @@ struct Workspaces{W}
     unused::BitVector
 end
 Workspaces(workspaces::Vector) = Workspaces(workspaces, trues(length(workspaces)))
-Workspaces(len::Int, n::Int) = Workspaces([Vector{Float64}(undef, len) for _ in 1:n])
+Workspaces(len::Int, n::Int) = Workspaces(Float64, len, n)
+Workspaces(::Type{T}, len::Int, n::Int) where T = 
+    Workspaces([Vector{T}(undef, len) for _ in 1:n])
 
 function Base.take!(ws::Workspaces)
     # Find the first unused workspace

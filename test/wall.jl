@@ -41,7 +41,7 @@ using ConScape, Test, SparseArrays
             fed = FreeEnergyDistance(),
             ex = ExpectedCost(),
         ),
-        movement_mode=RandomisedShortestPath(ExpectedCost(); theta=θ, diagvalue=0.0)
+        movement=RandomisedShortestPath(ExpectedCost(); theta=θ, diagvalue=0.0)
     )
 
     rsp = ConScape.init(init(problem, g), 1)

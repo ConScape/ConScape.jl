@@ -1,5 +1,5 @@
 nothing
-using ConScape, Test, SparseArrays, LinearAlgebra
+using ConScape, Test, SparseArrays, LinearAlgebra, LinearSolve
 using Rasters, ArchGDAL
 using OldConScape
 
@@ -45,7 +45,7 @@ solver = ConScape.VectorSolver()
     )
     test_grsp = OldConScape.GridRSP(test_g; θ)
 
-    problem = ConScape.Problem(; measures, movement_mode=rsp_exp_minus, solver);
+    problem = ConScape.Problem(; measures, movement=rsp_exp_minus, solver);
     multigridinit = init(problem, rast)
     gridinit = init(multigridinit, 1)
     subgrid1 = ConScape.grid(gridinit)
@@ -108,10 +108,12 @@ solver = ConScape.VectorSolver()
 end
 
 
-solvers = (
-    ConScape.VectorSolver(),
+# solvers = (
+#     ConScape.VectorSolver(),
     # ConScape.LinearSolver(), # TODO: really slow currently
-)
+# )
+solver = ConScape.LinearSolver()
+# TODO: really slow currently
 
 # for solver in solvers
 
@@ -124,11 +126,27 @@ solvers = (
     test_grsp = OldConScape.GridRSP(test_g; θ)
     println("\n Testing with solver: ", solver)
     # Basic Problem
-    problem_nodist = ConScape.Problem(; measures, movement_mode=rsp_nodist, solver);
-    problem_one = ConScape.Problem(; measures, movement_mode=rsp_one, solver);
-    problem_exp_50 = ConScape.Problem(; measures, movement_mode=rsp_exp_50, solver);
-    problem_exp_minus = ConScape.Problem(; measures, movement_mode=rsp_exp_minus, solver);
+    problem_nodist = ConScape.Problem(; measures, movement=rsp_nodist, solver);
+    problem_one = ConScape.Problem(; measures, movement=rsp_one, solver);
+    problem_exp_50 = ConScape.Problem(; measures, movement=rsp_exp_50, solver);
+    problem_exp_minus = ConScape.Problem(; measures, movement=rsp_exp_minus, solver);
     gridinit = init(problem_nodist, rast)
+
+    ConScape.solve(problem_nodist, rast)
+
+    using DimensionalData
+    using Mooncake
+    using Enzyme
+    using DifferentiationInterface
+
+    # f((x, y)) = sum(cos, x + y)
+    f((problem, rast)) = ConScape.solve(problem, rast)
+    backend = AutoMooncake(; config=nothing)
+    backend = AutoEnzyme()
+    prep = prepare_gradient(f, backend, (problem_nodist, rast))
+    DifferentiationInterface.gradient(f, prep, backend, (problem_nodist, rast))
+
+
     @time result_nodist = ConScape.solve(problem_nodist, rast);
     @time result_one = ConScape.solve(problem_one, rast);
     @time result_exp_50 = ConScape.solve(problem_exp_50, rast);
@@ -205,7 +223,7 @@ end
 #     # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 # )
 # distance_transformation = (nodist=nothing, one=one, exp50=t -> exp(-t/50))
-# movement_mode = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
+# movement = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
 
 # # All tests for MatrixSolver
 
@@ -222,7 +240,7 @@ end
 #     println("\n Testing with solver: ", solver)
 #     # Basic Problem
 #     problem = ConScape.Problem(; 
-#         measures, movement_mode, solver,
+#         measures, movement, solver,
 #     )
 #     @time workspace = init(problem, rast);
 #     Z = copy(workspace.Z)
@@ -340,11 +358,11 @@ mm_ec = RandomisedShortestPath(;
     theta=0.0, 
 )
 problem_pmp = ConScape.Problem(; 
-    measures, movement_mode=mm_pmp, 
+    measures, movement=mm_pmp, 
     costfunction=ConScape.MinusLog()
 )
 problem_ec = ConScape.Problem(; 
-    measures, movement_mode=mm_ec, 
+    measures, movement=mm_ec, 
     costfunction=ConScape.MinusLog()
 )
 using Plots
@@ -359,18 +377,18 @@ collect(skipmissing(rsp_ec.sens_affinitytocost))
 # Least Cost
 
 # Least Cost
-movement_mode = LeastCost(;
+movement = LeastCost(;
     distance_transformation=ExpMinusAlpha(2.0),
 )
-problem = ConScape.Problem(; measures, movement_mode);
+problem = ConScape.Problem(; measures, movement);
 lc = solve(problem, rast)
 plot(lc; size=(1200, 700))
 
 # Random Walk
-movement_mode = RandomWalk(;
+movement = RandomWalk(;
     distance_transformation=ExpMinusAlpha(1.0),
 )
-problem = ConScape.Problem(; measures, movement_mode)
+problem = ConScape.Problem(; measures, movement)
 @profview rw = solve(problem, rast)
 plot(rw; size=(1200, 700))
 

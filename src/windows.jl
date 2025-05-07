@@ -470,7 +470,7 @@ function _get_window_with_zeroed_buffer(
     shape=shape(p)
 )
     window = view(rast, rs...)
-    tq = window.target_qualities
+    tq = _get_target_qualities(window)
     tq_sparse = spzeros(eltype(tq), size(tq))
     target_ranges = _target_ranges(p, window)
     tq_sparse[target_ranges...] = tq[target_ranges...]
@@ -479,7 +479,7 @@ function _get_window_with_zeroed_buffer(
     end
 
     target_qualities = rebuild(tq; data=tq_sparse)
-    source_qualities = modify(Array, window.source_qualities)
+    source_qualities = modify(Array, _get_source_qualities(window))
     
     # Handle :circle shaped buffers
     if shape == :circle
@@ -511,7 +511,7 @@ _valid_sources(f, p, rast::AbstractRasterStack) =
     _valid_sources(f, p, rast, axes(rast))
 function _valid_sources(f, p, rast::AbstractRasterStack, source_ranges::Tuple)
     # Get a window view
-    window = view(rast.source_qualities, source_ranges...)
+    window = view(_get_source_qualities(rast), source_ranges...)
     # If there are non-NaN cells above zero, keep the window
     # TODO allow users to change this condition?
     return f(_isvalid.(window))
@@ -525,7 +525,7 @@ function _valid_targets(
         r[b+1:end-b]
     end
     # Get a window view
-    window = view(rast.target_qualities, target_ranges...)
+    window = view(_get_target_qualities(rast), target_ranges...)
     # If there are non-NaN cells above zero, keep the window
     # TODO allow users to change this condition?
     return f(_isvalid.(window))

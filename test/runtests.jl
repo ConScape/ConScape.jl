@@ -227,7 +227,7 @@ end
      
     problem = ConScape.Problem(;
         measures,
-        movement_mode=RandomisedShortestPath(ExpectedCost(); theta=2.0),
+        movement=RandomisedShortestPath(ExpectedCost(); theta=2.0),
     )
 
     # Need to use `GridInit` directly to skip `MultiGridInit` initialisation

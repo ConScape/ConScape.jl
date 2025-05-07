@@ -201,8 +201,20 @@ function _target_spatial_ids(target_quality::SparseMatrixCSC, source_spatial_ids
     return intersect!(CartesianIndex.(is, js), source_spatial_ids)
 end
 
-function _target_ids(g.target_quality_spatial, source_ids, all_spatial_ids)
-
+function _target_ids(target_quality_spatial::AbstractMatrix, source_spatial_ids::Vector{CartesianIndex{2}}, all_spatial_ids::Vector{CartesianIndex{2}})
+    # Get spatial indices (CartesianIndex) of valid targets that are also spatial indices of sources
+    target_spatial_ids = _target_spatial_ids(target_quality_spatial, source_spatial_ids)
+    # Find the node ids (Int) for the source row corresponding with spatial indices
+    target_nodes = findall(source_spatial_ids) do id
+        id in target_spatial_ids
+    end
+    target_grid_ids = findall(all_spatial_ids) do id
+        id in target_spatial_ids
+    end
+    # Return Vector{NamedTuple} each with target.spatial and target.node
+    return map(target_spatial_ids, target_grid_ids, eachindex(target_nodes), target_nodes) do spatial, grid_id, subgrid_id, node
+        (; spatial, grid_id, subgrid_id, node)
+    end
 end
 
 function _fill_matrix(values, g::Initialisation)
@@ -272,7 +284,7 @@ function split_subgraphs(g::Grid)
 
         # Get matrices for the subgraph 
         affinitymatrix = g.affinitymatrix[scci, scci]
-        costmatrix = g.costfunction === nothing ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinitymatrix)
+        costmatrix = isnothing(g.costfunction) ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinitymatrix)
 
         # Get new source and target ids for subgraph
         source_ids = g.source_ids[scci]
@@ -316,9 +328,20 @@ end
 
 Creates a sparse matrix of target qualities for the landmarks based on merging npix pixels into the center pixel.
 """
-function coarse_graining(g, npix)
-    coarse_graining(g.target_quality_spatial, npix;
-        source_ids=source_ids(g)
+function coarse_graining(g::Grid, npix::Int)
+    coarse_target_quality_spatial = coarse_graining(g.target_quality_spatial, npix; source_ids=source_ids(g))
+    Grid(
+        g.size,
+        g.costfunction,
+        g.costmatrix,
+        g.affinitymatrix,
+        g.source_quality_spatial, 
+        coarse_target_quality_spatial,
+        g.source_quality_vector, 
+        g.target_quality_vector,
+        g.source_ids, 
+        g.target_ids,
+        g.dims,
     )
 end
 coarse_graining(rast::AbstractRaster, npix; kw...) =
