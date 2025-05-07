@@ -508,8 +508,6 @@ end
 
 init(movement::MovementMode, grid::Grid; kw...) =
     init(Problem(; movement), grid; kw...)
-init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, problem::Problem, rast::RasterStack; kw...) = 
-    init(m, init(problem, rast); kw...)
 init(problem::Problem, rast::RasterStack; kw...) = MultiGridInit(problem, rast; kw...)
 init(problem::Problem, grid::Grid; kw...) = MultiGridInit(problem, grid; kw...)
 init(gi::GridInit, target::Union{Int,TargetID}) = TargetInit(gi, target)
