@@ -421,6 +421,3 @@ _allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
 
 _maybe_new_outputs(mes, mgi) =
     mes === measures(mgi) ? outputs(mgi) : allocate_output(mes, mgi)
-
-# _newstoragedict(::Workspaces{W}) where W = Dict{Symbol,W}()
-_newstoragedict(::Workspaces{W}) where W = Dict{Symbol,Any}()

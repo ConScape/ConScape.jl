@@ -13,20 +13,19 @@ source_qualities[(affinities .> 0) .& isnan.(source_qualities)] .= 1e-20
 rast = RasterStack((; affinities, source_qualities, target_qualities=source_qualities))
 
 measures = (;
-    betk=Betweenness(QualityAndProximityWeighted()),
+    betm=Betweenness(QualityAndProximityWeighted()),
+    # betq=Betweenness(QualityWeighted()), # Doesn't work windowed!
     ch=ConnectedHabitat(),
-    # betq=Betweenness(QualityWeighted()), # Doesn't work windowed
     # # TODO sens=ConScape.Sensitivity(),
-    # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 )
 # Set low alpha here so the decay is steep for testing
 distance_transformation = x -> exp(-x / 2)
-movement_mode = RandomisedShortestPath(ExpectedCost(); 
+movement = RandomisedShortestPath(ExpectedCost(); 
     theta=θ, distance_transformation
 )
 
 solver = ConScape.VectorSolver()
-problem = ConScape.Problem(; measures, movement_mode, solver);
+problem = ConScape.Problem(; measures, movement, solver);
 solve(problem, rast; verbose=true)
 
 @testset "window shape" begin
@@ -93,8 +92,8 @@ end
     solver = VectorSolver()
     # Use a higher alpha to catch differences
     distance_transformation = x -> exp(-x / 50)
-    movement_mode = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
-    problem = ConScape.Problem(; measures, movement_mode, solver);
+    movement = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
+    problem = ConScape.Problem(; measures, movement, solver);
 
     kw = (; buffer=10, centersize=5)
     windowed_problem = WindowedProblem(problem; kw...)
@@ -127,7 +126,7 @@ end
     @test assessment.njobs == 39
 
     paths = solve(batch_jobs_problem, rast, assessment, 1; verbose=true)
-    @test keys(paths) == (:betk, :ch)
+    @test keys(paths) == (:betm, :ch)
     for job in 1:assessment.njobs
         solve(batch_jobs_problem, rast, assessment, job)
     end
@@ -171,8 +170,8 @@ end
         datapath=tempname(), centersize=(10, 10)
     )
     paths = solve(nested_problem, rast)
-    @test keys(paths[1]) == (:betk, :ch)
-    @test paths[1].betk isa String
+    @test keys(paths[1]) == (:betm, :ch)
+    @test paths[1].betm isa String
     nested_result = mosaic(nested_problem, rast)
     @test nested_result isa RasterStack
 
@@ -228,17 +227,17 @@ end
     sts = RasterStack.(filter(isdir, ConScape.batch_paths(batch_jobs_problem, rast)))
 
     @test all(batch_jobs_result.ch .=== batch_result.ch)
-    @test all(batch_jobs_result.betk .=== batch_result.betk)
+    @test all(batch_jobs_result.betm .=== batch_result.betm)
     @test all(batch_jobs_init_result.ch .=== batch_result.ch)
-    @test all(batch_jobs_init_result.betk .=== batch_result.betk)
-    @test all(compare.(nested_result.betk, nested_jobs_result.betk))
+    @test all(batch_jobs_init_result.betm .=== batch_result.betm)
+    @test all(compare.(nested_result.betm, nested_jobs_result.betm))
     @test all(compare.(nested_result.ch, nested_jobs_result.ch))
-    @test all(compare.(permutedims(nested_result.betk), windowed_result.betk))
+    @test all(compare.(permutedims(nested_result.betm), windowed_result.betm))
     @test all(compare.(permutedims(nested_result.ch), windowed_result.ch))
-    @test all(compare.(permutedims(nested_jobs_result.betk), windowed_result.betk))
+    @test all(compare.(permutedims(nested_jobs_result.betm), windowed_result.betm))
     @test all(compare.(permutedims(nested_jobs_result.ch), windowed_result.ch))
     @test all(compare.(permutedims(batch_result.ch), windowed_result.ch))
-    @test all(compare.(permutedims(batch_result.betk), windowed_result.betk))
+    @test all(compare.(permutedims(batch_result.betm), windowed_result.betm))
 
     # plot(windowed_result)
     # plot(batch_result)

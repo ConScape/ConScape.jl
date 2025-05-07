@@ -227,7 +227,7 @@ function MultiGridInit(problem::Problem, grid::Grid;
     else
         Workspaces(0, 0)
     end
-    storage = _newstoragedict(workspaces)
+    storage = gridinit_storage(movement(problem), workspaces)
     # Create a MultiGridInit without outputs
     mgi = MultiGridInit(problem, grid, subgrids, workspaces, storage, nothing)
     # Generate outputs for each graph measure, the first subgraph is the largest
@@ -299,7 +299,7 @@ function GridInit(problem::Problem, grid::Grid;
 )
     workspaces = _allocate_workspaces!(workspaces, problem, grid)
     if isnothing(storage) 
-        storage = _newstoragedict(workspaces)
+        storage = gridinit_storage(movement(problem), workspaces)
     end
     precalculation = gridinit_precalculation(problem, grid)
     return GridInit(problem, grid, outputs, workspaces, storage, precalculation)
@@ -322,6 +322,10 @@ outputs(gi::GridInit) = gi.outputs
 storage(gi::GridInit) = gi.storage
 nsources(gi::GridInit) = nsources(grid(gi))
 ntargets(gi::GridInit) = ntargets(grid(gi))
+
+gridinit_storage(::MovementMode, ::Workspaces{W}) where W = Dict{Symbol,W}()
+# Need to store the Woodbury matrix 
+gridinit_storage(::RandomWalk, ::Workspaces{W}) where W = Dict{Symbol,Any}()
 
 """
     TargetInit
@@ -504,34 +508,32 @@ end
 
 init(movement::MovementMode, grid::Grid; kw...) =
     init(Problem(; movement), grid; kw...)
-init(m::Union{Measure,Tuple,NamedTuple}, problem::Problem, rast::RasterStack; kw...) = 
+init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, problem::Problem, rast::RasterStack; kw...) = 
     init(m, init(problem, rast); kw...)
 init(problem::Problem, rast::RasterStack; kw...) = MultiGridInit(problem, rast; kw...)
 init(problem::Problem, grid::Grid; kw...) = MultiGridInit(problem, grid; kw...)
 init(gi::GridInit, target::Union{Int,TargetID}) = TargetInit(gi, target)
 init(mgi::MultiGridInit, subgrid_id::Int; kw...) = GridInit(mgi, subgrid_id; kw...)
 
-
 solve(p::Problem, input::Union{Grid,RasterStack}; kw...) = 
     solve(init(p, input; kw...))
-solve(m::Union{Measure,Tuple,NamedTuple}, p::Problem, input::Union{Grid,RasterStack}; kw...) = 
+solve(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::Problem, input::Union{Grid,RasterStack}; kw...) = 
     solve(m, init(p, input; kw...))
-solve(measures::Union{NamedTuple,Tuple}, g::Union{Grid,RasterStack}; verbose=false, kw...) = 
-    solve(Problem(measures; kw...), g::Grid; verbose)
+solve(measures::MeasureTupleOrNamedTuple, g::Union{Grid,RasterStack}; verbose=false, kw...) = 
+    solve(Problem(measures; kw...), g; verbose)
 function solve(
-    m::Union{Tuple,NamedTuple}, movement::MovementMode, g::Union{Grid,RasterStack}; 
+    m::MeasureTupleOrNamedTuple, movement::MovementMode, r::Union{Grid,RasterStack}; 
     verbose=false, kw...
 ) 
-    solve(Problem(m; movement, kw...), g; verbose)
+    solve(Problem(m; movement, kw...), r; verbose)
 end
 solve(m::Measure, movement::MovementMode, g::Union{Grid,RasterStack}; verbose=false, kw...) =
     only(values(solve(Problem(m; movement, kw...), g; verbose)))
-
 # Allow solving all the levels of precalculated object with specific measures
 solve(p::Initialisation, args...; kw...) = solve(measures(p), p, args...; kw...)
 solve(measure::Measure, init::Initialisation, args...; kw...) =
     only(values(solve((measure,), init, args...; kw...)))
-function solve(measures::Union{NamedTuple,Tuple}, mgi::MultiGridInit; 
+function solve(measures::MeasureTupleOrNamedTuple, mgi::MultiGridInit; 
     outputs=_maybe_new_outputs(measures, mgi), kw...
 )
     # Loop over unnconnected subgraphs (there may be only one)
@@ -548,7 +550,7 @@ function solve(measures::Union{NamedTuple,Tuple}, mgi::MultiGridInit;
         return out
     end
 end
-function solve(measures::Union{NamedTuple,Tuple}, gi::GridInit; 
+function solve(measures::MeasureTupleOrNamedTuple, gi::GridInit; 
     outputs=_maybe_new_outputs(measures, gi), kw...
 )
     # Then loop over targets
@@ -560,9 +562,9 @@ function solve(measures::Union{NamedTuple,Tuple}, gi::GridInit;
         returntrait(m) isa DenseSpatial ? _maybe_raster(o, gi) : o
     end
 end
-solve(measures::Union{NamedTuple,Tuple}, gi::GridInit, i::Int; kw...) =
+solve(measures::MeasureTupleOrNamedTuple, gi::GridInit, i::Int; kw...) =
     solve(measures, init(gi, target_ids(gi)[i]); kw...)
-function solve(measures::Union{NamedTuple,Tuple}, ti::TargetInit;
+function solve(measures::MeasureTupleOrNamedTuple, ti::TargetInit;
     outputs=outputs(ti)
 )
     # Compute everything for this target and graph measures

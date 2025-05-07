@@ -5,6 +5,10 @@ Abstract supertype for all ConScape.jl measures.
 """
 abstract type Measure end
 
+const MeasureTuple = Tuple{<:Measure,Vararg{Measure}} where N
+const MeasureNamedTuple = NamedTuple{K,<:MeasureTuple} where K
+const MeasureTupleOrNamedTuple = Union{MeasureTuple,MeasureNamedTuple}
+
 """
     GraphMeasure <: Measure
 
