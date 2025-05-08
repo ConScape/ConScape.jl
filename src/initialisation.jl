@@ -323,7 +323,8 @@ storage(gi::GridInit) = gi.storage
 nsources(gi::GridInit) = nsources(grid(gi))
 ntargets(gi::GridInit) = ntargets(grid(gi))
 
-gridinit_storage(::MovementMode, ::Workspaces{W}) where W = Dict{Symbol,W}()
+gridinit_storage(::MovementMode, ::Workspaces{W}) where W<:AbstractArray{T} where T = 
+    Dict{Symbol,ReadOnlyArray{T,1,W}}()
 # Need to store the Woodbury matrix 
 gridinit_storage(::RandomWalk, ::Workspaces{W}) where W = Dict{Symbol,Any}()
 

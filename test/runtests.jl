@@ -14,6 +14,7 @@ using SafeTestsets
     @safetestset "Workspaces" begin include("workspaces.jl") end
     @safetestset "ReadOnlyArray" begin include("readonlyarray.jl") end
     # @safetestset "basics" begin include("basics.jl") end
+    @safetestset "Permeable wall sim" begin include("wall.jl") end
     @safetestset "Problems" begin include("problem.jl") end
     @safetestset "WindowedProblems and BatchProblems" begin include("windowed.jl") end
 end

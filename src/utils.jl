@@ -381,14 +381,20 @@ function _get_target_qualities(rast::AbstractRasterStack)
     end
 end
 
-_maybe_set_diagonal!(proximitymatrix, diagvalue::Nothing, targetnodes) = nothing
-function _maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnodes::AbstractVector)
-    for (j, i) in enumerate(targetnodes)
-        proximitymatrix[i, j] = diagvalue
-    end
+_maybe_set_diagonal!(ti::TargetInit, proximities) =
+    _maybe_set_diagonal!(ti, proximities, diagvalue(ti))
+_maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Nothing) = proximities
+function _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Number)
+    proximities = ti.workspace .= proximities
+    proximities[target(ti).node] = diagvalue
+    return ReadOnlyArray(proximities)
 end
-_maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnode::Int) = 
-    proximitymatrix[targetnode] = diagvalue
+# function _maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnodes::AbstractVector)
+# , diagvalue(ti), target(ti).node
+#     for (j, i) in enumerate(targetnodes)
+#         proximitymatrix[i, j] = diagvalue
+#     end
+# end
 
 # Fill a vector with zeros, and one for the target node
 function _rhs!(workspace, n::Int, target::TargetID)

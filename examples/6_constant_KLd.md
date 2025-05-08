@@ -5,6 +5,8 @@ using Optim
 using Plots
 ```
 
+TODO: remove this file! or describe it better its cool
+
 # Import data
 
 ```julia

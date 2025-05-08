@@ -4,7 +4,7 @@ function get_or_compute!(ti::TargetInit, m::Measure)
     haskey(st, x) && return st[x]
     output = compute(m, ti)
     if returntrait(m) isa Union{AssignDense,SumDenseSpatial}
-        st[x] = output
+        st[x] = ReadOnlyArray(output)
     end
     return output
 end
@@ -107,7 +107,7 @@ function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
             proximities .= dt.(proximities)
         end
     end
-    _maybe_set_diagonal!(proximities, diagvalue(ti), target(ti).node)
+    proximities = _maybe_set_diagonal!(ti, proximities)
     return ReadOnlyArray(proximities)
 end
 function _fundamentalmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
@@ -348,16 +348,23 @@ end
 
 ######################################################################################
 # Sensitivity
-function compute(m::Sensitivity{<:Quality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
+function compute(m::Sensitivity{<:SourceQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; qˢ, qᵗ, K, workspace) = ti
-    # TODO make this non-square and single-target
-    # Need a summed source proximities vector
-    # Also split in respect to source and target quality
-    target_sensitivity = workspace .= K .+ transpose(K) .* qᵗ 
-    if change(m) isa ProportionalChange
-        target_sensitivity .*= qˢ[target(ti).node]
+    if change(m) isa Elasticity
+        target_sensitivity = workspace .*= qˢ .* K .* qᵗ[target(ti).node]
+    else
+        target_sensitivity = workspace .= K .* qᵗ[target(ti).node]
     end
     return target_sensitivity
+end
+function compute(m::Sensitivity{<:TargetQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
+    (; qˢ, qᵗ, K, workspace) = ti
+    if change(m) isa Elasticity
+        target_sensitivity = workspace .*= qˢ .* K .* qᵗ[target(ti).node]
+    else
+        target_sensitivity = workspace .= K .* qˢ
+    end
+    return sum(target_sensitivity)
 end
 function compute(m::Sensitivity{<:Permeability}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     st = storage(ti)

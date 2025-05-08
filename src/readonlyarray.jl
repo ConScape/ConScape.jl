@@ -4,6 +4,7 @@
 struct ReadOnlyArray{T,N,A<:AbstractArray{T,N}} <: DenseArray{T,N}
     data::A
 end
+ReadOnlyArray(A::ReadOnlyArray) = A
 
 Base.parent(x::ReadOnlyArray) = x.data
 Base.size(x::ReadOnlyArray) = size(parent(x))

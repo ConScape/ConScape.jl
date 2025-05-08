@@ -25,11 +25,12 @@ paths = (; qualities=joinpath(datadir, "hab_qual_1000.asc"),
 rast = RasterStack(paths; missingval=NaN)
 ```
 
+Set missing values close to zero:
+
 ```julia
-# Set values close to very where they are missing :
-matches = boolmask(rast)
-rast.qualities[Not(matches)] .= 1e-20
-rast.permeabilities[Not(matches)] .= 1e-20;
+missing_mask = .!(boolmask(rast))
+rast.qualities[missing_mask] .= 1e-20
+rast.permeabilities[missing_mask] .= 1e-20;
 ```
 
 We can plot the whole raster:
@@ -127,7 +128,6 @@ And plot them, for comparison:
 ```julia
 betq = RasterStack(betw_layers; name=map(θ -> "theta_$θ", thetas))
 plot(betq; size=(800, 400))
-# savefig("output_figures/figure_thetas.png")
 ```
 
 ## Quality and proximity weighted

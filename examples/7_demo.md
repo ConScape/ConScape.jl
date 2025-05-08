@@ -3,6 +3,8 @@ title: ConScape demo
 author: Bram Van Moorter and Andreas Noack
 ---
 
+TODO: delete this file
+
 
 This is a small demo of the functionalty in the `ConScape` package for Julia.
 

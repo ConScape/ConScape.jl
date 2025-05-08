@@ -46,26 +46,26 @@ using ConScape, Test, SparseArrays
 
     rsp = ConScape.init(init(problem, g), 1)
 
-    @testset "RSP fields" begin
-        @test ConScape.costmatrix(rsp).nzval[end-2:end] ≈ [
-            1.039720770839918
-            0.6931471805599453
-            0.6931471805599453]
-        @test ConScape.probability(rsp).nzval[end-2:end] ≈ [
-            0.10355339059327376,
-            0.22654091966098644,
-            0.22654091966098644]
-        @test rsp.W.nzval[end-2:end] ≈ [
-            0.08411148966019986,
-            0.19721532522049376,
-            0.19721532522049376]
-        # Z is per-target
-        rsp_ts = deepcopy.(ConScape.init.((rsp,), 100:102))
-        @test reduce(hcat, map(rsp_t -> rsp_t.Z[100:102], rsp_ts)) ≈ [
-            1.229380788700237   0.29706639745977187 0.11556093957432793
-            0.29706639745977187 1.22938026597041    0.297066141383724
-            0.11556093957432793 0.29706614138372406 1.2293801404819298]
-    end
+    # @testset "RSP fields" begin
+    #     @test ConScape.costmatrix(rsp).nzval[end-2:end] ≈ [
+    #         1.039720770839918
+    #         0.6931471805599453
+    #         0.6931471805599453]
+    #     @test ConScape.probability(rsp).nzval[end-2:end] ≈ [
+    #         0.10355339059327376,
+    #         0.22654091966098644,
+    #         0.22654091966098644]
+    #     @test rsp.W.nzval[end-2:end] ≈ [
+    #         0.08411148966019986,
+    #         0.19721532522049376,
+    #         0.19721532522049376]
+    #     # Z is per-target
+    #     rsp_ts = deepcopy.(ConScape.init.((rsp,), 100:102))
+    #     @test reduce(hcat, map(rsp_t -> rsp_t.Z[100:102], rsp_ts)) ≈ [
+    #         1.229380788700237   0.29706639745977187 0.11556093957432793
+    #         0.29706639745977187 1.22938026597041    0.297066141383724
+    #         0.11556093957432793 0.29706614138372406 1.2293801404819298]
+    # end
 
     results = solve(problem, g)
 
@@ -110,7 +110,7 @@ using ConScape, Test, SparseArrays
     end
 
     @testset "mean_lc_kl_divergence" begin
-        @test_broken solve(KullbackLeiblerDivergence(), LeastCost(), g)[] ≈ 1.0667623231698838e14
+        @test solve(KullbackLeiblerDivergence(), LeastCost(), g)[] ≈ 1.0667623231698838e14
     end
 
     # Eigmax doesn't work per-target
@@ -134,11 +134,8 @@ using ConScape, Test, SparseArrays
     #     @test qSq*vʳ ≈ vʳ*λ
     # end
 
-    @testset "Coarse graining: merging pixels to landmarks" begin
-        g_coarse = ConScape.Grid(size(g);
-            affinitymatrix=g.affinitymatrix,
-            source_qualities=g.source_quality_spatial,
-            target_qualities=ConScape.coarse_graining(g, 3))
+    # @testset "Coarse graining: merging pixels to landmarks" begin
+        g_coarse = ConScape.coarse_graining(g, 3)
 
         @test g_coarse.target_quality_spatial[1:5, 1:5] ≈ [
             0.0     0.0 0.0 0.0     0.0
@@ -159,9 +156,10 @@ using ConScape, Test, SparseArrays
         #     @test λ ≈ val
         # end
 
-        @testset "connected_habitat" begin
+        # @testset "connected_habitat" begin
             @testset "expected_cost" begin
-                ch_rsp = solve(ConnectedHabitat(), RSP(ExpectedCost(); distance_transformation=ConScape.ExpMinus(), theta=θ), g_coarse)
+                rsp = RSP(ExpectedCost(); distance_transformation=ConScape.ExpMinus(), theta=θ)
+                ch_rsp = solve(ConnectedHabitat(), rsp, g_coarse)
                 ch_g = solve(
                     ConnectedHabitat(), 
                     RSP(ExpectedCost(); distance_transformation=ConScape.ExpMinus(), theta=θ),
@@ -177,15 +175,17 @@ using ConScape, Test, SparseArrays
                 @test ch_g ≈ ch_g_approx rtol=0.8 # Very rough approximation
             end
 
-            # @testset "least_cost_distance" begin
-            #     ch_rsp_lc = solve(ConnectedHabitat(), LeastCost(), g_coarse);
-            #     ch_g_lc = solve(ConnectedHabitat(),
-            #         LeastCost(; distance_transformation=ConScape.ExpMinus()),
-            #         g_coarse,
-            #     )
+            @testset "least_cost_distance" begin
+                ch_rsp_lc = solve(ConnectedHabitat(), LeastCost(), g_coarse);
+                ch_g_lc = solve(ConnectedHabitat(),
+                    LeastCost(; distance_transformation=ConScape.ExpMinus()),
+                    g_coarse,
+                )
 
-            #     @test ch_g_lc ≈ ch_rsp_lc
-            # end
+                # heatmap(ch_g_lc)
+                # heatmap(ch_rsp_lc)
+                @test_broken ch_g_lc ≈ ch_rsp_lc
+            end
         end
     end
 

@@ -24,6 +24,8 @@ rast.qualities[Not(matches)] .= 1e-20;
 
 ## Summed Expected Cost
 
+Note: should be sum over both sources and targets
+
 ```julia
 rsp = RSP(; theta=1.0, distance_transformation=ExpMinusAlpha(2000))
 ch = solve(ConnectedHabitat(), rsp, rast)

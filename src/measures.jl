@@ -148,27 +148,27 @@ weighting(gm::EdgeBetweenness) = gm.weighting
 
 # Sensitivity
 
-abstract type SensitivityContext end # "With regards to"
-struct Quality <: SensitivityContext end
-abstract type Permeability <: SensitivityContext end
-abstract type CostAndAffinitySensitivityContext <: Permeability end
+abstract type SensitivityWithRegardsTo end
+struct Quality <: SensitivityWithRegardsTo end
+abstract type Permeability <: SensitivityWithRegardsTo end
+abstract type CostAndAffinitySensitivityWithRegardsTo <: Permeability end
 struct Affinity <: Permeability end
 struct Cost <: Permeability end
-struct CostToAffinity <: CostAndAffinitySensitivityContext end
-struct AffinityToCost <: CostAndAffinitySensitivityContext end
+struct CostToAffinity <: CostAndAffinitySensitivityWithRegardsTo end
+struct AffinityToCost <: CostAndAffinitySensitivityWithRegardsTo end
 
 abstract type TopologicalMetric end
-struct Sum <: TopologicalMetric end
+struct Cumulative <: TopologicalMetric end
 struct Eigen <: TopologicalMetric end
 
-abstract type SensitivityChange end
-struct UnitChange <: SensitivityChange end
-struct ProportionalChange <: SensitivityChange end
+abstract type SensitivityType end
+struct Sensitivity <: SensitivityType end
+struct Elasticity <: SensitivityType end
 
 """
-    Sensitivity <: SpatialMeasure
+    SensitivityAnalysis <: SpatialMeasure
 
-    Sensitivity(; context, summary, change)
+    SensitivityAnalysis(; context, summary, change)
 
 Compute sensitivity of all nodes. 
 
@@ -184,7 +184,7 @@ Compute sensitivity of all nodes.
 
 The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
-@kwdef struct Sensitivity{Co<:SensitivityContext,TM<:TopologicalMetric,Ch<:SensitivityChange} <: SpatialMeasure
+@kwdef struct SensitivityAnalysis{Co<:SensitivityContext,TM<:TopologicalMetric,Ch<:SensitivityChange} <: SpatialMeasure
     context::Co
     summary::TM = Sum()
     change::Ch = UnitChange()
@@ -242,7 +242,7 @@ end
 
 # Return type traits
 returntrait(::SpatialMeasure) = SumDenseSpatial()
-returntrait(::GraphMeasure) = AssignDense()
+returntrait(::GraphMeasure) = AssignSparse()
 returntrait(::PathDistributionMeasure) = SumScalar()
 
 # Workspace allocation traits
