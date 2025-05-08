@@ -54,19 +54,22 @@ Abstract supertype for ConScape problem specifications.
 """
 abstract type AbstractProblem end
 
+include("utils/workspaces.jl")
+include("utils/readonlyarray.jl")
+include("utils/bellman_ford.jl")
+include("utils/graph_generation.jl")
 include("transformations.jl")
-include("workspaces.jl")
-include("readonlyarray.jl")
 include("measures.jl")
-include("movement_modes.jl")
+include("movement.jl")
 include("problem.jl")
 include("initialisation.jl")
 include("return.jl")
 include("solvers.jl")
-include("compute_measures.jl")
+include("compute.jl")
 include("windows.jl")
 include("assessment.jl")
-include("utils.jl")
-include("simulations.jl")
+include("utils/coarse_graining.jl")
+include("utils/utils.jl")
+include("utils/simulations.jl")
 
 end

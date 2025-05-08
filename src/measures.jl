@@ -153,8 +153,9 @@ abstract type SensitivityWithRegardsTo end
 abstract type Permeability <: SensitivityWithRegardsTo end
 abstract type SensitivityWithRegardsToCostAndAffinity <: Permeability end
 
-struct SourceQuality <: SensitivityWithRegardsTo end
-struct TargetQuality <: SensitivityWithRegardsTo end
+abstract type Quality <: SensitivityWithRegardsTo end
+struct SourceQuality <: Quality end
+struct TargetQuality <: Quality end
 
 struct Affinity <: Permeability end
 struct Cost <: Permeability end
@@ -253,8 +254,8 @@ returntrait(::PathDistributionMeasure) = SumScalar()
 needs_workspaces(::Measure) = 2
 needs_workspaces(::Betweenness) = 2
 needs_workspaces(::EdgeBetweenness) = 4
-needs_workspaces(::Sensitivity{<:Quality}) = 2
-needs_workspaces(::Sensitivity{<:Permeability}) = 6
+needs_workspaces(::SensitivityAnalysis{<:Quality}) = 2
+needs_workspaces(::SensitivityAnalysis{<:Permeability}) = 6
 # Count how many workspaces are needed for a problem
 nworkspaces(p::AbstractProblem) =
     isempty(measures(p)) ? 0 : mapreduce(needs_workspaces, +, measures(p))
