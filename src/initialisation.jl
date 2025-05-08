@@ -428,7 +428,7 @@ end
 
 function gridinit_precalculation(problem::Problem{<:RSP}, grid::Grid)
     P, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
-    W = _W(P, theta(problem), costmatrix(grid))
+    W = _substochasticmatrix(movement(problwm), costmatrix(grid))
     IW = I - W
     IW_factorization = init(solver(problem), IW)
     Aⁱ = mapnz(inv, affinitymatrix(grid))
@@ -476,9 +476,9 @@ function _probabilitymatrix(A::SparseMatrixCSC)
     return P, source_sums
 end
 # Substochastic
-function _W(Pref::SparseMatrixCSC, θ::Real, C::SparseMatrixCSC)
-    LinearAlgebra.checksquare(Pref)
-    W = Pref .* exp.(-θ .* C)
+function _substochasticmatrix(rsp::RSP, P::SparseMatrixCSC, C::SparseMatrixCSC)
+    LinearAlgebra.checksquare(P)
+    W = Pref .* exp.(-theta(rsp) .* C)
     replace!(W.nzval, NaN => 0.0)
     return W
 end

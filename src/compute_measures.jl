@@ -81,11 +81,8 @@ end
         return Graphs.dijkstra_shortest_paths(ti.cost_weighted_digraph, target(ti).node)::Graphs.DijkstraState{Float64,Int}
     elseif x == :K # "proximity vector"
         (; shortest_paths, workspace) = ti
-        if isnothing(distance_transformation(ti))
-            workspace .= 1.0 # TODO is this right? not shortest_paths.dists?
-        else
-            workspace .= distance_transformation(ti).(shortest_paths.dists)
-        end |> ReadOnlyArray
+        # TODO this should error earlier
+        workspace .= distance_transformation(ti).(shortest_paths.dists)
     elseif x === :M # "landscape vector"
         _landscapematrix(ti)
     elseif x === :Q
@@ -346,27 +343,28 @@ function _combine_edge_betweenness(W, Z, X, t::TargetID)
 end
 
 
+
 ######################################################################################
 # Sensitivity
-function compute(m::Sensitivity{<:SourceQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
+function compute(m::SensitivityAnalysis{<:SourceQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; qˢ, qᵗ, K, workspace) = ti
-    if change(m) isa Elasticity
+    if sensitivitytype(m) isa Elasticity
         target_sensitivity = workspace .*= qˢ .* K .* qᵗ[target(ti).node]
-    else
+    else # sensitivitytype(m) isa Sensitivity
         target_sensitivity = workspace .= K .* qᵗ[target(ti).node]
     end
     return target_sensitivity
 end
-function compute(m::Sensitivity{<:TargetQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
+function compute(m::SensitivityAnalysis{<:TargetQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; qˢ, qᵗ, K, workspace) = ti
-    if change(m) isa Elasticity
+    if sensitivitytype(m) isa Elasticity
         target_sensitivity = workspace .*= qˢ .* K .* qᵗ[target(ti).node]
-    else
+    else # sensitivitytype(m) isa Sensitivity 
         target_sensitivity = workspace .= K .* qˢ
     end
     return sum(target_sensitivity)
 end
-function compute(m::Sensitivity{<:Permeability}, ti::TargetInit{<:Union{RSP,RandomWalk}})
+function compute(m::SensitivityAnalysis{<:Permeability}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     st = storage(ti)
     if haskey(st, :S_e_aff)
         S_e_aff, S_e_cost = st[:S_e_aff], st[:S_e_cost]
@@ -375,10 +373,10 @@ function compute(m::Sensitivity{<:Permeability}, ti::TargetInit{<:Union{RSP,Rand
         st[:S_e_aff] = S_e_aff 
         st[:S_e_cost] = S_e_cost
     end
-    S_e_aff_scaled = _maybe_scale(S_e_aff, change(m), context(m), ti)
-    S_e_cost_scaled = _maybe_scale(S_e_cost, change(m), context(m), ti)
+    S_e_aff_scaled = _maybe_scale(S_e_aff, sensitivitytype(m), wrt(m), ti)
+    S_e_cost_scaled = _maybe_scale(S_e_cost, sensitivitytype(m), wrt(m), ti)
 
-    return _combine_sensitivity(context(m), S_e_aff_scaled, S_e_cost_scaled, ti)
+    return _combine_sensitivity(wrt(m), S_e_aff_scaled, S_e_cost_scaled, ti)
 end
 
 _combine_sensitivity(::Affinity, S_e_aff, S_e_cost, ti) = S_e_aff
@@ -460,11 +458,12 @@ _diff_KD(x::ExpMinusAlpha) = k -> -k * x.alpha
 _diff_KD(::ExpMinus) = k -> -k
 _diff_KD(::Inv) = k -> -k ^ 2
 
-_maybe_scale(a, ::ProportionalChange, ::Union{Affinity,AffinityToCost}, ti) =
+# TODO is Sensitivity and Elasticity swapped here?
+_maybe_scale(a, ::Sensitivity, ::Union{Affinity,AffinityToCost}, ti) =
     ti.workspace .= a .* view(affinitymatrix(ti), :, target(ti).node)
-_maybe_scale(a, ::ProportionalChange, ::Union{Cost,CostToAffinity}, ti) =
+_maybe_scale(a, ::Sensitivity, ::Union{Cost,CostToAffinity}, ti) =
     ti.workspace .= a .* view(costmatrix(ti), :, target(ti).node)
-_maybe_scale(a, ::UnitChange, ::Permeability, ti) = a
+_maybe_scale(a, ::Elasticity, ::Permeability, ti) = a
 
 
 # TODO: handle self connectivity for single isolated nodes

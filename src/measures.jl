@@ -54,6 +54,7 @@ struct ExpectedCost <: DistanceMeasure end
 struct FreeEnergyDistance <: DistanceMeasure end
 struct EuclidianDistance <: DistanceMeasure end
 struct HittingTime <: DistanceMeasure end
+# Not conditional upon arrival
 struct PowerMeanProximity <: ProximityMeasure end
 struct SurvivalProbability <: ProximityMeasure end
 
@@ -149,13 +150,16 @@ weighting(gm::EdgeBetweenness) = gm.weighting
 # Sensitivity
 
 abstract type SensitivityWithRegardsTo end
-struct Quality <: SensitivityWithRegardsTo end
 abstract type Permeability <: SensitivityWithRegardsTo end
-abstract type CostAndAffinitySensitivityWithRegardsTo <: Permeability end
+abstract type SensitivityWithRegardsToCostAndAffinity <: Permeability end
+
+struct SourceQuality <: SensitivityWithRegardsTo end
+struct TargetQuality <: SensitivityWithRegardsTo end
+
 struct Affinity <: Permeability end
 struct Cost <: Permeability end
-struct CostToAffinity <: CostAndAffinitySensitivityWithRegardsTo end
-struct AffinityToCost <: CostAndAffinitySensitivityWithRegardsTo end
+struct CostToAffinity <: SensitivityWithRegardsToCostAndAffinity end
+struct AffinityToCost <: SensitivityWithRegardsToCostAndAffinity end
 
 abstract type TopologicalMetric end
 struct Cumulative <: TopologicalMetric end
@@ -168,26 +172,26 @@ struct Elasticity <: SensitivityType end
 """
     SensitivityAnalysis <: SpatialMeasure
 
-    SensitivityAnalysis(; context, summary, change)
+    SensitivityAnalysis(; context, summary, sentitivitytype)
 
 Compute sensitivity of all nodes. 
 
 ## Keywords
 
-- `context`: Five types of node sensitivity are implemented: `Affinity()`, `Cost()`, 
+- `wrt`: Five types of node sensitivity are implemented: `Affinity()`, `Cost()`, 
     `Quality()`, `CostAndAffinity()` and `AffinityAndCost()`.
 - `summary`: Two [`SensitivitySummary`](@ref)s are implemented to summarize the landscape matrix 
     either through summation ([`LandscapeSum()`](@ref)) or through eigen analysis [`LandscapeEigen()`](@ref). 
     The default is `LandscapeSum()`.
-- `change`: The results can be provided either as sensitivity w.r.t. `UnitChange()`
-    or w.r.t. `ProportionalChange()`, the latter are also known as elasticities. The default is `UnitChange()`
+- `sentitivitytype`: The results can be provided either as sensitivity w.r.t. `Sensitivity()`
+    or w.r.t. `Elasticity()`, the latter are also known as elasticities. The default is `Sensitivity()`
 
 The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
-@kwdef struct SensitivityAnalysis{Co<:SensitivityContext,TM<:TopologicalMetric,Ch<:SensitivityChange} <: SpatialMeasure
-    context::Co
-    summary::TM = Sum()
-    change::Ch = UnitChange()
+@kwdef struct SensitivityAnalysis{WRT<:SensitivityWithRegardsTo,TM<:TopologicalMetric,ST<:SensitivityType} <: SpatialMeasure
+    wrt::WRT
+    metric::TM = Cumulative()
+    type::ST = Sensitivity()
 end
 
 context(gm::Sensitivity) = gm.context

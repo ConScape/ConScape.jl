@@ -58,3 +58,33 @@ function _generate_affinities(nrows, ncols, nhood_size)
 
     return affinities
 end
+
+#=
+Make pixels impossible to move to by changing the affinities to them to zero.
+Input:
+    - node_list: list of nodes (either node_ids or coordinate-tuples) to be made impossible
+=#
+function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, impossible_affinity=1e-20)
+    # Find the indices of the coordinates in the source_ids vector
+    node_list_idx = [findfirst(isequal(n), source_ids(g))::Int for n in node_list]
+
+    # Copy affinities and qualities for modification
+    affinitymatrix = copy(g.affinitymatrix)
+    source_qualities = copy(g.source_quality_spatial)
+    target_qualities = copy(g.target_quality_spatial)
+
+    # Set (nonzero) values to impossible_affinity:
+    # affinitymatrix
+    # FIXME! Row slicing of a sparse matrix is really inefficient
+    affinitymatrix[node_list_idx, :] = impossible_affinity * (affinitymatrix[node_list_idx, :] .> 0)
+    affinitymatrix[:, node_list_idx] = impossible_affinity * (affinitymatrix[:, node_list_idx] .> 0)
+
+    dropzeros!(affinitymatrix)
+
+    # Qualities
+    source_qualities[node_list] .= 0
+    target_qualities[node_list] .= 0
+
+    # Generate a new Grid based on the modified affinitymatrix
+    return Grid(size(g); affinitymatrix, source_qualities, target_qualities, costfunction=g.costfunction, costmatrix=g.costmatrix)
+end
