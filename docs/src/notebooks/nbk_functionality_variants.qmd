@@ -25,7 +25,8 @@ ConScape `Grid`:
 
 ```{julia}
 using ConScape
-using SparseArrays
+using Rasters
+using ArchGDAL
 using Statistics
 using CairoMakie
 ```
@@ -38,14 +39,14 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```{julia}
-mov_prob = Raster(joinpath(datadir, "mov_prob_1000.asc"); missingval=NaN)
-hab_qual = Raster(joinpath(datadir, "hab_qual_1000.asc"); missingval=NaN);
+permeabilities = Raster(joinpath(datadir, "mov_prob_1000.asc"); missingval=NaN)
+qualities = Raster(joinpath(datadir, "hab_qual_1000.asc"); missingval=NaN);
 ```
 
 ```{julia}
-non_matches = xor.(isnan.(mov_prob), isnan.(hab_qual))
-mov_prob[non_matches] .= 1e-20
-hab_qual[non_matches] .= 1e-20;
+non_matches = xor.(isnan.(qualities), isnan.(permeabilities))
+permeabilities[non_matches] .= 1e-20
+qualities[non_matches] .= 1e-20;
 ```
 
 ```{julia}
@@ -84,7 +85,7 @@ Then, we compute the proximity matrix between $s$ and $t$ using the RSP expected
 
 ```{julia}
 ec = solve(ExpectedCost(), rsp, rast)
-K = map(t -> iszero(t) ? t : exp(-t / 2000), ec);
+# K = map(t -> iszero(t) ? t : exp(-t / 2000), ec);
 ```
 
 See Notebook [ecological distance](/notebooks/nbk_distance_metrics.qmd) for a

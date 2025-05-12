@@ -44,9 +44,9 @@ hab_qual = Raster(joinpath(datadir, "hab_qual_1000.asc"); missingval=NaN)
 ```
 
 ```{julia}
-non_matches = xor.(isnan.(mov_prob), isnan.(hab_qual))
-mov_prob[non_matches] .= 1e-20
-hab_qual[non_matches] .= 1e-20;
+matches = isnan.(mov_prob) .|| isnan.(hab_qual)
+mov_prob[Not(matches)] .= 1e-20
+hab_qual[Not(matches)] .= 1e-20;
 ```
 
 ```{julia}
@@ -87,22 +87,22 @@ plot(euclid; axis=(; title="Euclidean distance")) |> display
 From the `Grid` we can also compute the least-cost distances betweem $s$ and $t$:
 ```{julia}
 I = CartesianIndices(rast)[4300]
-lc_init = init(LeastCost(), rast, 1, I; outputs=nothing)
-lc = solve(Distance(), lc_init)
+lc_init = init(LeastCost(), rast, 1, I)
+lcd = solve(Distance(), lc_init)
 ```
 
 The least-cost distance from all source pixels to target pixel 4300 is:
 ```{julia}
 #| fig-cap: Least-cost distance to target t.
 
-plot(lc; axis=(; title="Least-cost distance"))
+plot(lcd; axis=(; title="Least-cost distance"))
 ```
 
 Not too surprising there is a high, albeit imperfect, correlation between the
 Euclidean and least-cost distance:
 
 ```{julia}
-cor(vec(euclid), vec(lc))
+cor(euclid[matches], lcd[matches])
 ```
 
 ## RSP expected cost distance
@@ -125,7 +125,7 @@ Comparing the least-cost distance to the RSP expected cost distance we see there
 is strong positive relationship:
 
 ```{julia}
-plot(cor(lc, dists); colormap=:magma)
+cor(lcd[matches], dists[matches])
 ```
 
 Most computations in ConScape require a proximity instead of a distance. A
@@ -163,7 +163,7 @@ The proximity based on the expected cost and on the survival probability show a
 strong positive relationship:
 
 ```{julia}
-cor(exp.(vec(dists) / -1000), vec(surv_prob))
+cor(exp.(dists[matches] / -1000), surv_prob[matches])
 ```
 
 For more discussion on the use of the survival probability, in the context of

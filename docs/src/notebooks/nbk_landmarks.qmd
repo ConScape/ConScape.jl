@@ -36,12 +36,10 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```{julia}
-permeabilities = Raster(joinpath(datadir, "mov_prob_1000.asc"); missingval=NaN)
-qualities = Raster(joinpath(datadir, "hab_qual_1000.asc"); missingval=NaN)
-non_matches = xor.(isnan.(permeabilities), isnan.(qualities))
-permeabilities[non_matches] .= NaN
-qualities[non_matches] .= NaN;
-rast = RasterStack((; permeabilities, qualities))
+paths = (permeabilities=joinpath(datadir, "mov_prob_1000.asc"),
+         qualities=joinpath(datadir, "hab_qual_1000.asc"))
+rast = RasterStack(paths; missingval=NaN)
+mask!(rast; with=rast) # Self masking
 ```
 
 # Coarse graining

@@ -17,18 +17,16 @@ book:
         - part: index.qmd
           chapters:
             - quick_start.qmd
-            - faq.qmd
+            - faq.qmd 
             - glossary.qmd
             - background.qmd
         - part: applications/index.qmd
           chapters:
             - applications/GI.qmd
-            #   text: Green infrastructure
             - applications/EIA.qmd
-            #   text: Environmental impact assessment
         - part: "Tutorials"
           chapters:
-            - notebooks/index.qmd
+            # - notebooks/index.qmd
             - notebooks/nbk_getting_started.qmd
             - notebooks/nbk_landmarks.qmd
             - notebooks/nbk_windowing.qmd

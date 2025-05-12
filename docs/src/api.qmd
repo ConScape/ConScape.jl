@@ -1,6 +1,5 @@
 ---
 title: "API"
-bibliography: biblio.bib
 engine: julia
 excute:
   echo: false
@@ -38,16 +37,16 @@ using DocumenterQuarto: @doc
 
 `
 ```{julia}
-DocumenterQuarto.doc(ConScape, :MovementMode)
+@doc MovementMode
 ```
 ```{julia}
-DocumenterQuarto.doc(ConScape, :RandomisedShortestPath)
+@doc RandomisedShortestPath
 ```
 ```{julia}
-DocumenterQuarto.doc(ConScape, :RandomWalk)
+@doc RandomWalk
 ```
 ```{julia}
-DocumenterQuarto.doc(ConScape, :LeastCost)
+@doc LeastCost
 ```
 
 ## Measures

@@ -78,36 +78,6 @@ The first ConScape function is a helper to read maps in ASCII format, the functi
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
-```{julia}
-# read habitat quality raster
-qualities = Raster(joinpath(datadir, "hab_qual_1000.asc"); missingval=NaN)
-# read movemement probability raster
-permeabilities = Raster(joinpath(datadir, "mov_prob_1000.asc"); missingval=NaN)
-```
-
-Finally, it is important to ensure that the cells with values match, we conduct
-the following check and remove non-matching cells:
-
-```{julia}
-non_matches = xor.(isnan.(permeabilities), isnan.(qualities))
-permeabilities[non_matches] .= NaN
-qualities[non_matches] .= NaN;
-```
-
-```{julia}
-plot(qualities; 
-    axis=(; title = "Map of habitat quality"), 
-    colormap=cgrad([:white, :green])
-)
-```
-
-::: {.callout-warning}
-
-It is important that all cells or pixels that can be reached in the network
-(i.e. those with values for the permeability maps) also have matching habitat
-quality. Otherwise, the 'NaN' values may propagate in computations further down.
-This code ensures this match.
-
 :::
 
 ## Define a RasterStack input
@@ -125,7 +95,29 @@ These can be the following:
 - `target_quality`: target habitat quality if it does not match sources
 
 ```{julia}
-rast = RasterStack((; permeabilities, qualities))
+# Define the paths to the raster files
+paths = (permeabilities=joinpath(datadir, "mov_prob_1000.asc"),
+         qualities=joinpath(datadir, "hab_qual_1000.asc"))
+rast = RasterStack(paths; missingval=NaN)
+```
+
+```{julia}
+plot(rast.qualities; 
+    axis=(; title = "Map of habitat quality"), 
+    colormap=cgrad([:white, :green])
+)
+```
+
+::: {.callout-warning}
+
+It is important that all cells or pixels that can be reached in the network
+(i.e. those with values for the permeability maps) also have matching habitat
+quality. Otherwise, the 'NaN' values may propagate in computations further down.
+This code ensures this match.
+
+```{julia}
+# Self mask so NaN values are shared across all layers
+mask!(rast; with=rast) # Self masking
 ```
 
 # Step 2: Defining a movement mode
@@ -171,7 +163,7 @@ connected. The ConScape library was developed primarily to facilitate this task.
 The functionality of a pixel is computed with the function `connected_habitat`:
 
 ```{julia}
-ch = solve(ConnectedHabitat(), rsp, rast) 
+func_hab = solve(ConnectedHabitat(), rsp, rast) 
 ```
 
 See [@vanmoorter2021defining] for a discussion of the expected cost distance and
@@ -183,28 +175,28 @@ scaling parameter (here: $\alpha = 75$).
 We plot the results:
 
 ```{julia}
-plot(ch; axis=(; title="Functional habitat"))
+plot(func_hab; axis=(; title="Functional habitat"))
 ```
 
 We can now sum the pixel functionalities to obtain a landscape-level
 functionality (similar to: [@saura2007new]): 
 
 ```{julia}
-sum(filter(!isnan, ch))
+sum(filter(!isnan, func_hab))
 ```
 
 By taking the square root of this number, we can compute the amount of connected
 habitat similar to [@saura2011network]:
 
 ```{julia}
-sqrt(sum(filter(x -> !isnan(x), ch)))
+sqrt(sum(filter(x -> !isnan(x), func_hab)))
 ```
 
 When we compare this value to the amount of 'unconnected' habitat, we see that
 there is some loss of habitat due to movement constraints, i.e.:
 
 ```{julia}
-100 * (1 - sqrt(sum(filter(x -> !isnan(x), ch))) /
+100 * (1 - sqrt(sum(filter(x -> !isnan(x), func_hab))) /
                 sum(filter(x -> !isnan(x), rast.qualities)))
 ```
 
@@ -240,7 +232,7 @@ for instance, two pixels:
 demo_qualities = zeros(dims(rast))
 demo_qualities[70, 60] = 1
 demo_qualities[105, 50] = 1
-demo_rast = RasterStack((; qualities=demo_qualities, permeabilities))
+demo_rast = RasterStack((; qualities=demo_qualities, permeabilities=rast.permeabilities))
 plot(demo_qualities; axis=(; title = "Source and target pixel"))
 ```
 

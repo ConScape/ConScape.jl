@@ -1,8 +1,6 @@
 ---
-title: "Quick start"
+title: "Installation"
 ---
-
-# Quick start
 
 ## Julia
 
@@ -29,7 +27,7 @@ It is easy to set up and use as shown [here](https://www.youtube.com/watch?v=oi5
 To install ConScape from Julia's repl type `]` for pkg mode and:
 
 ```julia-repl
-`add ConScape`
+add ConScape
 ```
 
 Now you are ready to start with the first

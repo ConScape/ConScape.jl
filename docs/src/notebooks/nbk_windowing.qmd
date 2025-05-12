@@ -51,7 +51,8 @@ that it needs from the lazy raster.
 ```{julia}
 paths = (permeabilities=joinpath(datadir, "mov_prob_1000.asc"),
          qualities=joinpath(datadir, "hab_qual_1000.asc"))
-rast = RasterStack(paths; missingval=NaN, lazy=true)
+rast = RasterStack(paths; missingval=NaN)
+mask!(rast; with=rast)
 ```
 
 ## Padding
@@ -63,8 +64,8 @@ It may be inconvenient to write a new file that pads this reason, and in Julia
 it is unnesessary. We can just lazily pad the underlying DiskArray.
 
 ```{julia}
-buffer = 200
-rast = Rasters.DiskArrays.pad(rast, (X=(buffer, buffer), Y=(buffer, buffer)))
+# buffer = 40
+# rast = Rasters.DiskArrays.pad(rast, (X=(buffer, buffer), Y=(buffer, buffer)))
 ```
 
 # Problem definition
@@ -78,7 +79,7 @@ be the layer names of the output `RasterStack`.
 
 ```{julia}
 measures = (;
-    ch=ConScape.ConnectedHabitat(),
+    func_hab=ConScape.ConnectedHabitat(),
     betq=ConScape.Betweenness(QualityWeighted()),
     betm=ConScape.Betweenness(QualityAndProximityWeighted()),
 )
@@ -92,7 +93,20 @@ movement = RandomisedShortestPath(; theta=1.0)
 And define the complete Problem:
 
 ```{julia}
-problem = ConScape.Problem(; measures, movement, solver=VectorSolver())
+problem = ConScape.Problem(; measures, movement)
+```
+
+## Solving
+
+We can now solve the problema as one unit, all measure are calculated 
+simultaneously and share many computations.
+
+
+```{julia}
+results = solve(problem, rast)
+```
+```{julia}
+plot(results.betm)
 ```
 
 # WindowedProblem
@@ -133,7 +147,7 @@ Now, define the windowed problem:
 
 ```{julia}
 windowed_problem = WindowedProblem(problem; 
-    centersize=10, buffer=20, threaded=false
+    centersize=10, buffer, threaded=true
 )
 ```
 
@@ -141,7 +155,7 @@ Run it to show that it works
 
 ```{julia}
 @time result = solve(windowed_problem, rast)
-Rasters.rplot(result)
+# Rasters.rplot(result)
 ```
 
 # Batch problems
@@ -167,7 +181,7 @@ It has the key properties:
     batch ids are not recalculated (which will often often take longer than running the job itself!)
 
 ```{julia}
-batch_problem = BatchProblem(problem; datapath=".", windows=10, buffer=20)
+batch_problem = BatchProblem(problem; datapath=".", centersize=10, buffer)
 ```
 
 # Batch assessment
@@ -258,7 +272,7 @@ gradually fills up (as mosaicing occurs) needs progressively more and more disk 
 ```{julia}
 mosaic(sum, output_rasters; 
     to=rast,
-    filename="dest_file.tiff",
+    filename="dest_file.tif",
     read=true, # Read each raster as we go instead of lazily broadcasting it
     gc=50, # On a cluster it may help to manually garbage collect memory every N rasters
     options=["BIGTIFF" => "YES"], # Pass options to GDAL
@@ -266,7 +280,7 @@ mosaic(sum, output_rasters;
 ```
 
 ```{julia}
-results = RasterStack("dest_file.tiff")
+results = RasterStack("dest_file.tif")
 Rasters.rplot(results)
 ```
 

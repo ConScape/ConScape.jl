@@ -69,8 +69,7 @@ survival probability between adjacent pixels:
 costs = -log.(1 .- mortality_risk);
 ```
 
-We create the `Grid` by using these cost data, instead of a transformation from
-the likelihood of movement:
+We can then create a `RasterStack` from the three input `Raster`s:
 
 ```{julia}
 rast = RasterStack((; qualities, permeabilities, costs))
@@ -78,7 +77,7 @@ rast = RasterStack((; qualities, permeabilities, costs))
 
 ## Computing the survival probability
 
-Now we can compute the `GridRSP`:
+Use the Randomised Shortest Path movement mode:
 
 ```{julia}
 theta = 1.0
@@ -92,25 +91,21 @@ the mortality cost associated to edges $(i,j)$, we need to set $\theta=1.0$
 The survival probability from all source pixels to a target pixel (e.g. 15000) is:
 
 ```{julia}
-#| fig-cap: Survival probability to a target.
-#| fig-subcap: 
-#|   - "a"
-#|   - "b"
-#| layout-ncol: 2
-
-tmp = zeros(dims(rast))
+target_only = zeros(dims(rast))
 I = CartesianIndex(36, 87)
-tmp[I] = 1
-plot(tmp; axis=(; title="Target"))
+target_only[I] = 1
 ```
 
 ```{julia}
-I = CartesianIndex(36, 87)
+#| fig-cap: Survival probability to a target.
+#|   - "b"
+#| layout-ncol: 2
+#| 
 targetinit = init(rsp, rast, 1, I)
 sp = solve(SurvivalProbability(), targetinit)
 replace!(sp, 1.0 => NaN)
-
-plot(sp; axis=(; title="Survival probability"))
+display(plot(target_only; axis=(; title="Target")))
+display(plot(sp; axis=(; title="Survival probability")))
 ```
 
 Finally, we can use these survival probabilities to compute for each pixel the
@@ -120,7 +115,7 @@ amount of habitat it is functionally connected to:
 #| fig-cap: Amount of connected habitat based on survival connectivity.
 rsp = RSP(; proximity_measure=SurvivalProbability(), theta, distance_transformation=MinusLog()) 
 ch = solve(ConnectedHabitat(), rsp, rast)
-plot(ch)
+plot(ch; axis=(; title="Connected habitat based on survival probability"))
 ```
 
 ## Summary

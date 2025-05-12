@@ -2,8 +2,6 @@
 title: "Environmental Impact Assessment"
 ---
 
-# Environmental Impact Assessment -- EIA
-
 ::: {.callout-note}
 
 Assessment of impact of anthropogenic infrastructures for wild reindeer habitat
