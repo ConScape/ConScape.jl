@@ -1,24 +1,10 @@
-using Documenter, DocumenterVitepress
+using Documenter
+using DocumenterQuarto
+using DocumenterQuarto.Quarto
 
-using ConScape
-
-makedocs(;
-    modules=[ConScape],
-    authors="Your Name Here",
-    repo="https://github.com/YourGithubUsername/ConScape.jl",
-    sitename="Chairmarks.jl",
-    format=DocumenterVitepress.MarkdownVitepress(
-        repo = "https://github.com/YourGithubUsername/ConScape.jl",
-        devurl = "dev",
-        deploy_url = "yourgithubusername.github.io/ConScape.jl",
-    ),
-    pages=[
-        "Home" => "index.md",
-    ],
-    warnonly = true,
-)
+Quarto.render(joinpath(@__DIR__, "src"))
 
 deploydocs(;
-    repo="github.com/YourGithubUsername/ConScape.jl",
+    repo="github.com/ConScape/ConScape.jl",
     push_preview=true,
 )

@@ -82,7 +82,7 @@ end
     elseif x == :K # "proximity vector"
         (; shortest_paths, workspace) = ti
         # TODO this should error earlier
-        workspace .= distance_transformation(ti).(shortest_paths.dists)
+        ReadOnlyArray(workspace .= distance_transformation(ti).(shortest_paths.dists))
     elseif x === :M # "landscape vector"
         _landscapematrix(ti)
     elseif x === :Q
@@ -153,11 +153,14 @@ end
 ######################################################################################
 # Proximities
 
-function compute(::EuclidianDistance, ti::TargetInit)
+function compute(::Distance, ti::TargetInit{<:Euclidean})
     _hypot(a::CartesianIndex, b::CartesianIndex) = _hypot(Tuple(a), Tuple(b))
     _hypot((a1, a2)::Tuple, (b1, b2)::Tuple) = hypot((b1 - a1), (b2 - a2))
     return ti.workspace .= _hypot.(source_ids(ti), (target(ti).spatial,))
 end
+compute(::Distance, ti::TargetInit{<:LeastCost}) =
+    ReadOnlyArray(ti.shortest_paths.dists)
+
 function compute(
     ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}
 )
@@ -253,7 +256,7 @@ end
 ######################################################################################
 # ConnectedHabitat 
 
-compute(::ConnectedHabitat, ti::TargetInit) = ti.M
+compute(::ConnectedHabitat, ti::TargetInit{<:Union{RSP,RandomWalk,LeastCost}}) = ti.M
 
 ######################################################################################
 # Betweenness

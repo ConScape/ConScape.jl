@@ -8,7 +8,7 @@ These transform distances to proximities.
 
 `Base.inv(transformation)` will provide the inverse function.
 """
-abstract type Transformation end
+abstract type Transformation <: Function end
 
 """
     MinusLog <: Transformation

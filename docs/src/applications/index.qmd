@@ -1,0 +1,12 @@
+---
+title: "Applications"
+---
+
+# Applications of ConScape
+
+ConScape is being used for different ecological applications from cumulative impact assessment, spatial conservation prioritization, to green infrastructure mapping for biodiversity conservation.
+
+\lineskip
+
+* [click](/applications/EIA.qmd) Assessment of impact of anthropogenic infrastructures for wild reindeer habitat loss and fragmentation,
+* [click](/applications/GI.qmd) Green infrastructure mapping for biodiversity conservation,

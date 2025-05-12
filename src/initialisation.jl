@@ -392,6 +392,11 @@ struct TargetInit{MM,GI<:GridInit{MM}} <: Initialisation
     end
 end
 TargetInit(gi::GridInit, target::Int) = TargetInit(gi, target_ids(gi)[target])
+function TargetInit(gi::GridInit, target::CartesianIndex)
+    i = findfirst(t -> t.spatial == target, target_ids(gi))
+    isnothing(i) && throw(ArgumentError("target indices $target are not part of this network"))
+    TargetInit(gi, target_ids(gi)[i])
+end
 
 gridinit(ti::TargetInit) = getfield(ti, :gridinit)
 target(ti::TargetInit) = getfield(ti, :target)
@@ -428,7 +433,7 @@ end
 
 function gridinit_precalculation(problem::Problem{<:RSP}, grid::Grid)
     P, A_rowsums = _probabilitymatrix(affinitymatrix(grid))
-    W = _substochasticmatrix(movement(problwm), costmatrix(grid))
+    W = _substochasticmatrix(movement(problem), P, costmatrix(grid))
     IW = I - W
     IW_factorization = init(solver(problem), IW)
     Aⁱ = mapnz(inv, affinitymatrix(grid))
@@ -467,6 +472,9 @@ function gridinit_precalculation(problem::Problem{<:RandomWalk}, grid::Grid)
     IP_factorization = init(solver(problem), IP)
     return (; Aⁱ, A_rowsums, P, PC, PC_rowsums, IP, IP_factorization)
 end
+function gridinit_precalculation(problem::Problem{<:Euclidean}, grid::Grid)
+    (;)
+end
 
 # Variable generation for GridInit
 function _probabilitymatrix(A::SparseMatrixCSC)
@@ -478,7 +486,7 @@ end
 # Substochastic
 function _substochasticmatrix(rsp::RSP, P::SparseMatrixCSC, C::SparseMatrixCSC)
     LinearAlgebra.checksquare(P)
-    W = Pref .* exp.(-theta(rsp) .* C)
+    W = P .* exp.(-theta(rsp) .* C)
     replace!(W.nzval, NaN => 0.0)
     return W
 end
@@ -507,27 +515,35 @@ end
 
 # `init` and `solve`
 
-init(movement::MovementMode, grid::Grid; kw...) =
-    init(Problem(; movement), grid; kw...)
-init(problem::Problem, rast::RasterStack; kw...) = MultiGridInit(problem, rast; kw...)
-init(problem::Problem, grid::Grid; kw...) = MultiGridInit(problem, grid; kw...)
-init(gi::GridInit, target::Union{Int,TargetID}) = TargetInit(gi, target)
+init(movement::MovementMode, grid::Union{RasterStack,Grid}, args...; kw...
+) = init(Problem(; movement, kw...), grid, args...)
+init(measure::Union{Measure,MeasureTuple,MeasureNamedTuple}, 
+    movement::MovementMode, 
+    grid::Union{RasterStack,Grid}, args...; kw...
+) = init(Problem(measure; movement, kw...), grid, args...)
+init(problem::Problem, grid::Union{RasterStack,Grid}; kw...) = 
+    MultiGridInit(problem, grid; kw...)
+init(problem::Problem, grid::Union{RasterStack,Grid}, i::Int, args...; kw...) = 
+    init(MultiGridInit(problem, grid; kw...), i, args...)
 init(mgi::MultiGridInit, subgrid_id::Int; kw...) = GridInit(mgi, subgrid_id; kw...)
+init(mgi::MultiGridInit, subgrid_id::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
+    init(GridInit(mgi, subgrid_id; kw...), target)
+init(gi::GridInit, target::Union{Int,CartesianIndex,TargetID}) = TargetInit(gi, target)
 
-solve(p::Problem, input::Union{Grid,RasterStack}; kw...) = 
-    solve(init(p, input; kw...))
-solve(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::Problem, input::Union{Grid,RasterStack}; kw...) = 
-    solve(m, init(p, input; kw...))
-solve(measures::MeasureTupleOrNamedTuple, g::Union{Grid,RasterStack}; verbose=false, kw...) = 
-    solve(Problem(measures; kw...), g; verbose)
+solve(p::Problem, input::Union{Grid,RasterStack}, args...; kw...) = 
+    solve(init(p, input; kw...), args...)
+solve(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::Problem, input::Union{Grid,RasterStack}, args...; kw...) = 
+    solve(m, init(p, input; kw...), args...)
+solve(measures::MeasureTupleOrNamedTuple, g::Union{Grid,RasterStack}, args...; verbose=false, kw...) = 
+    solve(Problem(measures; kw...), g, args...; verbose)
 function solve(
-    m::MeasureTupleOrNamedTuple, movement::MovementMode, r::Union{Grid,RasterStack}; 
+    m::MeasureTupleOrNamedTuple, movement::MovementMode, r::Union{Grid,RasterStack}, args...; 
     verbose=false, kw...
 ) 
-    solve(Problem(m; movement, kw...), r; verbose)
+    solve(Problem(m; movement, kw...), r, args...; verbose)
 end
-solve(m::Measure, movement::MovementMode, g::Union{Grid,RasterStack}; verbose=false, kw...) =
-    only(values(solve(Problem(m; movement, kw...), g; verbose)))
+solve(m::Measure, movement::MovementMode, g::Union{Grid,RasterStack}, args...; verbose=false, kw...) =
+    only(values(solve(Problem((m,); movement, kw...), g, args...; verbose)))
 # Allow solving all the levels of precalculated object with specific measures
 solve(p::Initialisation, args...; kw...) = solve(measures(p), p, args...; kw...)
 solve(measure::Measure, init::Initialisation, args...; kw...) =
@@ -549,9 +565,13 @@ function solve(measures::MeasureTupleOrNamedTuple, mgi::MultiGridInit;
         return out
     end
 end
+function solve(measures::MeasureTupleOrNamedTuple, mgi::MultiGridInit, i::Int, args...; kw...) 
+    solve(measures, init(mgi, i, args...; kw...))
+end
 function solve(measures::MeasureTupleOrNamedTuple, gi::GridInit; 
     outputs=_maybe_new_outputs(measures, gi), kw...
 )
+@show measures
     # Then loop over targets
     for target_id in target_ids(gi)
         # Precalculate for this target and graph measures

@@ -50,9 +50,9 @@ abstract type DistanceMeasure <: ProximityMeasure end
 
 # Distances and proximities
 
+struct Distance <: DistanceMeasure end
 struct ExpectedCost <: DistanceMeasure end
 struct FreeEnergyDistance <: DistanceMeasure end
-struct EuclidianDistance <: DistanceMeasure end
 struct HittingTime <: DistanceMeasure end
 # Not conditional upon arrival
 struct PowerMeanProximity <: ProximityMeasure end
@@ -247,7 +247,7 @@ end
 
 # Return type traits
 returntrait(::SpatialMeasure) = SumDenseSpatial()
-returntrait(::GraphMeasure) = AssignSparse()
+returntrait(::GraphMeasure) = AssignDense()
 returntrait(::PathDistributionMeasure) = SumScalar()
 
 # Workspace allocation traits

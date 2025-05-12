@@ -59,13 +59,13 @@ $PROXIMITY_KEYWORDS
     (TODO: more detail)
 """
 @kwdef struct RandomisedShortestPath{
-    PM<:ProximityMeasure,DT<:Function,DV,C<:Function,T<:Real
+    PM<:ProximityMeasure,DT<:Function,T<:Real,DV,C<:Function
 } <: ArrivingMovement
     proximity_measure::PM = ExpectedCost()
-    distance_transformation::DT
-    diagvalue::DV = oneunit(T)
-    costfunction::C = MinusLog()
+    distance_transformation::DT = MinusLog()
     theta::T
+    diagvalue::DV = oneunit(theta)
+    costfunction::C = MinusLog()
     approx::Bool = false
 end
 RandomisedShortestPath(proximity_measure; kw...) =
@@ -125,6 +125,22 @@ end
 proximity_measure(::RandomWalk) = ExpectedCost()
 
 const RW = RandomWalk
+
+"""
+    Euclidian <: MovementMode
+
+    Euclidian(; kw...)
+
+Identical to [`RandomisedShortestPath`](@ref) with `theta` of `Inf`, 
+if that could run without numerical problems.
+
+Assumes infinite knowledge and immortality.
+
+## Keywords
+
+$PROXIMITY_KEYWORDS
+"""
+@kwdef struct Euclidean <: MovementMode end
 
 """
     AbsorbingRandomWalk <: AbsorbingMovementMode

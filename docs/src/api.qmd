@@ -1,0 +1,169 @@
+---
+title: "API"
+bibliography: biblio.bib
+engine: julia
+---
+
+ConScape.jl extends the CommonSolve.jl library so that
+`solve` and `init` are generic methods to initilise and 
+solve ConScape.jl [`Problem`](@ref)s.
+
+As the scale of Jobs can be very large, ConScape adds methods
+to assess the work required to run a problem, before it is actually run.
+
+We suggest writing these to disk as json files, using JSON3.jl
+
+
+```{julia}
+#| echo: false
+#| output: false
+using DocumenterQuarto
+using ConScape
+using DocumenterQuarto: @doc
+```
+
+```{julia}
+@doc assess
+```
+```{julia}
+DocumenterQuarto.doc(ConScape, :reassess)
+```
+
+# Objects
+
+## Movement Modes
+
+```{julia}
+DocumenterQuarto.doc(ConScape, :MovementMode)
+DocumenterQuarto.doc(ConScape, :RandomisedShortestPath)
+DocumenterQuarto.doc(ConScape, :RandomWalk)
+DocumenterQuarto.doc(ConScape, :LeastCost)
+```
+
+## Measures
+
+Abstract type hierarchy:
+
+```{julia}
+@doc ExpectedCost
+```
+
+### Distances and proximities
+
+```{julia}
+@doc ProximityMeasure
+```
+```{julia}
+@doc PowerMeanProximity
+```
+```{julia}
+@doc SurvivalProbability
+```
+```{julia}
+@doc DistanceMeasure
+```
+```{julia}
+@doc ExpectedCost
+```
+```{julia}
+@doc FreeEnergyDistance
+```
+```{julia}
+@doc HittingTime
+@doc FreeEnergyDistance
+```
+
+### Path distributions measures
+
+```{julia}
+@doc PathDistributionMeasure
+```
+
+### Spatial measures
+
+```{julia}
+@doc SpatialMeasure
+@doc Betweenness
+@doc ConnectedHabitat
+@doc Criticality
+@doc Sensitivity
+```
+
+```{julia}
+@doc EdgeBetweenness
+@doc Eigmax
+```
+
+# Betweenness weighting
+
+Betweenness and EdgeBetweenness measure have
+weighting parameters that modify their behavior.
+
+```{julia}
+@doc BetweennessWeighting
+@doc Unweighted
+@doc QualityWeighted
+@doc ProximityWeighted
+@doc QualityAndProximityWeighted
+@doc CustomWeighted
+```
+
+# Sensitivity parameters
+
+Context: this is often referred to as "with regards to".
+
+```{julia}
+@doc SensitivityContext
+@doc Permeability
+@doc CostAndAffinitySensitivityContext
+@doc Affinity
+@doc Cost
+@doc Quality
+@doc CostToAffinity
+@doc AffinityToCost
+```
+
+Sensitivity summary mode:
+
+```{julia}
+@doc SensitivitySummary
+@doc LandscapeSum
+@doc LandscapeEigen
+```
+
+Sensitivity change mode:
+
+```{julia}
+@doc SensitivityChange
+@doc UnitChange
+@doc ProportionalChange
+```
+
+## Solvers
+
+```{julia}
+@doc Solver
+@doc VectorSolver
+@doc LinearSolver
+```
+
+## Problems
+
+```{julia}
+@doc AbstractProblem
+@doc Problem
+@doc WindowedProblem
+@doc BatchProblem
+```
+
+## Init internals
+
+These objects are returned from `init` at various levels
+
+```{julia}
+@doc Initialisation
+@doc MultiGridInit
+@doc GridInit
+@doc TargetInit
+@doc Grid
+```
