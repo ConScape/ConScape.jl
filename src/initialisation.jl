@@ -25,7 +25,8 @@ nsources(p::Initialisation) = length(source_ids(p))
 ntargets(p::Initialisation) = length(target_ids(p))
 sparse_size(p::Initialisation) = nsources(p), ntargets(p) 
 
-Base.size(p::Initialisation) = Base.size(grid(p))
+Base.size(p::Initialisation, args...) = Base.size(grid(p), args...)
+Base.length(p::Initialisation) = Base.length(grid(p))
 DimensionalData.dims(p::Initialisation) = dims(grid(p))
 
 """
@@ -156,6 +157,8 @@ source_ids(g::Grid) = g.source_ids
 target_ids(g::Grid) = g.target_ids
 
 Base.size(g::Grid) = g.size
+Base.size(g::Grid, d::Int) = g.size[d]
+Base.length(g::Grid) = prod(size(g))
 Base.show(io::IO, ::MIME"text/plain", g::Grid) =
     print(io, "Grid of size ", g.size)
 
@@ -216,7 +219,7 @@ end
 MultiGridInit(problem::Problem, rast::RasterStack; kw...) =
     MultiGridInit(problem, Grid(problem, rast); kw...)
 function MultiGridInit(problem::Problem, grid::Grid; 
-    workspaces=nothing, verbose=false
+    workspaces=nothing, verbose=false, outputs=true,
 )
     if !isnothing(grain(problem))
         grid = coarse_graining(grid, grain(problem))
@@ -230,8 +233,10 @@ function MultiGridInit(problem::Problem, grid::Grid;
     storage = gridinit_storage(movement(problem), workspaces)
     # Create a MultiGridInit without outputs
     mgi = MultiGridInit(problem, grid, subgrids, workspaces, storage, nothing)
-    # Generate outputs for each graph measure, the first subgraph is the largest
-    outputs = allocate_output(problem, mgi)
+    if outputs isa Bool && outputs
+        # Generate outputs for each graph measure, the first subgraph is the largest
+        outputs = allocate_output(problem, mgi)
+    end
     # Now create a MultiGridInit with outputs
     return MultiGridInit(problem, grid, subgrids, workspaces, storage, outputs)
 end
@@ -275,7 +280,7 @@ ec = solve(ExpectedCost(), gi)
 ec, ch = solve((ExpectedCost(), ConnectedHabitat()), gi)
 ```
 """
-struct GridInit{MM,P<:Problem{MM},G<:Grid,O<:Union{NamedTuple,Tuple},W<:AbstractArray,S<:Dict,Pr} <: Initialisation
+struct GridInit{MM,P<:Problem{MM},G<:Grid,O<:Union{Nothing,NamedTuple,Tuple},W<:AbstractArray,S<:Dict,Pr} <: Initialisation
     problem::P
     grid::G
     outputs::O
@@ -515,16 +520,21 @@ end
 
 # `init` and `solve`
 
-init(movement::MovementMode, grid::Union{RasterStack,Grid}, args...; kw...
-) = init(Problem(; movement, kw...), grid, args...)
+init(movement::MovementMode, grid::Union{RasterStack,Grid}, args...; kw...) = 
+    init(Problem(; movement, kw...), grid, args...)
 init(measure::Union{Measure,MeasureTuple,MeasureNamedTuple}, 
     movement::MovementMode, 
-    grid::Union{RasterStack,Grid}, args...; kw...
+    grid::Union{RasterStack,Grid}, 
+    args...; 
+    kw...
 ) = init(Problem(measure; movement, kw...), grid, args...)
 init(problem::Problem, grid::Union{RasterStack,Grid}; kw...) = 
     MultiGridInit(problem, grid; kw...)
-init(problem::Problem, grid::Union{RasterStack,Grid}, i::Int, args...; kw...) = 
+init(problem::Problem, grid::Union{RasterStack,Grid}, i::Int; kw...) = 
     init(MultiGridInit(problem, grid; kw...), i, args...)
+# We don't want to allocate outputs if we work at the target level
+init(problem::Problem, grid::Union{RasterStack,Grid}, i::Int, target::Union{Int,CartesianIndex,TargetID}; outputs=nothing, kw...) = 
+    init(MultiGridInit(problem, grid; outputs, kw...), i, target)
 init(mgi::MultiGridInit, subgrid_id::Int; kw...) = GridInit(mgi, subgrid_id; kw...)
 init(mgi::MultiGridInit, subgrid_id::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
     init(GridInit(mgi, subgrid_id; kw...), target)
@@ -556,41 +566,52 @@ function solve(measures::MeasureTupleOrNamedTuple, mgi::MultiGridInit;
         # Intitalise sparse matrices and precalculate e.g. LU factorizations
         solve(measures, init(mgi, subgrid_id; outputs))
     end
-    out = map(outputs, measures) do o, m
-        returntrait(m) isa DenseSpatial ? _maybe_raster(o, mgi) : o
-    end
-    if all(map(o -> o isa Raster, out))
-        return RasterStack(out)
-    else
-        return out
-    end
+    return _maybe_raster_outputs(measures, outputs, mgi)
 end
-function solve(measures::MeasureTupleOrNamedTuple, mgi::MultiGridInit, i::Int, args...; kw...) 
-    solve(measures, init(mgi, i, args...; kw...))
-end
+solve(measures::MeasureTupleOrNamedTuple, mgi::MultiGridInit, i::Int; kw...) =
+    solve(measures, init(mgi, i; kw...))
+solve(measures::MeasureTupleOrNamedTuple, mgi::MultiGridInit, i::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) =
+    solve(measures, init(mgi, i, target; outputs=nothing, kw...))
 function solve(measures::MeasureTupleOrNamedTuple, gi::GridInit; 
     outputs=_maybe_new_outputs(measures, gi), kw...
 )
-@show measures
     # Then loop over targets
     for target_id in target_ids(gi)
         # Precalculate for this target and graph measures
         solve(measures, init(gi, target_id))
     end
-    return map(outputs, measures) do o, m
-        returntrait(m) isa DenseSpatial ? _maybe_raster(o, gi) : o
-    end
+    return _maybe_raster_outputs(measures, outputs, gi)
 end
 solve(measures::MeasureTupleOrNamedTuple, gi::GridInit, i::Int; kw...) =
     solve(measures, init(gi, target_ids(gi)[i]); kw...)
 function solve(measures::MeasureTupleOrNamedTuple, ti::TargetInit;
-    outputs=outputs(ti)
+    outputs=outputs(ti),
 )
-    # Compute everything for this target and graph measures
-    map(measures, outputs) do measure, output
+    # Allocate target vectors rather than matrices
+    outputs1 = if isnothing(outputs)
+        allocate_target_output(measures, ti)
+    else
+        outputs
+    end
+    # Store outputs
+    results = map(measures, outputs1) do measure, output
         # Dont compute the same measure multiple times
         v = get_or_compute!(ti, measure)
         # Write values to output object
         update_output!(output, measure, v, ti)
+    end
+    if isnothing(outputs)
+        return _maybe_raster_outputs(measures, outputs1, ti)
+    else
+        return results
+    end
+end
+
+function _maybe_raster_outputs(measures, outputs, mgi)
+    out = _maybe_raster(measures, outputs, mgi)
+    if all(map(o -> o isa Raster, out))
+        return RasterStack(out)
+    else
+        return out
     end
 end

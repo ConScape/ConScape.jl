@@ -12,11 +12,6 @@ probablities and costs, similar to [@fletcher2019towards] and [@marx2020samc].
 
 :::
 
-# Demonstration of independent likelihood and cost of movement
-
-In this notebook, we demonstrate the possibility to use independent movement
-probablities and costs, similar to [@fletcher2019towards] and [@marx2020samc].  
-
 ## Preamble
 
 See notebook [Getting Started](/notebooks/nbk_getting_started.qmd) for a 'basic
@@ -24,14 +19,11 @@ workflow' to learn about the fundamentals on data import and the creation of a
 ConScape `Grid`:
 
 ```{julia}
-#using Pkg
-#Pkg.activate(joinpath(ENV["HOME"], ".julia", "dev", "ConScape"))
-
 using ConScape
 using Rasters
 using ArchGDAL
 using Statistics
-using Plots
+using CairoMakie
 ```
 
 ```{julia}
@@ -44,8 +36,8 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 We use the data provided in [@marx2020samc]:
 
 ```{julia}
-mov_prob = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
-hab_qual = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
+permeabilities = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
+qualities = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
 ```
 
 Note, we did not have quality data for each pixel, for this demonstration we
@@ -55,8 +47,8 @@ independent quality data).
 
 We remove negative values:
 ```{julia}
-mov_prob = max.(0, mov_prob)
-hab_qual = max.(0, hab_qual);
+permeabilities = max.(0, permeabilities)
+qualities = max.(0, qualities);
 ```
 
 ## Cost data
@@ -65,8 +57,8 @@ In addition to the data on the habitat quality and the likelihood of movement,
 we also have independent data on the cost of movement ([@marx2020samc]):
 
 ```{julia}
-mov_cost = Raster(joinpath(datadir, "mort_panther_cropped.asc"); missingval=NaN)
-mov_cost = max.(0, mov_cost);
+mortality_risk = Raster(joinpath(datadir, "mort_panther_cropped.asc"); missingval=NaN)
+mortality_risk = max.(0, mortality_risk);
 ```
 
 As discussed in vanmoorter2021defining, to use the mortality risk as a cost in
@@ -74,14 +66,14 @@ the RSP framework, we need to define the cost as the negative logarithm of the
 survival probability between adjacent pixels: 
 
 ```{julia}
-mov_cost = -log.(1 .- mov_cost);
+costs = -log.(1 .- mortality_risk);
 ```
 
 We create the `Grid` by using these cost data, instead of a transformation from
 the likelihood of movement:
 
 ```{julia}
-rast = RasterStack((; permeabilities=mov_prob, costs=mov_cost, qualities=hab_qual))
+rast = RasterStack((; qualities, permeabilities, costs))
 ```
 
 ## Computing the survival probability
@@ -107,15 +99,18 @@ The survival probability from all source pixels to a target pixel (e.g. 15000) i
 #| layout-ncol: 2
 
 tmp = zeros(dims(rast))
-tmp[CartesianIndex(36, 87)] = 1
+I = CartesianIndex(36, 87)
+tmp[I] = 1
 plot(tmp; axis=(; title="Target"))
 ```
 
 ```{julia}
-targetinit = init(rsp, rast, 1, CartesianIndex(36, 87))
+I = CartesianIndex(36, 87)
+targetinit = init(rsp, rast, 1, I)
 sp = solve(SurvivalProbability(), targetinit)
-sp_rast = Raster(map(t -> t==1 ? NaN : t,  sp), dims(rast))
-plot(sp_rast; axis=(; title="Survival probability"))
+replace!(sp, 1.0 => NaN)
+
+plot(sp; axis=(; title="Survival probability"))
 ```
 
 Finally, we can use these survival probabilities to compute for each pixel the

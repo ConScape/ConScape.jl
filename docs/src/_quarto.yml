@@ -31,6 +31,7 @@ book:
             - notebooks/index.qmd
             - notebooks/nbk_getting_started.qmd
             - notebooks/nbk_landmarks.qmd
+            - notebooks/nbk_windowing.qmd
             - notebooks/nbk_distance_metrics.qmd
             - notebooks/nbk_cost.qmd
             - notebooks/nbk_functionality_variants.qmd

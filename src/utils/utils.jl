@@ -20,14 +20,16 @@ _no_nan_f64(x) = Float64(x) # == isnan(x) ? 0.0 : Float64(x)
 _unwrap_raster(R::Raster) = parent(R)
 _unwrap_raster(R::AbstractMatrix) = R
 
-_maybe_raster(mat::Raster, g::Initialisation) = mat
-_maybe_raster(mat::AbstractMatrix, g::Initialisation) =
-    _maybe_raster(mat, dims(g))
-_maybe_raster(mats::Union{Tuple,NamedTuple}, g::Initialisation) =
-    map(mat -> _maybe_raster(mat, g), mats)
-_maybe_raster(x, _) = x
-_maybe_raster(mat::Matrix{T}, dims::Tuple) where T =
+_maybe_raster(measures::Union{MeasureTuple,MeasureNamedTuple}, mats::Union{Tuple,NamedTuple}, g::Initialisation) =
+    map((measure, mat) -> _maybe_raster(returntrait(measure), mat, dims(g)), measures, mats)
+_maybe_raster(rt, mat::Raster, g::Initialisation) = mat
+_maybe_raster(rt, mat::AbstractMatrix, g::Initialisation) =
+    _maybe_raster(rt, mat, dims(g))
+_maybe_raster(rt, x, _) = x
+_maybe_raster(rt::DenseSpatial, mat::Matrix{T}, dims::Tuple) where T =
     Raster(mat, dims; missingval=T(NaN))
+_maybe_raster(rt, vec::Vector{T}, dims::Tuple) where T =
+    Raster(vec, dims; missingval=T(NaN))
 
 # Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices

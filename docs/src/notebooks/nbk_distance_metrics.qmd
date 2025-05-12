@@ -24,14 +24,11 @@ workflow' to learn about the fundamentals on data import and the creation of a
 ConScape `Grid`:
 
 ```{julia}
-#using Pkg
-#Pkg.activate(joinpath(ENV["HOME"], ".julia", "dev", "ConScape"))
-
 using ConScape
 using Rasters
 using ArchGDAL
 using Statistics
-using Plots
+using CairoMakie # Users may prefer GLMakie for interactivity
 ```
 
 ```{julia}
@@ -60,9 +57,13 @@ rsp = RSP(; theta, distance_transformation=MinusLog())
 
 ## Euclidean distance
 
-Compute the Euclidean distance between all pairs of source and target pixels:
+Compute the Euclidean distance for our target pixel 4300.
+Here we pass extra argumenst to `solve`, `1` for the 
+first subgraph, and I for the spatial index of the target pixel.
+
 ```{julia}
-euclid = solve(Distance(), Euclidean(), rast)
+I = CartesianIndices(rast)[4300]
+euclid = solve(Distance(), Euclidean(), rast, 1, I)
 ```
 
 The distance from all source pixels to a given target pixel (e.g. pixel 4300):
@@ -75,11 +76,9 @@ The distance from all source pixels to a given target pixel (e.g. pixel 4300):
 #| layout-ncol: 2
 
 location_demo = mask(zeros(dims(rast); missingval=NaN); with=rast)
-location_demo[4300] = 1
+location_demo[I] = 1
 plot(location_demo; axis=(; title="Target")) |> display
-plot(Raster(euclid[:, 4300], dims(rast)); 
-    axis=(; title="Euclidean distance"),
-) |> display
+plot(euclid; axis=(; title="Euclidean distance")) |> display
 ```
 
 
@@ -87,21 +86,23 @@ plot(Raster(euclid[:, 4300], dims(rast));
 
 From the `Grid` we can also compute the least-cost distances betweem $s$ and $t$:
 ```{julia}
-lcps = solve(Distance(), LeastCost(), rast)
+I = CartesianIndices(rast)[4300]
+lc_init = init(LeastCost(), rast, 1, I; outputs=nothing)
+lc = solve(Distance(), lc_init)
 ```
 
 The least-cost distance from all source pixels to target pixel 4300 is:
 ```{julia}
 #| fig-cap: Least-cost distance to target t.
 
-plot(Raster(lcps[4300, :], dims(rast)), axis=(; title="Least-cost distance"))
+plot(lc; axis=(; title="Least-cost distance"))
 ```
 
 Not too surprising there is a high, albeit imperfect, correlation between the
 Euclidean and least-cost distance:
 
 ```{julia}
-cor(euclid[:, 4300], lcps[4300, :])
+cor(vec(euclid), vec(lc))
 ```
 
 ## RSP expected cost distance
@@ -110,22 +111,21 @@ The randomized shortest path (RSP) expected cost distance is the expected cost
 of moving from the source to the target following the RSP distribution:  
 
 ```{julia}
-dists = solve(ExpectedCost(), rsp, rast)
+dists = solve(ExpectedCost(), rsp, rast, 1, I)
 ```
 
 The RSP expected cost from all pixels as sources to target pixel 4300:
 ```{julia}
 #| fig-cap: RSP expected cost distance to target t.
 
-dist_rast = Raster(dists[:, 4300], dims(rast))
-plot(dist_rast; axis=(; title="RSP expected cost distance"))
+plot(dists; axis=(; title="RSP expected cost distance"))
 ```
 
 Comparing the least-cost distance to the RSP expected cost distance we see there
 is strong positive relationship:
 
 ```{julia}
-cor(lcps[:, 4300], dists[:, 4300])
+plot(cor(lc, dists); colormap=:magma)
 ```
 
 Most computations in ConScape require a proximity instead of a distance. A
@@ -138,8 +138,7 @@ scaling factor (here: 1000) representing the movement capabilities of a species
 ```{julia}
 #| fig-cap: RSP expected cost proximity (logarithm) to target t.
 
-dist_rast = Raster(map(x -> exp(-x / 1000), dists[:, 4300]), dims(rast))
-plot(dist_rast; axis=(; title="Proximity"))
+plot(exp.(dists ./ -1000); axis=(; title="Proximity"))
 ```
 
 ## Survival probability
@@ -156,16 +155,15 @@ proximtiy metric:
 ```{julia}
 #| fig-cap: Survival proximity to target t.
 
-surv_prob = solve(SurvivalProbability(), rsp, rast)
-sp_rast = Raster(surv_prob[:, 4300], dims(rast))
-plot(sp_rast; axis=(; title="Survival proximity"))
+surv_prob = solve(SurvivalProbability(), rsp, rast, 1, I)
+plot(surv_prob; axis=(; title="Survival proximity"))
 ```
 
 The proximity based on the expected cost and on the survival probability show a
 strong positive relationship:
 
 ```{julia}
-cor(map(x -> exp(-x/1000), dists[:, 4300]), surv_prob[:, 4300])
+cor(exp.(vec(dists) / -1000), vec(surv_prob))
 ```
 
 For more discussion on the use of the survival probability, in the context of

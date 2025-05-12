@@ -27,7 +27,7 @@ ConScape `Grid`:
 using ConScape
 using SparseArrays
 using Statistics
-using Plots
+using CairoMakie
 ```
 
 ```{julia}
@@ -74,24 +74,21 @@ Before demonstrating the convenience function ConScape has to computate the
 amount of connected habitat, we will demonstrate explicitly the main building
 blocks going into this computation.
 
-First, we need extract the vectors with the qualities $s$ of the pixels as
-source $s$ and target $t$:
+In this case our source and target qualities are the same:
 
 ```{julia}
-targetidx, targetnodes = ConScape._targetidx_and_nodes(h.g)
-qˢ = [h.g.source_qualities[i] for i in h.g.id_to_grid_coordinate_list]
-qᵗ = [h.g.target_qualities[i] for i in targetidx];
+qˢ = qᵗ = vec(qualities)
 ```
 
 Then, we compute the proximity matrix between $s$ and $t$ using the RSP expected cost:
 
 ```{julia}
-K = map(t -> iszero(t) ? t : exp(-t/2000), ConScape.expected_cost(h));
+ec = solve(ExpectedCost(), rsp, rast)
+K = map(t -> iszero(t) ? t : exp(-t / 2000), ec);
 ```
 
 See Notebook [ecological distance](/notebooks/nbk_distance_metrics.qmd) for a
 discussion of the proximity computation.
-
 
 From the these quality vectors $q^s$ and $q^t$, and the proximity matrix
 $\mathbf{K}$ we compute the 'landscape matrix' $\mathbf{M}$:  
@@ -110,8 +107,9 @@ how well suitable target habitat is connected to suitable sources:
 #| label: fig-target_functionality
 #| fig-cap: Habitat functionality of each pixel as a target (i.e. in receiving suitable habitat from sources).
 
-funcᵗ = vec(sum(M, dims=1)); #sum over rows
-ConScape.plot_values(g, funcᵗ, title="Functional habitat", color=cgrad(:viridis))
+func_habᵗ = vec(sum(replace(M, NaN => 0), dims=1)); # sum over rows
+# Plot as a spatial Raster
+plot(Raster(func_habᵗ, dims(rast)); axis=(; title="Functional habitat"))
 ```
 
 Similarly, by summing over all columns, we quantify how well suitable source
@@ -120,15 +118,15 @@ habitat is connected to suitable target habitat:
 ```{julia}
 #| fig-cap: Habitat functionality of each pixel as a source (i.e. in contributing suitable habitat to targets).
 
-funcˢ = vec(sum(M, dims=2)); #sum over columns
-ConScape.plot_values(g, funcˢ, title="Functional habitat", color=cgrad(:viridis))
+func_habˢ = vec(sum(replace(M, NaN => 0), dims=2)); #sum over columns
+plot(Raster(func_habˢ, dims(rast)); axis=(; title="Functional habitat"))
 ```
 
 We could then multiply the functionality of a pixel as a source and as a target
 to identify pixels that are simultaneously functional as source and target.
 
 ```{julia}
-func_tot = funcˢ .* funcᵗ;
+func_hab_to = func_habˢ .* func_habᵗ;
 ```
 
 Note that this last computation is only possible, if func$^s$ and func$^t$ are
@@ -144,9 +142,9 @@ allows the computation of these metrics on even larger landscapes (see Notebook
 ```{julia}
 #| fig-cap: Habitat functionality of each pixel as a target using ConScape's convenience function.
 
-func = ConScape.connected_habitat(h, connectivity_function=
-    ConScape.expected_cost, distance_transformation=x -> exp(-x/2000));
-ConScape.heatmap(func, yflip=true, color=cgrad(:viridis), title="Functional habitat")
+rsp = RSP(; theta, proximity_measure=ExpectedCost(), distance_transformation=x -> exp(-x/2000));
+func_hab = solve(ConnectedHabitat(), rsp, rast)
+plot(func_hab; axis=(; title="Functional habitat"))
 ```
 is identical to the one in Fig. [@fig-target_functionality].
 
@@ -156,18 +154,18 @@ In addition to summarizing the landscape matrix $\mathbf{M}$ through summation,
 we can also use Eigenanalysis:
 
 ```{julia}
-vˡ, λ, vʳ= ConScape.eigmax(h, connectivity_function=
-    ConScape.expected_cost, distance_transformation=x -> exp(-x/2000))
+# vˡ, λ, vʳ= ConScape.eigmax(h, connectivity_function=
+    # ConScape.expected_cost, distance_transformation=x -> exp(-x/2000))
 
-vʳ = real.(vʳ)
-vˡ = real.(vˡ);
+# vʳ = real.(vʳ)
+# vˡ = real.(vˡ);
 ```
 
 Where $\lambda$ corresponds to the 'metapopulation capacity' in metapopulation
 ecology ([@hanski2000metapopulation]):
 
 ```{julia}
-λ
+# λ
 ```
 
 The interpretation of this value outside the context of metapopulation theory
@@ -179,7 +177,7 @@ to the functionality as a source:
 ```{julia}
 #| fig-cap: Habitat functionality based on eigenanalysis of each pixel as a target (i.e. the reproductive value).
 
-ConScape.plot_values(g, vʳ, title="Reproductive value", color=cgrad(:viridis))
+# ConScape.plot_values(g, vʳ, title="Reproductive value", color=cgrad(:viridis))
 ```
 
 Note that the landscape matrix $\mathbf{M}^{st}$ is transposed compared to (e.g.
@@ -192,14 +190,14 @@ somewhat analogous to the functionality as a target:
 ```{julia}
 #| fig-cap: Habitat functionality based on eigenanalysis of each pixel as a source (i.e. the stable distribution).
 
-ConScape.plot_values(g, vˡ, title="Stable distribution", color=cgrad(:viridis))
+# ConScape.plot_values(g, vˡ, title="Stable distribution", color=cgrad(:viridis))
 ```
 
 Just as [@ovaskainen2003habitat] we can multiply the left and right
 Eigenvectors:
 
 ```{julia}
-eigenvec = vˡ .* vʳ;
+# eigenvec = vˡ .* vʳ;
 ```
 
 An important note, Eigenanalysis requires the landscape matrix $\mathbf{M}^{st}$
@@ -222,8 +220,8 @@ to a suitable source pixel:
 #| fig-cap: Habitat functionality based on survival probability.
 
 rsp = RSP(; theta, proximity_measure=SurvivalProbability())
-ch_surv = solve(ConnectedHabitat(), rsp, rast)
-plot(ch_surv; title="Habitat functionality", color=cgrad(:viridis))
+func_hab_surv = solve(ConnectedHabitat(), rsp, rast)
+plot(func_hab_surv; axis=(; title="Habitat functionality"))
 ```
 
 See Notebook [dispersal mortality](/notebooks/nbk_cost.qmd) for more details on
@@ -243,21 +241,21 @@ distance:
 
 ```{julia}
 lc = LeastCost(; distance_transformation=x -> exp(-x/40))
-ch_lc = solve(ConnectedHabitat(), lc, rast)
+func_hab_lc = solve(ConnectedHabitat(), lc, rast)
 ```
 
 The 'connectivity of a landscape' from ([@drielsma2007spatial]) is then the sum
 of all elements in the landscape matrix $\mathbf{M}^{st}$:
 
 ```{julia}
-CL = sum(filter(x -> !isnan(x), func_lc))
+CL = sum(filter(x -> !isnan(x), func_hab_lc))
 ```
 
 And the 'probability of connectivity' further divides this 'connectivity of the
 landscape' by the squared area of the landscape ([@saura2007new]):
 
 ```{julia}
-PC = CL / sum(map(x -> isnan(x) ? 0 : 1, ch_lc))^2
+PC = CL / sum(map(x -> isnan(x) ? 0 : 1, func_hab_lc))^2
 ```
 
 In addition, as above we can compute the source and target functionalities using
@@ -268,7 +266,7 @@ potential in [@drielsma2007raster]:
 ```{julia}
 #| fig-cap: Habitat functionality based on the least-cost distance, which corresponds to the 'colonization potential' in [@drielsma2007raster].
 
-plot(ch_lc; title="Colonization potential", color=cgrad(:viridis))
+plot(func_hab_lc; axis=(; title="Colonization potential"))
 ```
 
 ## Summary

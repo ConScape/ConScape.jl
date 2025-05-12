@@ -2,6 +2,8 @@
 title: "API"
 bibliography: biblio.bib
 engine: julia
+excute:
+  echo: false
 ---
 
 ConScape.jl extends the CommonSolve.jl library so that
@@ -15,7 +17,6 @@ We suggest writing these to disk as json files, using JSON3.jl
 
 
 ```{julia}
-#| echo: false
 #| output: false
 using DocumenterQuarto
 using ConScape
@@ -23,20 +24,29 @@ using DocumenterQuarto: @doc
 ```
 
 ```{julia}
+# This style is ugly bug what can we do
+# Preferably we could transform julia @docs blocks to markdown
 @doc assess
 ```
 ```{julia}
-DocumenterQuarto.doc(ConScape, :reassess)
+@doc reassess
 ```
 
 # Objects
 
 ## Movement Modes
 
+`
 ```{julia}
 DocumenterQuarto.doc(ConScape, :MovementMode)
+```
+```{julia}
 DocumenterQuarto.doc(ConScape, :RandomisedShortestPath)
+```
+```{julia}
 DocumenterQuarto.doc(ConScape, :RandomWalk)
+```
+```{julia}
 DocumenterQuarto.doc(ConScape, :LeastCost)
 ```
 
@@ -70,6 +80,8 @@ Abstract type hierarchy:
 ```
 ```{julia}
 @doc HittingTime
+```
+```{julia}
 @doc FreeEnergyDistance
 ```
 
@@ -83,14 +95,24 @@ Abstract type hierarchy:
 
 ```{julia}
 @doc SpatialMeasure
+```
+```{julia}
 @doc Betweenness
+```
+```{julia}
 @doc ConnectedHabitat
+```
+```{julia}
 @doc Criticality
+```
+```{julia}
 @doc Sensitivity
 ```
 
 ```{julia}
 @doc EdgeBetweenness
+```
+```{julia}
 @doc Eigmax
 ```
 
@@ -101,10 +123,20 @@ weighting parameters that modify their behavior.
 
 ```{julia}
 @doc BetweennessWeighting
+```
+```{julia}
 @doc Unweighted
+```
+```{julia}
 @doc QualityWeighted
+```
+```{julia}
 @doc ProximityWeighted
+```
+```{julia}
 @doc QualityAndProximityWeighted
+```
+```{julia}
 @doc CustomWeighted
 ```
 
@@ -114,12 +146,26 @@ Context: this is often referred to as "with regards to".
 
 ```{julia}
 @doc SensitivityContext
+```
+```{julia}
 @doc Permeability
+```
+```{julia}
 @doc CostAndAffinitySensitivityContext
+```
+```{julia}
 @doc Affinity
+```
+```{julia}
 @doc Cost
+```
+```{julia}
 @doc Quality
+```
+```{julia}
 @doc CostToAffinity
+```
+```{julia}
 @doc AffinityToCost
 ```
 
@@ -127,7 +173,11 @@ Sensitivity summary mode:
 
 ```{julia}
 @doc SensitivitySummary
+```
+```{julia}
 @doc LandscapeSum
+```
+```{julia}
 @doc LandscapeEigen
 ```
 
@@ -135,7 +185,11 @@ Sensitivity change mode:
 
 ```{julia}
 @doc SensitivityChange
+```
+```{julia}
 @doc UnitChange
+```
+```{julia}
 @doc ProportionalChange
 ```
 
@@ -143,7 +197,11 @@ Sensitivity change mode:
 
 ```{julia}
 @doc Solver
+```
+```{julia}
 @doc VectorSolver
+```
+```{julia}
 @doc LinearSolver
 ```
 
@@ -151,8 +209,14 @@ Sensitivity change mode:
 
 ```{julia}
 @doc AbstractProblem
+```
+```{julia}
 @doc Problem
+```
+```{julia}
 @doc WindowedProblem
+```
+```{julia}
 @doc BatchProblem
 ```
 
@@ -162,8 +226,16 @@ These objects are returned from `init` at various levels
 
 ```{julia}
 @doc Initialisation
+```
+```{julia}
 @doc MultiGridInit
+```
+```{julia}
 @doc GridInit
+```
+```{julia}
 @doc TargetInit
+```
+```{julia}
 @doc Grid
 ```
