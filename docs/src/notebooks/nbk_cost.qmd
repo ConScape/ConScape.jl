@@ -73,6 +73,7 @@ We can then create a `RasterStack` from the three input `Raster`s:
 
 ```{julia}
 rast = RasterStack((; qualities, permeabilities, costs))
+mask!(rast; with=rast)
 ```
 
 ## Computing the survival probability

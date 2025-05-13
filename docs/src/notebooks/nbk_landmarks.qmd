@@ -79,8 +79,8 @@ and low-resolution target qualities:
 ```{julia}
 theta = 1.0
 rsp = RSP(; theta, distance_transformation=x -> exp(-x / 75))
-ch = solve(ConnectedHabitat(), rsp, rast) 
-ch_coarse = solve(ConnectedHabitat(), rsp, rast; grain=20)
+fh = solve(ConnectedHabitat(), rsp, rast) 
+fh_coarse = solve(ConnectedHabitat(), rsp, rast; grain=20)
 ```
 
 The reduction in computation is substantial. The processing time goes from 16 to
@@ -99,8 +99,8 @@ memory).
 #|   - "b"
 #| layout-ncol: 2
 
-display(plot(ch; axis=(; title="Complete"), colormap=:viridis))
-display(plot(ch_coarse; axis=(; title="Landmark-based"), colormap=:viridis))
+display(plot(fh; axis=(; title="Complete")))
+display(plot(fh_coarse; axis=(; title="Landmark-based")))
 ```
 
 Compare the computation based on all pixels versus the one based on landmarks
@@ -109,7 +109,7 @@ and we see they are highly similar.
 Hence, the correlation between these values is:
 
 ```{julia}
-cor(filter(x -> !isnan(x), ch), filter(x -> !isnan(x), ch_coarse))
+cor(filter(x -> !isnan(x), fh), filter(x -> !isnan(x), fh_coarse))
 ```
 
 Clearly, the estimation of the ranking of source pixels based upon their
@@ -119,7 +119,7 @@ aggregation of these target pixels.
 When we look at the change in the amount of connected habitat in the landscape:
 
 ```{julia}
-sqrt(sum(filter(x -> !isnan(x), ch_coarse))) / sqrt(sum(filter(x -> !isnan(x), ch)))
+sqrt(sum(filter(x -> !isnan(x), fh_coarse))) / sqrt(sum(filter(x -> !isnan(x), fh)))
 ```
 
 There is some under-estimation, however, note that we used a substantial level
@@ -132,26 +132,26 @@ aggregation, to 50):
 
 ```{julia}
 coarseness = [1, 2, 3, 5, 7, 10, 15, 20, 50]
-time_ch_grains = map(coarseness) do grain
+time_fh_grains = map(coarseness) do grain
     time = @elapsed begin
-        ch = solve(ConnectedHabitat(), rsp, rast; grain)
+        fh = solve(ConnectedHabitat(), rsp, rast; grain)
     end
-    time, ch
+    time, fh
 end
 ```
 Calculate sums and correlations with non-aggregated outputs:
 ```{julia}
-time_grains = first.(time_ch_grains)
-ch_grains = last.(time_ch_grains)
+time_grains = first.(time_fh_grains)
+fh_grains = last.(time_fh_grains)
 skipnan(xs) = filter(x -> !isnan(x), xs)
-est_ch_grains = sum.(skipnan.(ch_grains))
-cor_ch_grains = cor.((skipnan(ch),), skipnan.(ch_grains))
+est_fh_grains = sum.(skipnan.(fh_grains))
+cor_fh_grains = cor.((skipnan(fh),), skipnan.(fh_grains))
 ```
 
 ```{julia}
 #| fig-cap: The correlation between the full and landmark-based habitat functionality in function of the level of 'coarse graining'.
-p = plot(coarseness, cor_ch_grains; label="Correlation")    
-plot!(p.axis, coarseness, est_ch_grains; label="Estimated connected habitat")
+p = plot(coarseness, cor_fh_grains; label="Correlation")    
+plot!(p.axis, coarseness, est_fh_grains; label="Estimated connected habitat")
 plot!(p.axis, coarseness, time_grains ./ first(time_grains); label="Relative time taken")
 axislegend(p.axis; position=:lc)
 p.figure # TODO split Y axes?

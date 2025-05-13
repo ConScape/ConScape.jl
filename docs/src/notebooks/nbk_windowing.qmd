@@ -33,7 +33,7 @@ ConScapeJobs repository in the ConScape github organisation.
 using ConScape
 using Rasters
 using ArchGDAL # We use GDAL for tiff files, but NCDatasets or ZarrDatasets could be used instead
-using CairoMakie
+using CairoMakie # GLMakie could be used for interactivity
 using JSON3
 ```
 
@@ -79,9 +79,9 @@ be the layer names of the output `RasterStack`.
 
 ```{julia}
 measures = (;
-    func_hab=ConScape.ConnectedHabitat(),
-    betq=ConScape.Betweenness(QualityWeighted()),
-    betm=ConScape.Betweenness(QualityAndProximityWeighted()),
+    func_hab=ConnectedHabitat(),
+    betq=Betweenness(QualityWeighted()),
+    betm=Betweenness(QualityAndProximityWeighted()),
 )
 ```
 

@@ -1,4 +1,5 @@
 function get_or_compute!(ti::TargetInit, m::Measure)
+    @show m
     st = storage(ti)
     x = Symbol(m)
     haskey(st, x) && return st[x]

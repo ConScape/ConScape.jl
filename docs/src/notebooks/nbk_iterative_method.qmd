@@ -79,7 +79,7 @@ which the RSP path likelihoods are extremely small.
 ```{julia}
 rsp = RSP(; 
     theta=1.0,
-    distance_transformation=x -> exp(-x/75),
+    distance_transformation=x -> exp(- x/ 75),
     proximity_measure=ExpectedCost(), 
 )
 ```
@@ -122,8 +122,8 @@ RSP-based distance functions are called upon the `Grid` struct instead of the
 as they require a loop over target nodes.
 
 ```{julia}
-@time ch = solve(ConnectedHabitat(), rsp, rast)
-plot(ch)
+@time func_hab = solve(ConnectedHabitat(), rsp, rast)
+plot(func_hab)
 ```
 
 Compare these 54 minutes with the $8.64$ seconds it takes using ConScape's
@@ -140,8 +140,8 @@ rsp = RSP(;
     approx=true,
     theta=1.0, 
 )
-@time ch = solve(ConnectedHabitat(), rsp, rast);
-plot(ch)
+@time func_hab = solve(ConnectedHabitat(), rsp, rast);
+plot(func_hab)
 ```
 
 This 'single pass' approximation will be fairly good in case of near optimal
