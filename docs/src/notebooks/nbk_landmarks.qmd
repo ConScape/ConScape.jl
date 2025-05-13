@@ -79,8 +79,8 @@ and low-resolution target qualities:
 ```{julia}
 theta = 1.0
 rsp = RSP(; theta, distance_transformation=x -> exp(-x / 75))
-fh = solve(ConnectedHabitat(), rsp, rast) 
-fh_coarse = solve(ConnectedHabitat(), rsp, rast; grain=20)
+fh = solve(FunctionalHabitat(), rsp, rast) 
+fh_coarse = solve(FunctionalHabitat(), rsp, rast; grain=20)
 ```
 
 The reduction in computation is substantial. The processing time goes from 16 to
@@ -134,7 +134,7 @@ aggregation, to 50):
 coarseness = [1, 2, 3, 5, 7, 10, 15, 20, 50]
 time_fh_grains = map(coarseness) do grain
     time = @elapsed begin
-        fh = solve(ConnectedHabitat(), rsp, rast; grain)
+        fh = solve(FunctionalHabitat(), rsp, rast; grain)
     end
     time, fh
 end

@@ -15,7 +15,7 @@ rast = RasterStack((; affinities, source_qualities, target_qualities=source_qual
 measures = (;
     betm=Betweenness(QualityAndProximityWeighted()),
     # betq=Betweenness(QualityWeighted()), # Doesn't work windowed!
-    ch=ConnectedHabitat(),
+    ch=FunctionalHabitat(),
     # # TODO sens=ConScape.Sensitivity(),
 )
 # Set low alpha here so the decay is steep for testing

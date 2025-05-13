@@ -23,7 +23,7 @@ export RandomisedShortestPath, LeastCost, RandomWalk, Euclidean, RSP
 
 export Distance, ExpectedCost, FreeEnergyDistance, EuclideanDistance, SurvivalProbability, PowerMeanProximity, KullbackLeiblerDivergence
 
-export Betweenness, EdgeBetweenness, ConnectedHabitat, Criticality, EigMax, Sensitivity
+export Betweenness, EdgeBetweenness, FunctionalHabitat, Criticality, EigMax, Sensitivity
 
 export QualityWeighted, QualityAndProximityWeighted, ProximityWeighted
 

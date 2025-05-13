@@ -202,9 +202,9 @@ summary(gm::Sensitivity) = gm.summary
 # Others
 
 """
-    ConnectedHabitat <: SpatialMeasure
+    FunctionalHabitat <: SpatialMeasure
 
-    ConnectedHabitat()
+    FunctionalHabitat()
 
 Compute connected habitat of all sources weighted by qualities of 
 source s and target t and the proximity between s and t, 
@@ -212,7 +212,7 @@ as defined by the [`MovementMode`](@ref)).
 
 The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
-struct ConnectedHabitat <: SpatialMeasure end
+struct FunctionalHabitat <: SpatialMeasure end
 
 @kwdef struct Criticality{AV,QT,QS} <: SpatialMeasure
     avalue::AV = floatmin()

@@ -79,7 +79,7 @@ be the layer names of the output `RasterStack`.
 
 ```{julia}
 measures = (;
-    func_hab=ConnectedHabitat(),
+    func_hab=FunctionalHabitat(),
     betq=Betweenness(QualityWeighted()),
     betm=Betweenness(QualityAndProximityWeighted()),
 )

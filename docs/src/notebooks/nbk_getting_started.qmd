@@ -163,7 +163,7 @@ connected. The ConScape library was developed primarily to facilitate this task.
 The functionality of a pixel is computed with the function `connected_habitat`:
 
 ```{julia}
-func_hab = solve(ConnectedHabitat(), rsp, rast) 
+func_hab = solve(FunctionalHabitat(), rsp, rast) 
 ```
 
 See [@vanmoorter2021defining] for a discussion of the expected cost distance and

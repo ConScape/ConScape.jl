@@ -99,7 +99,7 @@ Abstract type hierarchy:
 @doc Betweenness
 ```
 ```{julia}
-@doc ConnectedHabitat
+@doc FunctionalHabitat
 ```
 ```{julia}
 @doc Criticality

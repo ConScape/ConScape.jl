@@ -255,9 +255,9 @@ end
     # first(bellman_ford(probabilitymatrix(ti), costmatrix(ti), theta(ti), target_id(ti), approx(ti)))
 
 ######################################################################################
-# ConnectedHabitat 
+# FunctionalHabitat 
 
-compute(::ConnectedHabitat, ti::TargetInit{<:Union{RSP,RandomWalk,LeastCost}}) = ti.M
+compute(::FunctionalHabitat, ti::TargetInit{<:Union{RSP,RandomWalk,LeastCost}}) = ti.M
 
 ######################################################################################
 # Betweenness
@@ -469,6 +469,6 @@ _maybe_scale(a, ::Elasticity, ::Permeability, ti) = a
 
 
 # TODO: handle self connectivity for single isolated nodes
-# fill_isolated_node(::ConnectedHabitat, init::Initalisation, target::CartesianIndex) =
+# fill_isolated_node(::FunctionalHabitat, init::Initalisation, target::CartesianIndex) =
 #      diagvalue(init) * source_quality_spatial(init)[target] * target_quality_spatial(init)[target]
 # fill_isolated_node(::Betweenness, init::Initalisation, target::CartesianIndex) = 0.0

@@ -17,7 +17,7 @@ source_qualities[(affinities .> 0) .& isnan.(source_qualities)] .= 1e-20
 rast = RasterStack((; affinities, source_qualities, target_qualities=source_qualities))
 
 measures = (;
-    ch=ConnectedHabitat(),
+    ch=FunctionalHabitat(),
     betq=Betweenness(QualityWeighted()),
     betm=Betweenness(QualityAndProximityWeighted()),
     ebetq=EdgeBetweenness(QualityWeighted()),
@@ -31,10 +31,10 @@ measures = (;
     # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 )
 
-rsp_nodist = RandomisedShortestPath(ConScape.ExpectedCost(); distance_transformation=nothing, theta=θ)
-rsp_one = RandomisedShortestPath(ConScape.ExpectedCost(); distance_transformation=one, theta=θ)
-rsp_exp_50 = RandomisedShortestPath(ConScape.ExpectedCost(); distance_transformation=ConScape.ExpMinusAlpha(50), theta=θ)
-rsp_exp_minus = RandomisedShortestPath(ConScape.ExpectedCost(); distance_transformation=ConScape.ExpMinus(), theta=θ)
+rsp_nodist = RandomisedShortestPath(ExpectedCost(); theta=θ)
+rsp_one = RandomisedShortestPath(ExpectedCost(); distance_transformation=one, theta=θ)
+rsp_exp_50 = RandomisedShortestPath(ExpectedCost(); distance_transformation=ExpMinusAlpha(50), theta=θ)
+rsp_exp_minus = RandomisedShortestPath(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ)
 
 solver = ConScape.VectorSolver()
 @testset "Compare everything with old conscape" begin
@@ -103,7 +103,7 @@ solver = ConScape.VectorSolver()
     btq_new = solve(Betweenness(QualityWeighted()), multigridinit)
     @test all(compare.(btq, btq_new))
     ch = OldConScape.connected_habitat(test_grsp);
-    ch_new = solve(ConnectedHabitat(), multigridinit)
+    ch_new = solve(FunctionalHabitat(), multigridinit)
     @test all(compare.(ch, ch_new))
 end
 
@@ -217,7 +217,7 @@ edge_betweenness_measures = (;
 
 other_measures = (;
     mkld=KullbackLeiblerDivergence(),
-    ch=ConnectedHabitat(),
+    ch=FunctionalHabitat(),
 )
 
 # Movement modes
