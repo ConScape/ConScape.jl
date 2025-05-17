@@ -64,7 +64,7 @@ Make pixels impossible to move to by changing the affinities to them to zero.
 Input:
     - node_list: list of nodes (either node_ids or coordinate-tuples) to be made impossible
 =#
-function _set_impossible_nodes(g::Grid, node_list::Vector{CartesianIndex{2}}, impossible_affinity=1e-20)
+function _set_impossible_nodes(g::GridGraph, node_list::Vector{CartesianIndex{2}}, impossible_affinity=1e-20)
     # Find the indices of the coordinates in the source_ids vector
     node_list_idx = [findfirst(isequal(n), source_ids(g))::Int for n in node_list]
 

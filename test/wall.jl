@@ -4,7 +4,7 @@ using ConScape, Test, SparseArrays
     θ = 0.2
     # Create the same landscape in Julia
     g = ConScape.permeable_wall_sim(30, 60; corridorwidths=(3,2),
-    # Qualities decrease by row
+        # Qualities decrease by row
         qualities=copy(reshape(collect(1800:-1:1), 60, 30)')
     )
 
@@ -35,7 +35,7 @@ using ConScape, Test, SparseArrays
             betk = Betweenness(QualityAndProximityWeighted()),
             ebq = EdgeBetweenness(QualityWeighted()),
             ebk = EdgeBetweenness(QualityAndProximityWeighted()),
-            ch = ConnectedHabitat(),
+            ch = FunctionalHabitat(),
             pmp = PowerMeanProximity(),
             sp = SurvivalProbability(),
             fed = FreeEnergyDistance(),
@@ -44,7 +44,7 @@ using ConScape, Test, SparseArrays
         movement=RandomisedShortestPath(ExpectedCost(); theta=θ, diagvalue=0.0)
     )
 
-    rsp = ConScape.init(init(problem, g), 1)
+    rsp = init(init(problem, g), 1)
 
     # @testset "RSP fields" begin
     #     @test ConScape.costmatrix(rsp).nzval[end-2:end] ≈ [
@@ -85,25 +85,24 @@ using ConScape, Test, SparseArrays
 
     RSP = RandomisedShortestPath
     @testset "connected_habitat" begin
-        
         kw = (; theta=0.2, diagvalue=0.0)
-        @test solve(ConnectedHabitat(), RSP(ExpectedCost(); distance_transformation=ExpMinus(), kw...), g)[28:30, 58:60]' ≈ [
+        @test solve(FunctionalHabitat(), RSP(ExpectedCost(); distance_transformation=ExpMinus(), kw...), g)[28:30, 58:60]' ≈ [
              11082.654882969266 2664.916100189486 89.420910249988
              10340.977912804196 2465.918728844169 56.970111157896
              11119.132467660969 2662.969749775032 33.280379014217]
 
-        @test solve(ConnectedHabitat(), RSP(FreeEnergyDistance(); distance_transformation=ExpMinus(), kw...), g)[28:30,58:60] ≈ [
+        @test solve(FunctionalHabitat(), RSP(FreeEnergyDistance(); distance_transformation=ExpMinus(), kw...), g)[28:30,58:60] ≈ [
                  93.0825   140.907    362.669
                  41.1656    63.2089   159.685
                  3.65643    4.04458    4.23555] rtol=1e-3
 
         # TODO some defaults must have been differen here... 
-        @test solve(ConnectedHabitat(), init(RSP(SurvivalProbability(); kw...), g))[28:30,58:60] ≈ [
+        @test solve(FunctionalHabitat(), init(RSP(SurvivalProbability(); kw...), g))[28:30,58:60] ≈ [
                  74141.1   72293.9    72294.7
                  27854.8   27066.5    26995.2
                  1151.38    765.195    391.131] rtol=1e-3
 
-        @test solve(ConnectedHabitat(), init(RSP(PowerMeanProximity(); kw...), g))[28:30,58:60] ≈ [
+        @test solve(FunctionalHabitat(), init(RSP(PowerMeanProximity(); kw...), g))[28:30,58:60] ≈ [
                  93.0825   140.907    362.669
                  41.1656    63.2089   159.685
                  3.65643    4.04458    4.23555] rtol=1e-3
@@ -125,8 +124,8 @@ using ConScape, Test, SparseArrays
 
     #     # Compute the weighted proximity matrix to check results
     #     S = solve(proximity_measure, rsp, g)
-    #     if connectivity_function <: ConScape.DistanceFunction
-    #         map!(ConScape.ExpMinus(), S, S)
+    #     if connectivity_function <: DistanceFunction
+    #         map!(ExpMinus(), S, S)
     #     end
     #     qSq = g.source_qualities[:] .* S .* grsp.g.target_qualities[:]'
 
@@ -134,7 +133,7 @@ using ConScape, Test, SparseArrays
     #     @test qSq*vʳ ≈ vʳ*λ
     # end
 
-    # @testset "Coarse graining: merging pixels to landmarks" begin
+    @testset "Coarse graining: merging pixels to landmarks" begin
         g_coarse = ConScape.coarse_graining(g, 3)
 
         @test g_coarse.target_quality_spatial[1:5, 1:5] ≈ [
@@ -156,35 +155,31 @@ using ConScape, Test, SparseArrays
         #     @test λ ≈ val
         # end
 
-        # @testset "connected_habitat" begin
+        @testset "FunctionalHabitat" begin
             @testset "expected_cost" begin
-                rsp = RSP(ExpectedCost(); distance_transformation=ConScape.ExpMinus(), theta=θ)
-                ch_rsp = solve(ConnectedHabitat(), rsp, g_coarse)
-                ch_g = solve(
-                    ConnectedHabitat(), 
-                    RSP(ExpectedCost(); distance_transformation=ConScape.ExpMinus(), theta=θ),
+                rsp = RSP(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ)
+                fh_rsp = solve(FunctionalHabitat(), rsp, g_coarse)
+                fh_g = solve(
+                    FunctionalHabitat(), 
+                    RSP(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ),
                     g_coarse,
                 )
-                ch_g_approx = solve(
-                    ConnectedHabitat(),
-                    RSP(ExpectedCost(); distance_transformation=ConScape.ExpMinus(), theta=θ, approx=true),
+                fh_g_approx = solve(
+                    FunctionalHabitat(),
+                    RSP(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ, approx=true),
                     g_coarse,
                 )
 
-                @test ch_g ≈ ch_rsp
-                @test ch_g ≈ ch_g_approx rtol=0.8 # Very rough approximation
+                @test fh_g ≈ fh_rsp
+                @test fh_g ≈ fh_g_approx rtol=0.8 # Very rough approximation
             end
 
             @testset "least_cost_distance" begin
-                ch_rsp_lc = solve(ConnectedHabitat(), LeastCost(), g_coarse);
-                ch_g_lc = solve(ConnectedHabitat(),
-                    LeastCost(; distance_transformation=ConScape.ExpMinus()),
-                    g_coarse,
-                )
+                lc = LeastCost(; distance_transformation=ExpMinus())
+                fh_rsp_lc = solve(FunctionalHabitat(), lc, g_coarse)
+                fh_g_lc = solve(FunctionalHabitat(), lc, g_coarse)
 
-                # heatmap(ch_g_lc)
-                # heatmap(ch_rsp_lc)
-                @test_broken ch_g_lc ≈ ch_rsp_lc
+                @test fh_g_lc ≈ fh_rsp_lc
             end
         end
     end

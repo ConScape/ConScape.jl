@@ -16,8 +16,7 @@ In this notebook we demonstrate different types of distances and proximities
 that can be used in ConScape to quantify the connectivity between source and
 target pixels.
 
-
-## Data import, `Grid` and `GridRSP` creation
+## Data import
 
 See notebook [Getting Started](/notebooks/nbk_getting_started.qmd) for a 'basic
 workflow' to learn about the fundamentals on data import and the creation of a
@@ -39,19 +38,14 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```{julia}
-mov_prob = Raster(joinpath(datadir, "mov_prob_1000.asc"); missingval=NaN)
-hab_qual = Raster(joinpath(datadir, "hab_qual_1000.asc"); missingval=NaN)
-```
-
-```{julia}
-matches = isnan.(mov_prob) .|| isnan.(hab_qual)
-mov_prob[Not(matches)] .= 1e-20
-hab_qual[Not(matches)] .= 1e-20;
+movementlikelihood = Raster(joinpath(datadir, "mov_prob_1000.asc"); missingval=NaN)
+quality = Raster(joinpath(datadir, "hab_qual_1000.asc"); missingval=NaN)
+rast = RasterStack((; movementlikelihood, quality))
+mask!(rast; with=rast)
 ```
 
 ```{julia}
 theta = 0.001
-rast = RasterStack((; permeabilities=mov_prob, qualities=hab_qual))
 rsp = RSP(; theta, distance_transformation=MinusLog())
 ```
 
@@ -87,8 +81,7 @@ plot(euclid; axis=(; title="Euclidean distance")) |> display
 From the `Grid` we can also compute the least-cost distances betweem $s$ and $t$:
 ```{julia}
 I = CartesianIndices(rast)[4300]
-lc_init = init(LeastCost(), rast, 1, I)
-lcd = solve(Distance(), lc_init)
+lcd = solve(Distance(), LeastCostPath(), rast, 1, I)
 ```
 
 The least-cost distance from all source pixels to target pixel 4300 is:
@@ -102,6 +95,7 @@ Not too surprising there is a high, albeit imperfect, correlation between the
 Euclidean and least-cost distance:
 
 ```{julia}
+matches = .!isnan.(euclid)
 cor(euclid[matches], lcd[matches])
 ```
 

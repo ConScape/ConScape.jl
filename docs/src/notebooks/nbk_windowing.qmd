@@ -7,13 +7,13 @@ engine: julia
 # Problem specifications: running ConScape at scale
 
 ConScape is now designed for running at very large scales
- with high resolution, such as 50m pixels for a whole country. 
+with high resolution, such as 50m pixels for a whole country. 
 
 However, this will not work if a the exploratory approach
 used in the other examples is scaled up naively.
 
 For best performance at scale all details of a `solve` for 
-all required `Measure`s should be included in a single `Problem`.
+all required `Measure`s should be included in a single `ConScape.Problem`.
 
 Then, to limit the size of each solve to below a 1000 * 1000 
 Raster is prudent, and as the solve becomes expensive, saving
@@ -49,8 +49,8 @@ raster dataset for each windowed job. ConScape will later read just the range
 that it needs from the lazy raster.
 
 ```{julia}
-paths = (permeabilities=joinpath(datadir, "mov_prob_1000.asc"),
-         qualities=joinpath(datadir, "hab_qual_1000.asc"))
+paths = (movementlikelihood=joinpath(datadir, "mov_prob_1000.asc"),
+         sourcequality=joinpath(datadir, "hab_qual_1000.asc"))
 rast = RasterStack(paths; missingval=NaN)
 mask!(rast; with=rast)
 ```
@@ -62,11 +62,6 @@ no targets are calculated in this regions.
 
 It may be inconvenient to write a new file that pads this reason, and in Julia
 it is unnesessary. We can just lazily pad the underlying DiskArray.
-
-```{julia}
-# buffer = 40
-# rast = Rasters.DiskArrays.pad(rast, (X=(buffer, buffer), Y=(buffer, buffer)))
-```
 
 # Problem definition
 
@@ -106,7 +101,7 @@ simultaneously and share many computations.
 results = solve(problem, rast)
 ```
 ```{julia}
-plot(results.betm)
+Rasters.rplot(results)
 ```
 
 # WindowedProblem
@@ -146,6 +141,7 @@ as CPUs will likely be well utilised by a single thread.
 Now, define the windowed problem:
 
 ```{julia}
+buffer = 20
 windowed_problem = WindowedProblem(problem; 
     centersize=10, buffer, threaded=true
 )
@@ -155,7 +151,7 @@ Run it to show that it works
 
 ```{julia}
 @time result = solve(windowed_problem, rast)
-# Rasters.rplot(result)
+Rasters.rplot(result)
 ```
 
 # Batch problems
@@ -181,7 +177,7 @@ It has the key properties:
     batch ids are not recalculated (which will often often take longer than running the job itself!)
 
 ```{julia}
-batch_problem = BatchProblem(problem; datapath=".", centersize=10, buffer)
+batch_problem = BatchProblem(windowed_problem; datapath=".", centersize=10, buffer)
 ```
 
 # Batch assessment
@@ -204,13 +200,13 @@ Usually, the result should be written to disk to be used accross separate nodes.
 
 JSON is an easy, human readble format for saving assements.
 
-```juila
+```julia
 JSON3.write("assessment.json", assessment)
 ```
 
 Later you can read this directly into a `NestedAssessment` object`:
 
-```juila
+```julia
 assessment = JSON3.read("assessment.json", NestedAssessment)
 ```
 
@@ -224,7 +220,7 @@ a BatchProblem definition and a previous output of `assess` or
 `reassess`, like a `NestedAssessment`. It simply checks that 
 the output folders exist (TODO: it should actually check that each file exists?).
 
-```juila
+```{julia}
 assessment = reassess(batch_problem, assessment)
 ```
 

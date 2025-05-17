@@ -20,16 +20,23 @@ _no_nan_f64(x) = Float64(x) # == isnan(x) ? 0.0 : Float64(x)
 _unwrap_raster(R::Raster) = parent(R)
 _unwrap_raster(R::AbstractMatrix) = R
 
-_maybe_raster(measures::Union{MeasureTuple,MeasureNamedTuple}, mats::Union{Tuple,NamedTuple}, g::Initialisation) =
-    map((measure, mat) -> _maybe_raster(returntrait(measure), mat, dims(g)), measures, mats)
-_maybe_raster(rt, mat::Raster, g::Initialisation) = mat
-_maybe_raster(rt, mat::AbstractMatrix, g::Initialisation) =
-    _maybe_raster(rt, mat, dims(g))
-_maybe_raster(rt, x, _) = x
-_maybe_raster(rt::DenseSpatial, mat::Matrix{T}, dims::Tuple) where T =
-    Raster(mat, dims; missingval=T(NaN))
-_maybe_raster(rt, vec::Vector{T}, dims::Tuple) where T =
-    Raster(vec, dims; missingval=T(NaN))
+function _maybe_raster(
+    measures::Union{MeasureTuple,MeasureNamedTuple}, 
+    mats::Union{Tuple,NamedTuple}, 
+    g::Initialisation
+)
+    map(measures, mats) do measure, mat 
+        _maybe_raster(returntrait(measure), mat, dims(g); name=Symbol(measure))
+    end
+end
+_maybe_raster(rt, mat::Raster, g::Initialisation; kw...) = mat
+_maybe_raster(rt, x, y; kw...) = x
+_maybe_raster(rt, mat::AbstractMatrix, g::Initialisation; kw...) =
+    _maybe_raster(rt, mat, dims(g); kw...)
+_maybe_raster(rt::DenseSpatial, mat::Matrix{T}, dims::Tuple; kw...) where T =
+    Raster(mat, dims; missingval=T(NaN), kw...)
+_maybe_raster(rt, vec::Vector{T}, dims::Tuple; kw...) where T =
+    Raster(vec, dims; missingval=T(NaN), kw...)
 
 # Compute a vector of the cartesian indices of nonzero target qualities and
 # the corresponding node id corresponding to the indices
@@ -42,20 +49,36 @@ function _target_spatial_ids(target_quality::SparseMatrixCSC, source_spatial_ids
     return intersect!(CartesianIndex.(is, js), source_spatial_ids)
 end
 
-function _target_ids(target_quality_spatial::AbstractMatrix, source_spatial_ids::Vector{CartesianIndex{2}}, all_spatial_ids::Vector{CartesianIndex{2}})
+function _target_ids(
+    target_quality_spatial::AbstractMatrix, 
+    source_spatial_ids::AbstractArray{<:CartesianIndex{2}}, 
+    all_spatial_ids::AbstractArray{<:CartesianIndex{2}}=source_spatial_ids,
+)
     # Get spatial indices (CartesianIndex) of valid targets that are also spatial indices of sources
     target_spatial_ids = _target_spatial_ids(target_quality_spatial, source_spatial_ids)
     # Find the node ids (Int) for the source row corresponding with spatial indices
-    target_nodes = findall(source_spatial_ids) do id
-        id in target_spatial_ids
-    end
-    target_grid_ids = findall(all_spatial_ids) do id
-        id in target_spatial_ids
-    end
+
+    target_nodes = _find_all_sorted(source_spatial_ids, target_spatial_ids)
+    target_graph_ids = _find_all_sorted(all_spatial_ids, target_spatial_ids)
     # Return Vector{NamedTuple} each with target.spatial and target.node
-    return map(target_spatial_ids, target_grid_ids, eachindex(target_nodes), target_nodes) do spatial, grid_id, subgrid_id, node
-        (; spatial, grid_id, subgrid_id, node)
+    return map(target_spatial_ids, target_graph_ids, eachindex(target_nodes), target_nodes) do spatialidx, graphidx, subgraphidx, node
+        (; spatialidx, graphidx, subgraphidx, node)
     end
+end
+
+function _find_all_sorted(haystack, needles)
+    i = 0
+    ids = Vector{Int}(undef, length(needles))
+    for (j, needle) in enumerate(needles)
+        while i <= length(haystack)
+            i += 1
+            if haystack[i] == needle
+                ids[j] = i
+                break
+            end
+        end
+    end
+    return ids
 end
 
 function _fill_matrix(values, g::Initialisation)
@@ -66,23 +89,23 @@ end
 
 function Raster(values::AbstractVector, p::Initialisation; kw...)
     ds = dims(p)
-    isnothing(ds) && throw(ArgumentError("Grid dims are `nothing` - it was not initialised with a Raster"))
+    isnothing(ds) && throw(ArgumentError("dims are `nothing` - it was not initialised with a Raster"))
     return Raster(_fill_matrix(values, p), ds::Tuple; kw...)
 end
 
-function outdegrees(p::Initialisation)
-    values = sum(affinitymatrix(p), dims=2)
-    _maybe_raster(_fill_matrix(values, p), p)
-end
+# function outdegrees(p::Initialisation)
+#     values = sum(affinitymatrix(p), dims=2)
+#     _maybe_raster(_fill_matrix(values, p), p)
+# end
 
-function indegrees(p::Initialisation; kwargs...)
-    g = grid(p)
-    values = sum(affinitymatrix(g), dims=1)
-    _maybe_raster(_fill_matrix(values, p), p)
-end
+# function indegrees(p::Initialisation; kwargs...)
+#     g = grid(p)
+#     values = sum(affinitymatrix(g), dims=1)
+#     _maybe_raster(_fill_matrix(values, p), p)
+# end
 
 """
-    is_strongly_connected(g::Grid)::Bool
+    is_strongly_connected(g::GridGraph)::Bool
 
 Test if graph defined by Grid is fully connected.
 
@@ -101,18 +124,26 @@ julia> ConScape.is_strongly_connected(grid)
 false
 ```
 """
-Graphs.is_strongly_connected(g::Grid) = is_strongly_connected(SimpleWeightedDiGraph(g.affinitymatrix))
+Graphs.is_strongly_connected(g::GridGraph) = 
+    Graphs.is_strongly_connected(SimpleWeightedDiGraph(g.transitionlikelihood))
 
-function split_subgraphs(g::Grid)
+function split_subgraphs(g::GridGraph;
+    costfunction=nothing, likelihoodfunction=nothing,
+)
+    spatialidxs = vec(CartesianIndices(size(g)))
+    targetids = _target_ids(targetquality(g), spatialidxs)
     # Convert cost matrix to graph, todo: is `permute=false` needed
-    graph = SimpleWeightedDiGraph(costmatrix(g); permute=false)
+    graph = SimpleWeightedDiGraph(
+        isnothing(transitioncost(g)) ? transitionlikelihood(g) : transitioncost(g); 
+        permute=false
+    )
 
     # Find the subgraphs
-    scc = strongly_connected_components(graph)
+    scc = Graphs.strongly_connected_components(graph)
 
     # Keep all subgraphs that contain target nodes
     subgraphs_with_targets = map(scc) do c
-        length(c) > 1 && any(t -> t.node in c, g.target_ids)
+        length(c) > 1 && any(t -> t.node in c, targetids)
     end
 
     # Sort subgraphs by number of nodes
@@ -123,37 +154,37 @@ function split_subgraphs(g::Grid)
         # Sort subgraph indices
         sort!(scci)
 
-        # Get matrices for the subgraph 
-        affinitymatrix = g.affinitymatrix[scci, scci]
-        costmatrix = isnothing(g.costfunction) ? g.costmatrix[scci, scci] : mapnz(g.costfunction, affinitymatrix)
+        # Get permeability matrices for the subgraph 
+        transcost = if !isnothing(transitioncost(g))
+            transitioncost(g)[scci, scci]
+        end
+        translikelihood = if !isnothing(transitionlikelihood(g))
+            transitionlikelihood(g)[scci, scci]
+        end
+        if isnothing(transcost) && !isnothing(costfunction)
+            transcost = mapnz(costfunction, transitionlikelihood(g))
+        end
+        if isnothing(translikelihood) && !isnothing(likelihoodfunction) 
+            translikelihood = mapnz(likelihoodfunction, transitioncost(g))
+        end
 
         # Get new source and target ids for subgraph
-        source_ids = g.source_ids[scci]
-        all_spatial_ids = vec(collect(CartesianIndices(size(g))))
-        target_ids = _target_ids(g.target_quality_spatial, source_ids, all_spatial_ids)
+        sourceidxs = view(spatialidxs, scci)
+        targets = _target_ids(targetquality(g), sourceidxs, spatialidxs)
 
         # Get source and target quality vectors for subgraph
-        source_quality_vector = [g.source_quality_spatial[i] for i in source_ids]
-        target_quality_vector = [g.target_quality_spatial[i.spatial] for i in target_ids]
+        sourcequality_vector = view(sourcequality(g), sourceidxs)
+        targetquality_vector = [targetquality(g)[i.spatialidx] for i in targets]
 
         # Return new grid for subgraph
-        Grid(
-            g.size,
-            g.costfunction,
-            costmatrix,
-            affinitymatrix,
-            g.source_quality_spatial, g.target_quality_spatial,
-            source_quality_vector, target_quality_vector,
-            source_ids, target_ids,
-            g.dims,
+        ConnectedGraph(
+            transcost,
+            translikelihood,
+            sourcequality_vector,
+            targetquality_vector,
+            sourceidxs,
+            targets,
         )
-    end
-end
-function _get_target_qualities(rast::AbstractRasterStack)
-    get(rast, :target_qualities) do
-        get(rast, :qualities) do
-            throw(ArgumentError("No :target_qualities or :qualities layers found"))
-        end
     end
 end
 
@@ -194,8 +225,8 @@ function _reshape!(A::Array, size::Tuple{Vararg{Int}})
     end
 end
 
-_allocate_workspaces!(x, problem::Problem, grid::Grid) =
-    _allocate_workspaces!(x, problem, nsources(grid))
+_allocate_workspaces!(x, problem::Problem, graph::ConnectedGraph) =
+    _allocate_workspaces!(x, problem, nsources(graph))
 _allocate_workspaces!(x::Nothing, problem::Problem, length::Int) =
     Workspaces(length, nworkspaces(problem) + 20)
 _allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
@@ -203,3 +234,22 @@ _allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
 
 _maybe_new_outputs(mes, mgi) =
     mes === measures(mgi) ? outputs(mgi) : allocate_output(mes, mgi)
+
+function _maybe_raster_outputs(measures, outputs, mgi)
+    out = _maybe_raster(measures, outputs, mgi)
+    if all(map(o -> o isa Raster, out))
+        return RasterStack(out)
+    else
+        return out
+    end
+end
+
+# Get layers from a RasterStack or return nothing
+_get_sourcequality(rast::RasterStack) = _keys_or_nothing(rast, (:sourcequality, :quality))
+_get_targetquality(rast::RasterStack) = _keys_or_nothing(rast, (:targetquality, :quality, :sourcequality))
+_get_likelihood(rast::RasterStack) = _keys_or_nothing(rast, (:likelihood, :movementlikelihood))
+_get_cost(rast::RasterStack) = _keys_or_nothing(rast, (:cost, :movementcost))
+
+@inline _keys_or_nothing(rast, (key, keys...)::Tuple) =
+    haskey(rast, key) ? rast[key] : _keys_or_nothing(rast, keys)
+@inline _keys_or_nothing(rast, ::Tuple{}) = nothing

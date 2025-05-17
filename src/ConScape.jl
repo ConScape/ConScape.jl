@@ -1,37 +1,45 @@
 module ConScape
 
-using ArnoldiMethod
-using ConstructionBase
-using Graphs
 using LinearAlgebra
 using Rasters
-using SimpleWeightedGraphs
 using SparseArrays
-using SortTileRecursiveTree
-using WoodburyMatrices
+
+import ArnoldiMethod
+import ConstructionBase
+import Graphs
 
 import GeometryOps as GO
 import GeometryOps.GeoInterface as GI
+import SortTileRecursiveTree as STR
 
 using Rasters.DimensionalData
 using Rasters.Extents
 
-import CommonSolve
 import CommonSolve: solve, init
 
-export RandomisedShortestPath, LeastCost, RandomWalk, Euclidean, RSP
+using WoodburyMatrices: Woodbury
+using SimpleWeightedGraphs: SimpleWeightedGraph, SimpleWeightedDiGraph
 
-export Distance, ExpectedCost, FreeEnergyDistance, EuclideanDistance, SurvivalProbability, PowerMeanProximity, KullbackLeiblerDivergence
 
-export Betweenness, EdgeBetweenness, FunctionalHabitat, Criticality, EigMax, Sensitivity
+export RandomisedShortestPath, LeastCostPath, RandomWalk, Euclidean, RSP, LCP
 
-export QualityWeighted, QualityAndProximityWeighted, ProximityWeighted
+export Distance, ExpectedCost, FreeEnergyDistance, SurvivalProbability, PowerMeanProximity, KullbackLeiblerDivergence
+
+export MovementFlow, Betweenness, EdgeBetweenness, FunctionalHabitat, Criticality, EigMax, SensitivityAnalysis
+
+export QualityWeighted, QualityAndProximityWeighted, ProximityWeighted, Unweighted
+
+export Sensitivity, Elasticity
+
+export Cumulative, Eigen
+
+export Quality, Cost, Likelihood, CostToLikelihood, LikelihoodToCost
 
 export VectorSolver, LinearSolver
 
 export MinusLog, MinusLogAlpha, Inv, OddsFor, OddsAgainst, ExpMinus, ExpMinusAlpha
 
-export solve, init, assess
+export solve, init, assess, reassess
 
 export WindowedProblem, BatchProblem
 
@@ -54,6 +62,7 @@ Abstract supertype for ConScape problem specifications.
 """
 abstract type AbstractProblem end
 
+include("inputs.jl")
 include("utils/workspaces.jl")
 include("utils/readonlyarray.jl")
 include("utils/bellman_ford.jl")

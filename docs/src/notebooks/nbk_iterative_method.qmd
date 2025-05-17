@@ -26,13 +26,11 @@ using CairoMakie
 ```
 
 ```{julia}
-datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
-qualities = Raster(joinpath(datadir, "hab_qual_1000.asc"))
-permeabilties = Raster(joinpath(datadir, "movprob_1000.asc"))
-non_matches = xor.(isnan.(mov_prob), isnan.(hab_qual))
-likelyhood[non_matches] .= NaN
-quality[non_matches] .= NaN
-rast = RasterStack((; qualities, permeabilities))
+datadir = realpath(joinpath(dirname(pathof(ConScape)), "..", "data"))
+paths = (quality=joinpath(datadir, "hab_qual_1000.asc"),
+         movementlikelihood=joinpath(datadir, "mov_prob_1000.asc"))
+rast = RasterStack(paths; missingval=NaN)
+mask!(rast; with=rast)
 ```
 
 # Numerical issues in going from the randomized shortest path to the least-cost path
@@ -122,7 +120,7 @@ RSP-based distance functions are called upon the `Grid` struct instead of the
 as they require a loop over target nodes.
 
 ```{julia}
-@time func_hab = solve(ConnectedHabitat(), rsp, rast)
+@time func_hab = solve(FunctionalHabitat(), rsp, rast)
 plot(func_hab)
 ```
 
@@ -140,7 +138,7 @@ rsp = RSP(;
     approx=true,
     theta=1.0, 
 )
-@time func_hab = solve(ConnectedHabitat(), rsp, rast);
+@time func_hab = solve(FunctionalHabitat(), rsp, rast);
 plot(func_hab)
 ```
 

@@ -27,6 +27,17 @@ sparse matrix factorizations, and solves.
     when the LinearSolve.jl package is loaded.
 - `grain::Int`: used to apply coarse_graining to target qualities, 
     to reduce computational requirements.
+- `costfunction`: A `Function` or [`Transformation`](@ref) to
+    convert likelyhoods to costs.
+- `likelyhoodfunction`: A `Function` or [`Transformation`](@ref) to
+    convert costs to likelyhoods.
+-  `neighbors`: Whether to use 8 (queen) or 4 (rook) neighbors when generating, 
+    graphs from a two-dimensional raster. `ConScape.N8` by default, can be `ConScape.N4`.
+    With a three-dimensional matrix, `neighbors` keyword is not used.
+- `transition_weight`: `TargetWeight()` by default, using only the value of the
+    destination pixel (neighbor). Can be `AverageWeight()` to use the average of
+    both neighboring nodes. If a three-dimensional matrix is provided, 
+    `transition_weight` is not used as the array values are already transitions.
 
 ## Initialising and solving
 
@@ -56,11 +67,15 @@ solve(singleinit)
 solve(targetinit) 
 ```
 """
-@kwdef struct Problem{MM<:MovementMode,M,S<:Solver} <: AbstractProblem
+@kwdef struct Problem{MM<:MovementMode,M,S<:Solver,CF,LF,N,NW} <: AbstractProblem
     movement::MM = RandomisedShortestPath()
     measures::M = ()
     solver::S = VectorSolver()
     grain::Union{Nothing,Int} = nothing # Better name here - target_density?
+    costfunction::CF = MinusLog()
+    likelyhoodfunction::LF = nothing
+    neighbors::N = N8
+    transition_weight::NW = TargetWeight()
 end
 Problem(measure::Measure; kw...) = Problem(; measures=(measure,), kw...)
 Problem(measures::Union{Tuple,NamedTuple}; kw...) = Problem(; measures, kw...)
@@ -79,7 +94,10 @@ movement(p::Problem) = p.movement
 measures(p::Problem) = p.measures
 solver(p::Problem) = p.solver
 grain(p::Problem) = p.grain
-costfunction(p::Problem) = costfunction(movement(p))
+costfunction(p::Problem) = p.costfunction
+likelihoodfunction(p::Problem) = p.likelyhoodfunction
+neighbors(p::Problem) = p.neighbors
+transition_weight(p::Problem) = p.transition_weight
 proximity_measure(p::Problem) = proximity_measure(movement(p))
 distance_transformation(p::Problem) = distance_transformation(movement(p))
 diagvalue(p::Problem) = diagvalue(movement(p))

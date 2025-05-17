@@ -39,19 +39,15 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```{julia}
-permeabilities = Raster(joinpath(datadir, "mov_prob_1000.asc"); missingval=NaN)
-qualities = Raster(joinpath(datadir, "hab_qual_1000.asc"); missingval=NaN);
-```
-
-```{julia}
-non_matches = xor.(isnan.(qualities), isnan.(permeabilities))
-permeabilities[non_matches] .= 1e-20
-qualities[non_matches] .= 1e-20;
+paths = (; movementlikelihood = joinpath(datadir, "mov_prob_1000.asc"),
+           quality = joinpath(datadir, "hab_qual_1000.asc"))
+rast = RasterStack(paths; missingval=NaN)
+mask!(rast; with=rast)
 ```
 
 ```{julia}
 theta = 1.0
-rsp = RSP(; theta, costfunction=ConScape.MinusLog())
+rsp = RSP(; theta)
 ```
 
 ## Habitat functionality: introduction
@@ -78,14 +74,14 @@ blocks going into this computation.
 In this case our source and target qualities are the same:
 
 ```{julia}
-qˢ = qᵗ = vec(qualities)
+qˢ = qᵗ = vec(rast.quality)
 ```
 
 Then, we compute the proximity matrix between $s$ and $t$ using the RSP expected cost:
 
 ```{julia}
 ec = solve(ExpectedCost(), rsp, rast)
-# K = map(t -> iszero(t) ? t : exp(-t / 2000), ec);
+K = map(t -> iszero(t) ? t : exp(-t / 2000), ec);
 ```
 
 See Notebook [ecological distance](/notebooks/nbk_distance_metrics.qmd) for a
@@ -119,8 +115,12 @@ habitat is connected to suitable target habitat:
 ```{julia}
 #| fig-cap: Habitat functionality of each pixel as a source (i.e. in contributing suitable habitat to targets).
 
-func_habˢ = vec(sum(replace(M, NaN => 0), dims=2)); #sum over columns
-plot(Raster(func_habˢ, dims(rast)); axis=(; title="Functional habitat"))
+# Sum over columns
+func_habˢ = vec(sum(replace(M, NaN => 0), dims=2));
+# Convert vector to a spatial Raster
+func_habˢrast = Raster(func_habˢ, dims(rast))
+# Plot
+plot(func_habˢrast; axis=(; title="Functional habitat"))
 ```
 
 We could then multiply the functionality of a pixel as a source and as a target
@@ -143,8 +143,12 @@ allows the computation of these metrics on even larger landscapes (see Notebook
 ```{julia}
 #| fig-cap: Habitat functionality of each pixel as a target using ConScape's convenience function.
 
-rsp = RSP(; theta, proximity_measure=ExpectedCost(), distance_transformation=x -> exp(-x/2000));
-func_hab = solve(ConnectedHabitat(), rsp, rast)
+rsp = RSP(; 
+    theta, 
+    proximity_measure=ExpectedCost(), 
+    distance_transformation=x -> exp(-x/2000)
+);
+func_hab = solve(FunctionalHabitat(), rsp, rast)
 plot(func_hab; axis=(; title="Functional habitat"))
 ```
 is identical to the one in Fig. [@fig-target_functionality].
@@ -221,7 +225,7 @@ to a suitable source pixel:
 #| fig-cap: Habitat functionality based on survival probability.
 
 rsp = RSP(; theta, proximity_measure=SurvivalProbability())
-func_hab_surv = solve(ConnectedHabitat(), rsp, rast)
+func_hab_surv = solve(FunctionalHabitat(), rsp, rast)
 plot(func_hab_surv; axis=(; title="Habitat functionality"))
 ```
 
@@ -241,22 +245,22 @@ use Julia's implementation of the Dijkstra algorithm to compute the least-cost
 distance:
 
 ```{julia}
-lc = LeastCost(; distance_transformation=x -> exp(-x/40))
-func_hab_lc = solve(ConnectedHabitat(), lc, rast)
+lcp = LeastCostPath(; distance_transformation=x -> exp(-x/40))
+func_hab_lcp = solve(FunctionalHabitat(), lcp, rast)
 ```
 
 The 'connectivity of a landscape' from ([@drielsma2007spatial]) is then the sum
 of all elements in the landscape matrix $\mathbf{M}^{st}$:
 
 ```{julia}
-CL = sum(filter(x -> !isnan(x), func_hab_lc))
+CL = sum(filter(x -> !isnan(x), func_hab_lcp))
 ```
 
 And the 'probability of connectivity' further divides this 'connectivity of the
 landscape' by the squared area of the landscape ([@saura2007new]):
 
 ```{julia}
-PC = CL / sum(map(x -> isnan(x) ? 0 : 1, func_hab_lc))^2
+PC = CL / sum(map(x -> isnan(x) ? 0 : 1, func_hab_lcp))^2
 ```
 
 In addition, as above we can compute the source and target functionalities using
@@ -267,7 +271,7 @@ potential in [@drielsma2007raster]:
 ```{julia}
 #| fig-cap: Habitat functionality based on the least-cost distance, which corresponds to the 'colonization potential' in [@drielsma2007raster].
 
-plot(func_hab_lc; axis=(; title="Colonization potential"))
+plot(func_hab_lcp; axis=(; title="Colonization potential"))
 ```
 
 ## Summary

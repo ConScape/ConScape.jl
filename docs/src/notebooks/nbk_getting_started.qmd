@@ -87,22 +87,23 @@ raster layers.
 
 These can be the following:
 
-- `permeability`: permeability (affinity) layer, of "likelyhood of movement" (required)
-- `cost` : cost of movement. By default this is calculated from `permeability`
-    using `costfunction` passed to `RSP`.
+- `movementlikelihood` / `likelihood` : likelihood of movement (required).
+    This maybe calculated from `cost` using the `likelihoodfunction` passed to `Problem`.
+- `movementcost`/ `cost` : cost of movement. This maybe calculated from  
+    `likelihood` using the `costfunction` passed to `Problem`.
 - `quality`: habitat quality (required, or the below alternatives)
-- `source_quality`: source habitat quality if it does not match targets
-- `target_quality`: target habitat quality if it does not match sources
+- `sourcequality`: source habitat quality if it does not match targetquality
+- `targetquality`: target habitat quality if it does not match sourcequality
 
 ```{julia}
 # Define the paths to the raster files
-paths = (permeabilities=joinpath(datadir, "mov_prob_1000.asc"),
-         qualities=joinpath(datadir, "hab_qual_1000.asc"))
+paths = (movementlikelihood=joinpath(datadir, "mov_prob_1000.asc"),
+         quality=joinpath(datadir, "hab_qual_1000.asc"))
 rast = RasterStack(paths; missingval=NaN)
 ```
 
 ```{julia}
-plot(rast.qualities; 
+plot(rast.quality;
     axis=(; title = "Map of habitat quality"), 
     colormap=cgrad([:white, :green])
 )
@@ -136,7 +137,7 @@ Here we use the `RandomisedShortestPath`, or `RSP`.
 ```{julia}
 rsp = RandomisedShortestPath(
     theta=1.0,
-    proximity_measure = ExpectedCost(),
+    proximity_measure=ExpectedCost(),
     distance_transformation=x -> exp(-x / 75)
 );
 ```
@@ -197,7 +198,7 @@ there is some loss of habitat due to movement constraints, i.e.:
 
 ```{julia}
 100 * (1 - sqrt(sum(filter(x -> !isnan(x), func_hab))) /
-                sum(filter(x -> !isnan(x), rast.qualities)))
+                sum(filter(x -> !isnan(x), rast.quality)))
 ```
 
 percent of the total habitat available.
@@ -229,11 +230,11 @@ are zero we can visualize the distribution over paths between these two pixels,
 for instance, two pixels:
 
 ```{julia}
-demo_qualities = zeros(dims(rast))
-demo_qualities[70, 60] = 1
-demo_qualities[105, 50] = 1
-demo_rast = RasterStack((; qualities=demo_qualities, permeabilities=rast.permeabilities))
-plot(demo_qualities; axis=(; title = "Source and target pixel"))
+demo_quality = zeros(dims(rast))
+demo_quality[70, 60] = 1
+demo_quality[105, 50] = 1
+demo_rast = RasterStack((; quality=demo_quality, movementlikelihood=rast.movementlikelihood))
+plot(demo_quality; axis=(; title = "Source and target pixel"))
 ```
 
 We can now over a range of $\theta$ values show the pixels that are most
@@ -250,7 +251,6 @@ end
 
 ```{julia}
 #| echo: false
- 
 name = "theta=" .* string.(thetas)
 Rasters.rplot(RasterStack(betws; name))
 ```
@@ -261,20 +261,18 @@ smaller the path distribution becomes more diffuse, i.e. a random walk.
 
 Finally, the weighting `QualityAndProximityWeighted()` computes
 the betweenness where paths are weighted by the quality of the source and
-target, but also by their proximity ($k_{st}$). Here as with the computation of
-the amount of connected habitat, we need to choose a metric to quantify the
-proximity (e.g. expected cost or survival probability), and in the case of a
-distance metric we also need to provide the transformation to proximity (e.g.
-exponential decay):   
+target, but also by their proximity ($k_{st}$). As this is an important
+betweenness, we define `MovementFlow` as a shorthand for 
+`Betweenness{QualityAndProximityWeighted}`.
 
 ```{julia}
 #| fig-cap: Quality and proximity weighted betweenness, which we refer to as the 'movement flow'.
 
-mbetw = solve(Betweenness(QualityAndProximityWeighted()), rsp, rast)
-plot(mbetw; axis=(; title="Betweenness"))
+mflow = solve(MovementFlow(), rsp, rast)
+plot(mflow; axis=(; title="Betweenness"))
 ```
 
-Thus, the proximity weighted betweenness highlights the pixels that are most
+`MovementFlow` highlights the pixels that are most
 in-between high-quality pixels that are functionally connected together.
 This metric is expected to capture best the actual movement flows on the
 landscape (bodin2010ranking).
@@ -284,9 +282,9 @@ landscape (bodin2010ranking).
 Finally, we can write our outputs to disk using Rasters.jl:
 
 ```{julia}
-write("quality_proximity_weighted_betweenness.tif", mbetw; force=true)
+write("movement_flow.tif", mflow; force=true)
 write("quality_weighted_betweenness.tif", qbetw; force=true)
-write("functional_habitat.tif", ch; force=true)
+write("functional_habitat.tif", func_hab; force=true)
 ```
 
 ## Summary

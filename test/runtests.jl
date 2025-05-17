@@ -4,7 +4,7 @@ using Aqua
 using JET
 using SafeTestsets
 
-@testset "ConScape.jl" begin
+# @testset "ConScape.jl" begin
     @testset "Code quality (Aqua.jl)" begin
         Aqua.test_all(ConScape)
     end
@@ -13,6 +13,7 @@ using SafeTestsets
     end
     @safetestset "Workspaces" begin include("workspaces.jl") end
     @safetestset "ReadOnlyArray" begin include("readonlyarray.jl") end
+    @safetestset "Graphs" begin include("graph_generation.jl") end
     # @safetestset "basics" begin include("basics.jl") end
     @safetestset "Permeable wall sim" begin include("wall.jl") end
     @safetestset "Problems" begin include("problem.jl") end

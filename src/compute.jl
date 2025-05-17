@@ -1,5 +1,4 @@
 function get_or_compute!(ti::TargetInit, m::Measure)
-    @show m
     st = storage(ti)
     x = Symbol(m)
     haskey(st, x) && return st[x]
@@ -73,7 +72,7 @@ end
     st[x] = output
     return output
 end
-@inline function get_or_compute!(ti::TargetInit{<:LeastCost}, x::Symbol)
+@inline function get_or_compute!(ti::TargetInit{<:LCP}, x::Symbol)
     st = storage(ti)
     haskey(st, x) && return st[x]
     # Either retrieve from storage, or calculate and store
@@ -98,12 +97,16 @@ end
 # Variable generation for TargetInit
 function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     pm = proximity_measure(ti)
-    proximities = get_or_compute!(ti, pm)
-    if pm isa DistanceMeasure
+    distances = get_or_compute!(ti, pm)
+    proximities = if pm isa DistanceMeasure
         dt = distance_transformation(ti)
         if !isnothing(dt)
-            proximities .= dt.(proximities)
+            ti.workspace .= dt.(distances)
+        else
+            distances
         end
+    else
+        distances
     end
     proximities = _maybe_set_diagonal!(ti, proximities)
     return ReadOnlyArray(proximities)
@@ -137,7 +140,6 @@ function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
     V .= .- (IP[t:t, :])       # So that IP[t, :] + UCV[t, :] .== 0
     V[t] = -P[t, t] # So that IP[t, t] + UCV[t, t] = 1
     C = 1 # Identity
-    # lu(I - W)
     # @assert IP + U * C * V .- (I - W)
     return Woodbury(IP_factorization, U, C, V)
 end
@@ -157,9 +159,9 @@ end
 function compute(::Distance, ti::TargetInit{<:Euclidean})
     _hypot(a::CartesianIndex, b::CartesianIndex) = _hypot(Tuple(a), Tuple(b))
     _hypot((a1, a2)::Tuple, (b1, b2)::Tuple) = hypot((b1 - a1), (b2 - a2))
-    return ti.workspace .= _hypot.(source_ids(ti), (target(ti).spatial,))
+    return ti.workspace .= _hypot.(sourceids(ti), (target(ti).spatialidx,))
 end
-compute(::Distance, ti::TargetInit{<:LeastCost}) =
+compute(::Distance, ti::TargetInit{<:LCP}) =
     ReadOnlyArray(ti.shortest_paths.dists)
 
 function compute(
@@ -202,7 +204,7 @@ end
 ######################################################################################
 # Mean Kullback-Leibler Divergence
 
-function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LeastCost})
+function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LCP})
     (; cost_weighted_digraph, P, qˢ, qᵗ) = ti
     output = ti.workspace
     from = Vector{Int}(undef, length(output))
@@ -257,13 +259,13 @@ end
 ######################################################################################
 # FunctionalHabitat 
 
-compute(::FunctionalHabitat, ti::TargetInit{<:Union{RSP,RandomWalk,LeastCost}}) = ti.M
+compute(::FunctionalHabitat, ti::TargetInit{<:Union{RSP,RandomWalk,LCP}}) = ti.M
 
 ######################################################################################
 # Betweenness
 
-# LeastCost
-function compute(m::Betweenness, ti::TargetInit{<:LeastCost})
+# LeastCostPath
+function compute(m::Betweenness, ti::TargetInit{<:LCP})
     (; shortest_paths, path_allocs, workspace) = ti
     node = target(ti).node
     shortest_paths_enumerated = Graphs.enumerate_paths!(path_allocs, shortest_paths, 1:length(path_allocs))
@@ -308,38 +310,67 @@ _weight(w::CustomWeighted, ti::TargetInit) = w.weight
 ######################################################################################
 # EdgeBetweenness
 
-# LeastCost
+# LeastCostPath
 
 # TODO: implement
 
 # RandomShortestPath / RandomWalk
-function compute(::EdgeBetweenness{QualityWeighted}, ti::TargetInit{<:Union{RSP,RandomWalk}})
-    (; Z, Zⁱ, Zrows, W, IW_adj_factorization, qˢ, qᵗ, workspace) = ti
-    QZⁱ = workspace .= qˢ .* Zⁱ .* qᵗ
-
-    k = sum(qˢ) .* qᵗ # TODO: is this a bug? why not sum(QZⁱ) as below
-    QZⁱᵀZ = ldiv!(ti, IW_adj_factorization, QZⁱ)
-    RHS = QZⁱᵀZ .-= k .* Zⁱ[target(ti).node] .* Zrows
-    return _combine_edge_betweenness(W, Z, RHS, target(ti))
-end
 function compute(
     m::EdgeBetweenness, ti::TargetInit{<:Union{RSP,RandomWalk}}
 )
     (; W, Z, Zⁱ, Zrows, IW_adj_factorization, workspace) = ti
     weight = _weight(m, ti)
     MZⁱ = workspace .= weight .* Zⁱ
-    k = sum(MZⁱ)
+#     k = sum(MZⁱ) TODO: which is it this or below
+    m = sum(weight)
     MᵀZ = ldiv!(ti, IW_adj_factorization, MZⁱ)
-    RHS = MᵀZ .-= k .* Zⁱ[target(ti).node] .* Zrows
-    return _combine_edge_betweenness(W, Z, RHS, target(ti))
+    MᵀZ .-= m .* Zⁱ[target(ti).node] .* Zrows
+    return _combine_edge_betweenness(W, Z, MᵀZ, ti)
 end
 
-function _combine_edge_betweenness(W, Z, X, t::TargetID)
-    edge_betweennesses = spzeros(size(W, 1))
+#=
+    Zⁱ = inv.(Z)
+    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
+
+    K̂ = qˢ .* K .* qᵗ'
+    k̂ = vec(sum(K̂, dims=1))
+    K̂ .*= Zⁱ
+
+
+    K̂ᵀZ = K̂'/(I - W)
+
+    k̂diagZⁱ = k̂.*[Zⁱ[targetnodes[t], t] for t in 1:length(targetnodes)]
+
+    Zrows = (I - W')\Matrix(sparse(targetnodes,
+                                   1:length(targetnodes),
+                                   1.0,
+                                   size(W, 1),
+                                   length(targetnodes)))
+    k̂diagZⁱZ = k̂diagZⁱ .* Zrows'
+
+    K̂ᵀZ_minus_diag = K̂ᵀZ - k̂diagZⁱZ
+
+    edge_betweennesses = copy(W)
+
     for i in axes(W, 1)
-        w = W[i, t.node]
-        if w > 0 
-            edge_betweennesses[i] = w * Z[t.node] * X[i]
+        # ZᵀZⁱ_minus_diag = ZᵀKZⁱ[i,:] .- (k.*Z[targetnodes,i].*(Zⁱ[targetnodes,targetnodes]))'
+        # ZᵀZⁱ_minus_diag = Z[:,i]'*K̂ .- (k.*Z[targetnodes,i].*diag(Zⁱ))'
+
+        for j in findall(W[i,:].>0)
+            edge_betweennesses[i,j] = W[i,j] .* (Z[j,:]'*K̂ᵀZ_minus_diag[:,i])[1]
+        end
+    end
+=#
+
+function _combine_edge_betweenness(W, Z, X, ti::TargetInit)
+    edge_betweennesses = ti.workspace
+    node = target(ti).node
+    for i in eachindex(edge_betweennesses)
+        w = W[i, node]
+        edge_betweennesses[i] = if w > 0 
+            w * Z[node] * X[i]
+        else
+            zero(eltype(edge_betweennesses))
         end
     end
     return edge_betweennesses
@@ -350,6 +381,7 @@ end
 # Sensitivity
 function compute(m::SensitivityAnalysis{<:SourceQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; qˢ, qᵗ, K, workspace) = ti
+    # TODO: Senensitivity and Elasticity around the right way?
     if sensitivitytype(m) isa Elasticity
         target_sensitivity = workspace .*= qˢ .* K .* qᵗ[target(ti).node]
     else # sensitivitytype(m) isa Sensitivity
@@ -372,8 +404,8 @@ function compute(m::SensitivityAnalysis{<:Permeability}, ti::TargetInit{<:Union{
         S_e_aff, S_e_cost = st[:S_e_aff], st[:S_e_cost]
     else
         S_e_aff, S_e_cost = _permeability_sensitivity(proximity_measure(ti), ti)
-        st[:S_e_aff] = S_e_aff 
-        st[:S_e_cost] = S_e_cost
+        st[:S_e_aff] = ReadOnlyArray(S_e_aff)
+        st[:S_e_cost] = ReadOnlyArray(S_e_cost)
     end
     S_e_aff_scaled = _maybe_scale(S_e_aff, sensitivitytype(m), wrt(m), ti)
     S_e_cost_scaled = _maybe_scale(S_e_cost, sensitivitytype(m), wrt(m), ti)
@@ -381,18 +413,18 @@ function compute(m::SensitivityAnalysis{<:Permeability}, ti::TargetInit{<:Union{
     return _combine_sensitivity(wrt(m), S_e_aff_scaled, S_e_cost_scaled, ti)
 end
 
-_combine_sensitivity(::Affinity, S_e_aff, S_e_cost, ti) = S_e_aff
+_combine_sensitivity(::Likelihood, S_e_aff, S_e_cost, ti) = S_e_aff
 _combine_sensitivity(::Cost, S_e_aff, S_e_cost, ti) = S_e_cost
-function _combine_sensitivity(::CostToAffinity, S_e_aff, S_e_cost, ti)
+function _combine_sensitivity(::CostToLikelihood, S_e_aff, S_e_cost, ti)
     f = _diff_CA(costfunction(ti))
-    C = view(costmatrix(ti), :, target(ti).node)
+    C = view(transitioncost(ti), :, target(ti).node)
     # TODO: what happens with the zeros in `costmatrix``
     # -inv(0.0) * 1.0 === NaN so we generate a lot of nans here
     return ti.workspace .= S_e_aff .+ S_e_cost .* f.(C)# .* C .!= 0
 end
-function _combine_sensitivity(::AffinityToCost, S_e_aff, S_e_cost, ti)
+function _combine_sensitivity(::LikelihoodToCost, S_e_aff, S_e_cost, ti)
     f = _diff_AC(costfunction(ti))
-    A = view(affinitymatrix(ti), :, target(ti).node)   
+    A = view(transitionlikelihood(ti), :, target(ti).node)   
     return ti.workspace .= S_e_cost .+ S_e_aff .* f.(A)
 end
 
@@ -460,15 +492,14 @@ _diff_KD(x::ExpMinusAlpha) = k -> -k * x.alpha
 _diff_KD(::ExpMinus) = k -> -k
 _diff_KD(::Inv) = k -> -k ^ 2
 
-# TODO is Sensitivity and Elasticity swapped here?
-_maybe_scale(a, ::Sensitivity, ::Union{Affinity,AffinityToCost}, ti) =
-    ti.workspace .= a .* view(affinitymatrix(ti), :, target(ti).node)
-_maybe_scale(a, ::Sensitivity, ::Union{Cost,CostToAffinity}, ti) =
-    ti.workspace .= a .* view(costmatrix(ti), :, target(ti).node)
-_maybe_scale(a, ::Elasticity, ::Permeability, ti) = a
+_maybe_scale(a, ::Elasticity, ::Union{Likelihood,LikelihoodToCost}, ti) =
+    ti.workspace .= a .* view(transitionlikelihood(ti), :, target(ti).node)
+_maybe_scale(a, ::Elasticity, ::Union{Cost,CostToLikelihood}, ti) =
+    ti.workspace .= a .* view(transitioncost(ti), :, target(ti).node)
+_maybe_scale(a, ::Sensitivity, ::Permeability, ti) = a
 
 
 # TODO: handle self connectivity for single isolated nodes
 # fill_isolated_node(::FunctionalHabitat, init::Initalisation, target::CartesianIndex) =
-#      diagvalue(init) * source_quality_spatial(init)[target] * target_quality_spatial(init)[target]
+#      diagvalue(init) * sourcequality_spatial(init)[target] * targetquality_spatial(init)[target]
 # fill_isolated_node(::Betweenness, init::Initalisation, target::CartesianIndex) = 0.0

@@ -115,53 +115,6 @@ _tempdir = mkdir(tempname())
 #     end
 # end
 
-affinity_raster = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "affinities_$landscape.asc")), NaN)); dims=X)
-@testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
-    nn in (ConScape.N4, ConScape.N8),
-        w in (ConScape.TargetWeight, ConScape.AverageWeight),
-            mt in (ConScape.AffinityMatrix, ConScape.CostMatrix)
-                # No need to test this on sno_100 and doesn't deepend on θ
-                # FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
-                @test ConScape.graph_matrix_from_raster(
-                    affinity_raster,
-                    neighbors=nn,
-                    weight=w,
-                    matrix_type=mt) isa ConScape.SparseMatrixCSC
-end
-
-# Tests with non-standard landcapes
-
-@testset "graph splitting" begin
-    l1 = [1/4 0 1/4 1/4
-          1/4 0 1/4 1/4
-          1/4 0 1/4 1/4
-          1/4 0 1/4 1/4]
-
-    l2 = [0   0 1/4 1/4
-          0   0 1/4 1/4
-          0   0 1/4 1/4
-          0   0 1/4 1/4]
-
-    g1 = ConScape.Grid(size(l1), affinitymatrix=ConScape.graph_matrix_from_raster(l1))
-    g2 = ConScape.Grid(size(l2), affinitymatrix=ConScape.graph_matrix_from_raster(l2))
-    sgs1 = ConScape.split_subgraphs(g1)
-    sgs2 = ConScape.split_subgraphs(g2)
-    @test length(sgs1) == 2
-    @test length(sgs2) == 1
-
-    @test !ConScape.is_strongly_connected(g1)
-    @test ConScape.is_strongly_connected(sgs1[1])
-    @test ConScape.is_strongly_connected(sgs1[2])
-    @test !ConScape.is_strongly_connected(g2) # Why not?
-    @test ConScape.is_strongly_connected(sgs2[1])
-
-    sgs1[1].costmatrix == sgs1[1].costmatrix
-    sgs1[1].affinitymatrix == sgs1[1].affinitymatrix
-
-    g1.costmatrix
-    g2.costmatrix
-end
-
 @testset "least cost distance" begin
     r = [1/4 0 1/2 1/4
          1/4 0 1/2 1/4

@@ -5,9 +5,10 @@ buffer(p::AbstractWindowedProblem) = p.buffer
 buffer(p::AbstractProblem) = 0
 grain(::AbstractProblem) = nothing
 problem(p::AbstractWindowedProblem) = p.problem
-costfunction(p::AbstractWindowedProblem) = costfunction(problem(p))
-solver(p::AbstractWindowedProblem) = solver(problem(p))
 shape(p::AbstractWindowedProblem) = p.shape
+costfunction(p::AbstractWindowedProblem) = costfunction(problem(p))
+likelihoodfunction(p::AbstractWindowedProblem) = costfunction(problem(p))
+solver(p::AbstractWindowedProblem) = solver(problem(p))
 
 """
     WindowedProblem(problem::AbstractProblem; kw...)
@@ -23,7 +24,7 @@ to be run over windowed grids.
 
 - `centersize::Int`: The size of one side of the square of target 
     pixels, in the center of the window.
-- `buffer`: The maximum number of pixels outside the target square.
+- `y`: The maximum number of pixels outside the target square.
 - `shape`: whether to make the shape of the window a :square or a :circle.
     using `:circle` will give faster runtime and leave less artifacts.
 - `threaded`: Whether to run windows in parallel on separate threads. `false` by default.
@@ -40,7 +41,7 @@ to be run over windowed grids.
     threaded::Bool = false
     shape::Symbol = :circle
     gc::Bool = true 
-    test_windows::Bool = false
+    test_windows::Bool = false # TODO: remove this field
     mosaic_return::Bool = true
     timed::Bool = false
 end
@@ -124,11 +125,11 @@ function solve(window_init::WindowedInit;
     function run(i, iw)
         verbose && println("Running window $i - $iw on thread $(Threads.threadid())")
         # Initialise the window using stored memory
-        multi_grid_init = init(window_init, iw; verbose)
-        @assert multi_grid_init isa MultiGridInit
+        probleminit = init(window_init, iw; verbose)
+        @assert probleminit isa ProblemInit
         # Solve for the window
         elapsed = @elapsed begin
-            output = solve(multi_grid_init; verbose)
+            output = solve(probleminit; verbose)
         end
         # Garbage collect for this window
         # Inneficient for few/small windows but
@@ -470,7 +471,7 @@ function _get_window_with_zeroed_buffer(
     shape=shape(p)
 )
     window = view(rast, rs...)
-    tq = _get_target_qualities(window)
+    tq = _get_targetquality(window)
     tq_sparse = spzeros(eltype(tq), size(tq))
     target_ranges = _target_ranges(p, window)
     tq_sparse[target_ranges...] = tq[target_ranges...]
@@ -478,23 +479,23 @@ function _get_window_with_zeroed_buffer(
         tq_sparse = coarse_graining(tq_sparse, grain(p))
     end
 
-    target_qualities = rebuild(tq; data=tq_sparse)
-    source_qualities = modify(Array, _get_source_qualities(window))
+    targetquality = rebuild(tq; data=tq_sparse)
+    sourcequality = modify(Array, _get_sourcequality(window))
     
     # Handle :circle shaped buffers
     if shape == :circle
-        center = CartesianIndex(size(source_qualities) .÷ 2 .+ 1)
+        center = CartesianIndex(size(sourcequality) .÷ 2 .+ 1)
         maxdist = buffer(p) + max(centersize(p)...) / 2
-        for I in CartesianIndices(source_qualities)
+        for I in CartesianIndices(sourcequality)
             if _dist_from_center(I, center) >= maxdist
-                source_qualities[I] = 0.0
+                sourcequality[I] = 0.0
             end
         end
     elseif shape != :square
         error("WindowedProblem shape must be :square or :circle")
     end
 
-    return merge(window, (; source_qualities, target_qualities))
+    return merge(window, (; sourcequality, targetquality))
 end
 
 function _dist_from_center(point::CartesianIndex, center::CartesianIndex)
@@ -511,7 +512,7 @@ _valid_sources(f, p, rast::AbstractRasterStack) =
     _valid_sources(f, p, rast, axes(rast))
 function _valid_sources(f, p, rast::AbstractRasterStack, source_ranges::Tuple)
     # Get a window view
-    window = view(_get_source_qualities(rast), source_ranges...)
+    window = view(_get_sourcequality(rast), source_ranges...)
     # If there are non-NaN cells above zero, keep the window
     # TODO allow users to change this condition?
     return f(_isvalid.(window))
@@ -525,7 +526,7 @@ function _valid_targets(
         r[b+1:end-b]
     end
     # Get a window view
-    window = view(_get_target_qualities(rast), target_ranges...)
+    window = view(_get_targetquality(rast), target_ranges...)
     # If there are non-NaN cells above zero, keep the window
     # TODO allow users to change this condition?
     return f(_isvalid.(window))

@@ -102,18 +102,7 @@ struct OddsFor <: Transformation end
 
 (::MinusLog)(x::Number) = -log(x)
 (::ExpMinus)(x::Number) = exp(-x)
-# TODO * or / ?
-(t::MinusLogAlpha)(x::Number) = -log(x * t.alpha)
-(t::ExpMinusAlpha)(x::Number) = exp(-x / t.alpha)
+(t::ExpMinusAlpha)(x::Number) = exp(-t.alpha * x)
 (::Inv)(x::Number) = inv(x)
 (::OddsAgainst)(x::Number) = 1 / x - 1
 (::OddsFor)(x::Number) = x / (1 - x)
-
-Base.inv(::Inv) = Inv()
-Base.inv(::OddsAgainst) = OddsFor()
-Base.inv(::OddsFor) = OddsAgainst()
-# TODO clarify these 
-Base.inv(::MinusLog) = ExpMinus()
-Base.inv(::ExpMinus) = MinusLog()
-Base.inv(t::MinusLogAlpha) = ExpMinusAlpha(t.alpha)
-Base.inv(t::ExpMinusAlpha) = MinusLogAlpha(t.alpha)

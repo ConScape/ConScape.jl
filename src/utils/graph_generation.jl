@@ -1,15 +1,17 @@
-const N4 = (( 0, -1, 1.0),
-            (-1,  0, 1.0),
-            ( 1,  0, 1.0),
-            ( 0,  1, 1.0))
-const N8 = ((-1, -1,  √2),
-            ( 0, -1, 1.0),
-            ( 1, -1,  √2),
-            (-1,  0, 1.0),
-            ( 1,  0, 1.0),
-            (-1,  1,  √2),
-            ( 0,  1, 1.0),
-            ( 1,  1,  √2))
+# This neighborhood ordering makes i ordered for the sparse matrix
+const N4 = (( 0, -1, 1.0, 1), # E
+            (-1,  0, 1.0, 2), # S
+            ( 1,  0, 1.0, 3), # N
+            ( 0,  1, 1.0, 4)) # W
+
+const N8 = ((-1, -1,  √2, 1), # SE
+            ( 0, -1, 1.0, 4), # E
+            ( 1, -1,  √2, 6), # NE
+            (-1,  0, 1.0, 2), # S
+            ( 1,  0, 1.0, 5), # W
+            (-1,  1,  √2, 3), # SW
+            ( 0,  1, 1.0, 7), # N
+            ( 1,  1,  √2, 8)) # NW
 
 # TODO document
 abstract type AdjacencyWeight end
@@ -17,20 +19,15 @@ abstract type AdjacencyWeight end
 struct TargetWeight <: AdjacencyWeight end
 struct AverageWeight <: AdjacencyWeight end
 
-abstract type MatrixType end
-
-struct AffinityMatrix <: MatrixType end
-struct CostMatrix <: MatrixType end
-
 # TODO document these equations
-weightedval(::TargetWeight, ::AffinityMatrix, baseval, targetval, distance) =
+weightedval(::TargetWeight, ::Likelihood, baseval, targetval, distance) =
     targetval / distance
-weightedval(::TargetWeight, ::CostMatrix, baseval, targetval, distance) =
+weightedval(::TargetWeight, ::Cost, baseval, targetval, distance) =
     targetval * distance
-weightedval(::AverageWeight, ::CostMatrix, baseval, targetval, distance) =
-    2 / ((inv(baseval) + inv(targetval)) * distance)
-weightedval(::AverageWeight, ::AffinityMatrix, baseval, targetval, distance) =
+weightedval(::AverageWeight, ::Cost, baseval, targetval, distance) =
     ((baseval + targetval) * distance) / 2
+weightedval(::AverageWeight, ::Likelihood, baseval, targetval, distance) =
+    2 / ((inv(baseval) + inv(targetval)) * distance)
 
 """
     graph_matrix_from_raster(R::Matrix; kw...) -> SparseMatrixCSC
@@ -44,32 +41,35 @@ The values can be computed with respect to eight `neighbors`` (`N8`) or four nei
 
 # Keywords
 
-- `matrix_type`: `AffinityMatrix` or `CostMatrix`, `AffinityMatrix` by default.
-- `weight`: `TargetWeight` or `AverageWeight`, TargetWeight by default.
+- `transition_weight`: `TargetWeight` or `AverageWeight`, TargetWeight by default.
 - `neighbors` : `N4` or `N8`, `N8` by default.
+- `input_type`: `Likelyhood()` or `Cost()`, `Likelyhood()` by default
 """
 function graph_matrix_from_raster(R::AbstractMatrix;
     neighbors::Tuple=N8,
-    matrix_type=AffinityMatrix(),
-    weight=TargetWeight(),
+    transition_weight=TargetWeight(),
+    input_type,
 )
     m, n = size(R)
+    len = count(x -> !isnan(x) && !iszero(x), R) * 7
     # Initialize the buffers of the SparseMatrixCSC
     is, js, vals = Int[], Int[], Float64[]
+    sizehint!(is, len)
+    sizehint!(js, len)
+    sizehint!(vals, len)
 
     for j in 1:n, i in 1:m
         # Base node
         baseval = R[i, j]
-        for (ki, kj, distance) in neighbors
+        for (ki, kj, distance, _) in neighbors
             # Continue when computing edge out of raster image
             (!(1 <= i + ki <= m) || !(1 <= j + kj <= n)) && continue
             # Target node
             targetval = R[i + ki, j + kj]
-            # Don't include zero or NaN similarities
-            iszero(targetval) || isnan(targetval) && continue
+            (iszero(targetval) || isnan(targetval)) && continue
+            val = weightedval(transition_weight, input_type, baseval, targetval, distance)
             # Add edge
-            val = weightedval(weight, matrix_type, baseval, targetval, distance)
-            _pushsparse!(is, js, vals, m, i, j, ki, kj, val)
+            _maybe_push_sparse!(is, js, vals, m, n, i, j, ki, kj, val)
         end
     end
     return sparse(is, js, vals, m*n, m*n)
@@ -77,28 +77,23 @@ end
 # A 3 dimensional Array already encodes edge weights
 function graph_matrix_from_raster(R::AbstractArray{<:Any,3};
     neighbors::Tuple=N8,
-    matrix_type=AffinityMatrix(),
-    weight=TargetWeight(),
+    transition_weight=TargetWeight(),
+    input_type,
 )
-    m, n = size(R)
+    nneighbors, m, n = size(R)
     # Initialize the buffers of the SparseMatrixCSC
     is, js, vals = Int[], Int[], Float64[]
 
     for j in 1:n, i in 1:m
-        if size(R, 1) == 4 # 4 neighbors
-            for k in 1:8
-                val = R[i, j, k]
-                # Don't include zero or NaN similarities
-                iszero(targetval) || isnan(targetval) && continue
-                ki, kj, _ = N4[k]
-                _pushsparse!(is, js, vals, m,  i, j, ki, kj, val)
+        if nneighbors == 4
+            for (ki, kj, _, k) in N4
+                val = R[k, i, j]
+                _maybe_push_sparse!(is, js, vals, m, n, i, j, ki, kj, val)
             end
-        elseif size(R, 1) == 8 # 8 neighbors
-            for k in 1:8
-                val = R[i, j, k]
-                iszero(targetval) || isnan(targetval) && continue
-                ki, kj, _ = N8[k]
-                _pushsparse!(is, js, vals, m, i, j, ki, kj, val)
+        elseif nneighbors == 8
+            for (ki, kj, _, k) in N8
+                val = R[k, i, j]
+                _maybe_push_sparse!(is, js, vals, m, n, i, j, ki, kj, val)
             end
         else
             throw(ArgumentError("R must be a 3D array with the first dimension of length 4 or 8"))
@@ -107,10 +102,15 @@ function graph_matrix_from_raster(R::AbstractArray{<:Any,3};
     return sparse(is, js, vals, m*n, m*n)
 end
 
-function _pushsparse!(is, js, vals, m, i, j, ki, kj, val)
+@inline function _maybe_push_sparse!(is, js, vals, m, n, i, j, ki, kj, val)
+    # Continue when computing edge out of raster image
+    (!(1 <= i + ki <= m) || !(1 <= j + kj <= n)) && return nothing
+    # Don't include zero or NaN similarities
+    (iszero(val) || isnan(val)) && return nothing
     push!(is, (j - 1) * m + i)
     push!(js, (j - 1) * m + i + ki + kj*m)
     push!(vals, val)
+    return nothing
 end
 
 """
@@ -120,15 +120,15 @@ Compute a graph matrix, i.e. an affinity or cost matrix from the geometies `geom
 
 # Keywords
 
-- `matrix_type`: `AffinityMatrix()` or `CostMatrix()`, `AffinityMatrix()` by default.
-- `weight`: `TargetWeight()` or `AverageWeight()`, `TargetWeight()` by default.
+- `input_type`: `Likelyhood()` or `Cost()`.
+- `transition_weight`: `TargetWeight()` or `AverageWeight()`, `TargetWeight()` by default.
 - `cutoff_distance`: the distance at which to stop computing affinities.
     Should be in the same units as the geometry projection.
 """
 function graph_matrix_from_geometries(geoms::AbstractVector, values::AbstractVector;
-    matrix_type=AffinityMatrix(),
-    weight=TargetWeight(),
+    transition_weight=TargetWeight(),
     cutoff_distance,
+    input_type,
 )
     ngeoms = length(geoms)
     # Make a tree of geometry extents for fast lookup
@@ -152,7 +152,7 @@ function graph_matrix_from_geometries(geoms::AbstractVector, values::AbstractVec
             distance > cutoff_distance && continue
             # Get the distance weigth value
             targetval = values[j]
-            val = weightedval(weight, matrix_type, baseval, targetval, distance)
+            val = weightedval(transition_weight, input_type, baseval, targetval, distance)
             # Add edge for this geometry
             # i is the current geometry index
             push!(is, i)

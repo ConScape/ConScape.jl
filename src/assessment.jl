@@ -1,23 +1,23 @@
 
 struct AssessmentWarnings
-    source_qualities_nan_found::Bool
-    target_qualities_nan_found::Bool
+    sourcequality_nan_found::Bool
+    targetquality_nan_found::Bool
 end
 
 function Base.:(|)(aw1::AssessmentWarnings, aw2::AssessmentWarnings)
     AssessmentWarnings(
-        aw1.source_qualities_nan_found | aw2.source_qualities_nan_found,
-        aw1.target_qualities_nan_found | aw2.target_qualities_nan_found,    
+        aw1.sourcequality_nan_found | aw2.sourcequality_nan_found,
+        aw1.targetquality_nan_found | aw2.targetquality_nan_found,    
     )
 end
 function Base.:(&)(aw1::AssessmentWarnings, aw2::AssessmentWarnings)
     AssessmentWarnings(
-        aw1.source_qualities_nan_found & aw2.source_qualities_nan_found,
-        aw1.target_qualities_nan_found & aw2.target_qualities_nan_found,    
+        aw1.sourcequality_nan_found & aw2.sourcequality_nan_found,
+        aw1.targetquality_nan_found & aw2.targetquality_nan_found,    
     )
 end
-Base.any(aw::AssessmentWarnings) = aw.source_qualities_nan_found | aw.target_qualities_nan_found
-Base.all(aw::AssessmentWarnings) = aw.source_qualities_nan_found & aw.target_qualities_nan_found
+Base.any(aw::AssessmentWarnings) = aw.sourcequality_nan_found | aw.targetquality_nan_found
+Base.all(aw::AssessmentWarnings) = aw.sourcequality_nan_found & aw.targetquality_nan_found
 
 """
     ProblemAssessment
@@ -129,16 +129,16 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
     window_ranges = ConScape.window_ranges(p, rast)
 
     # Convert everything to Bool at the batch level so window assessments are fast
-    inner_targets = view(_get_target_qualities(rast), target_ranges...)
+    inner_targets = view(_get_targetquality(rast), target_ranges...)
     warnings = AssessmentWarnings(
-        any(isnan, _get_source_qualities(rast)),
+        any(isnan, _get_sourcequality(rast)),
         any(isnan, inner_targets),
     )
     inner_target_bools = isnothing(inner_target_bools) ? _isvalid.(inner_targets) : inner_target_bools
-    source_qualities = _isvalid.(_get_source_qualities(rast))
-    target_qualities = falses(size(rast))
-    target_qualities[target_ranges...] .= inner_target_bools
-    bool_rast = RasterStack((; source_qualities, target_qualities), dims(rast))
+    sourcequality = _isvalid.(_get_sourcequality(rast))
+    targetquality = falses(size(rast))
+    targetquality[target_ranges...] .= inner_target_bools
+    bool_rast = RasterStack((; sourcequality, targetquality), dims(rast))
 
     # Calculate window sizes and allocations
     sparse_sizes = vec(_estimate_sparse_sizes(p, bool_rast; window_ranges))
@@ -183,10 +183,13 @@ function assess(
             )
         end
         # We only need qualities for the assessment
-        window_rast = RasterStack(_get_source_qualities(rast), _get_target_qualities(rast))[rs...]
+        window_rast = RasterStack((
+            sourcequality=_get_sourcequality(rast), 
+            targetquality=_get_targetquality(rast),
+        ))[rs...]
         target_ranges = _target_ranges(p, window_rast)
         # Convert targets to bool as early as possible
-        inner_targets = view(_get_target_qualities(window_rast), target_ranges...)
+        inner_targets = view(_get_targetquality(window_rast), target_ranges...)
         inner_target_bools = _isvalid.(inner_targets)
         assessments[i] = if count(inner_target_bools) > 0
             assess(p.problem, window_rast; inner_target_bools, target_ranges, nthreads, kw...)

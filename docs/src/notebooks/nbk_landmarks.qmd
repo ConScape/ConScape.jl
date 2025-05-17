@@ -36,8 +36,8 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```{julia}
-paths = (permeabilities=joinpath(datadir, "mov_prob_1000.asc"),
-         qualities=joinpath(datadir, "hab_qual_1000.asc"))
+paths = (movementlikelihood=joinpath(datadir, "mov_prob_1000.asc"),
+         quality=joinpath(datadir, "hab_qual_1000.asc"))
 rast = RasterStack(paths; missingval=NaN)
 mask!(rast; with=rast) # Self masking
 ```
@@ -204,8 +204,8 @@ We found similar results for the quality and proximity weighted version of the
 betweenness: 
 
 ```{julia}
-mbetw = solve(Betweenness(QualityAndProximityWeighted()), rsp, rast)
-mbetw_coarse = solve(Betweenness(QualityAndProximityWeighted()), rsp, rast; grain=20)
+mbetw = solve(MovementFlow(), rsp, rast)
+mbetw_coarse = solve(MovementFlow(), rsp, rast; grain=20)
 ```
 
 ```{julia}
@@ -228,7 +228,10 @@ of compression. Let's now see how the accuracy changes with changing levels of
 aggregation.
 
 ```{julia}
-betw = (qbetw=Betweenness(QualityWeighted()), mbetw=Betweenness(QualityAndProximityWeighted()))
+betw = (
+    qbetw=Betweenness(QualityWeighted()),
+    mbetw=Betweenness(QualityAndProximityWeighted())
+)
 betw_grains = map(coarseness) do grain
     solve(betw, rsp, rast; grain)
 end
@@ -250,13 +253,13 @@ p = plot(coarseness, cor_qbetw_grains;
     alpha=0.6, label="Quality-weighted betweenness"
 )
 plot!(p.axis, coarseness, cor_mbetw_grains; 
-    alpha=0.6, label="Proximity-weighted betweenness"
+    alpha=0.6, label="Quality and proximity-weighted betweenness"
 )
 axislegend(p.axis; position=:lb)
 p.figure
 ```
 
-We see that the level of accuracy is rather high for levels of aggregation below
+We see that the level of accuracy is good for levels of aggregation below
 10, but starts to drop off rather rapidly above this. 
 
 ## Summary

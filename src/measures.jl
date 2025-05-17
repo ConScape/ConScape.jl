@@ -125,9 +125,14 @@ $WEIGHTING_ARGUMENT
 
 The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
-@kwdef struct Betweenness{W} <: SpatialMeasure
+struct Betweenness{W} <: SpatialMeasure
     weighting::W
 end
+Betweenness{W}() where W = Betweenness(W())
+Betweenness(; weighting) = Betweenness(weighting)
+
+const MovementFlow = Betweenness{QualityAndProximityWeighted}
+
 """
     EdgeBetweenness <: GraphMeasure
 
@@ -149,19 +154,6 @@ weighting(gm::EdgeBetweenness) = gm.weighting
 
 # Sensitivity
 
-abstract type SensitivityWithRegardsTo end
-abstract type Permeability <: SensitivityWithRegardsTo end
-abstract type SensitivityWithRegardsToCostAndAffinity <: Permeability end
-
-abstract type Quality <: SensitivityWithRegardsTo end
-struct SourceQuality <: Quality end
-struct TargetQuality <: Quality end
-
-struct Affinity <: Permeability end
-struct Cost <: Permeability end
-struct CostToAffinity <: SensitivityWithRegardsToCostAndAffinity end
-struct AffinityToCost <: SensitivityWithRegardsToCostAndAffinity end
-
 abstract type TopologicalMetric end
 struct Cumulative <: TopologicalMetric end
 struct Eigen <: TopologicalMetric end
@@ -173,7 +165,7 @@ struct Elasticity <: SensitivityType end
 """
     SensitivityAnalysis <: SpatialMeasure
 
-    SensitivityAnalysis(; context, summary, sentitivitytype)
+    SensitivityAnalysis(; wrt, metric, sentitivitytype)
 
 Compute sensitivity of all nodes. 
 
@@ -181,23 +173,23 @@ Compute sensitivity of all nodes.
 
 - `wrt`: Five types of node sensitivity are implemented: `Affinity()`, `Cost()`, 
     `Quality()`, `CostAndAffinity()` and `AffinityAndCost()`.
-- `summary`: Two [`SensitivitySummary`](@ref)s are implemented to summarize the landscape matrix 
-    either through summation ([`LandscapeSum()`](@ref)) or through eigen analysis [`LandscapeEigen()`](@ref). 
-    The default is `LandscapeSum()`.
-- `sentitivitytype`: The results can be provided either as sensitivity w.r.t. `Sensitivity()`
+- `metric`: Two [`TopologicalMetric`](@ref)s are implemented to summarize the landscape matrix 
+    either through summation ([`Cumulative()`](@ref)) or through eigen analysis [`LandscapeEigen()`](@ref). 
+    The default is `Eigen()`.
+- `type`: The results can be provided either as sensitivity w.r.t. `Sensitivity()`
     or w.r.t. `Elasticity()`, the latter are also known as elasticities. The default is `Sensitivity()`
 
 The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
-@kwdef struct SensitivityAnalysis{WRT<:SensitivityWithRegardsTo,TM<:TopologicalMetric,ST<:SensitivityType} <: SpatialMeasure
+@kwdef struct SensitivityAnalysis{WRT<:InputType,TM<:TopologicalMetric,ST<:SensitivityType} <: SpatialMeasure
     wrt::WRT
     metric::TM = Cumulative()
     type::ST = Sensitivity()
 end
 
-context(gm::Sensitivity) = gm.context
-change(gm::Sensitivity) = gm.change
-summary(gm::Sensitivity) = gm.summary
+wrt(gm::SensitivityAnalysis) = gm.wrt
+metric(gm::SensitivityAnalysis) = gm.metric
+sensitivitytype(gm::SensitivityAnalysis) = gm.type
 
 # Others
 
@@ -235,13 +227,12 @@ end
 
 Base.Symbol(m::Measure) = nameof(typeof(m))
 Base.Symbol(m::Union{Betweenness,EdgeBetweenness}) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))
-# TODO: also needs unitless
-function Base.Symbol(m::Sensitivity) 
+function Base.Symbol(m::SensitivityAnalysis) 
     Symbol(
         nameof(typeof(m)), :_, 
-        nameof(typeof(context(m))), :_, 
-        nameof(typeof(summary(m))), :_, 
-        nameof(typeof(change(m)))
+        nameof(typeof(wrt(m))), :_, 
+        nameof(typeof(metric(m))), :_, 
+        nameof(typeof(sensitivitytype(m)))
     )
 end
 

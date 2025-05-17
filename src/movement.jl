@@ -42,7 +42,7 @@ const PROXIMITY_KEYWORDS = """
     RandomisedShortestPath(; kw...)
 
 Randomised shortest path movement. Intermediate between 
-[`LeastCost`](@ref) and [`RandomWalk`](@ref).
+[`LeastCostPath`](@ref) and [`RandomWalk`](@ref).
 
 Assumes partial knowledge and immortality.
 
@@ -79,9 +79,9 @@ theta(mm::RandomisedShortestPath) = mm.theta
 costfunction(mm::RandomisedShortestPath) = mm.costfunction
 
 """
-    LeastCost <: ArrivingMovementMode
+    LeastCostPath <: ArrivingMovementMode
 
-    LeastCost(; kw...)
+    LeastCostPath(; kw...)
 
 Identical to [`RandomisedShortestPath`](@ref) with `theta` of `Inf`, 
 if that could run without numerical problems.
@@ -92,14 +92,14 @@ Assumes infinite knowledge and immortality.
 
 $PROXIMITY_KEYWORDS
 """
-@kwdef struct LeastCost{DT,DV} <: ArrivingMovement 
+@kwdef struct LeastCostPath{DT,DV} <: ArrivingMovement 
     distance_transformation::DT = nothing
     diagvalue::DV = nothing
 end
 
-proximity_measure(::LeastCost) = ExpectedCost()
+proximity_measure(::LeastCostPath) = ExpectedCost()
 
-const LC = LeastCost
+const LCP = LeastCostPath
 
 """
     RandomWalk <: ArrivingMovementMode
@@ -123,8 +123,7 @@ $PROXIMITY_KEYWORDS
 end
 
 proximity_measure(::RandomWalk) = ExpectedCost()
-
-const RW = RandomWalk
+theta(mm::RandomWalk) = 0.0 # TODO is this correct? 
 
 """
     Euclidian <: MovementMode

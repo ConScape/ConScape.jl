@@ -36,19 +36,19 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 We use the data provided in [@marx2020samc]:
 
 ```{julia}
-permeabilities = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
-qualities = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
+movementlikelihood = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
+quality = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
 ```
 
 Note, we did not have quality data for each pixel, for this demonstration we
-simply assumed that the permeability adequately represents quality (see Notebook
+simply assumed that the movementl likelihood adequately represents quality (see Notebook
 [Getting Started](/notebooks/nbk_getting_started.qmd) for a better example with
 independent quality data).
 
 We remove negative values:
 ```{julia}
-permeabilities = max.(0, permeabilities)
-qualities = max.(0, qualities);
+movementlikelihood = max.(0, movementlikelihood)
+quality = max.(0, quality);
 ```
 
 ## Cost data
@@ -57,8 +57,8 @@ In addition to the data on the habitat quality and the likelihood of movement,
 we also have independent data on the cost of movement ([@marx2020samc]):
 
 ```{julia}
-mortality_risk = Raster(joinpath(datadir, "mort_panther_cropped.asc"); missingval=NaN)
-mortality_risk = max.(0, mortality_risk);
+mortalityrisk = Raster(joinpath(datadir, "mort_panther_cropped.asc"); missingval=NaN)
+mortalityrisk = max.(0, mortalityrisk);
 ```
 
 As discussed in vanmoorter2021defining, to use the mortality risk as a cost in
@@ -66,13 +66,13 @@ the RSP framework, we need to define the cost as the negative logarithm of the
 survival probability between adjacent pixels: 
 
 ```{julia}
-costs = -log.(1 .- mortality_risk);
+cost = -log.(1 .- mortalityrisk);
 ```
 
 We can then create a `RasterStack` from the three input `Raster`s:
 
 ```{julia}
-rast = RasterStack((; qualities, permeabilities, costs))
+rast = RasterStack((; quality, movementlikelihood, cost))
 mask!(rast; with=rast)
 ```
 
@@ -115,8 +115,8 @@ amount of habitat it is functionally connected to:
 ```{julia}
 #| fig-cap: Amount of connected habitat based on survival connectivity.
 rsp = RSP(; proximity_measure=SurvivalProbability(), theta, distance_transformation=MinusLog()) 
-ch = solve(ConnectedHabitat(), rsp, rast)
-plot(ch; axis=(; title="Connected habitat based on survival probability"))
+ch = solve(FunctionalHabitat(), rsp, rast)
+plot(ch; axis=(; title="Functional habitat based on survival probability"))
 ```
 
 ## Summary
