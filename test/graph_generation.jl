@@ -3,6 +3,7 @@ using Rasters
 using ArchGDAL
 using SparseArrays
 using Test
+import ConScape.Graphs
 
 using ConScape: graph_matrix_from_raster
 
@@ -11,25 +12,25 @@ landscape = "sno_2000"
 affinity_raster = reverse(rotr90(Raster(joinpath(datadir, "affinities_$landscape.asc"); missingval=NaN)); dims=X)
 
 # TODO these are not real tests
-@testset "test adjacency creation with $nn neighbors, $w weighting and $mt" for
+@testset "test adjacency creation with $nn neighbors, $w weighting and $it" for
     nn in (ConScape.N4, ConScape.N8),
-        w in (ConScape.TargetWeight(), ConScape.AverageWeight()),
-            mt in (ConScape.AffinityMatrix(), ConScape.CostMatrix())
+        w in (TargetWeight(), AverageWeight()),
+            it in (Likelihood(), Cost())
                 # No need to test this on sno_100 and doesn't deepend on θ
                 # FIXME! Maybe test mean_kl_divergence for part of the landscape to make sure they all roughly give the same result
                 @test graph_matrix_from_raster(affinity_raster;
                     neighbors=nn,
-                    weight=w,
-                    matrix_type=mt
+                    transition_weight=w,
+                    input_type=it
                 ) isa SparseMatrixCSC
 end;
 
 @testset "2d raster inputs" begin
     r2 = [1.0 3.0; 2.0 4.0]
     @test graph_matrix_from_raster(r2; 
-        neighbors=ConScape.N4, weight=ConScape.TargetWeight(), matrix_type=ConScape.CostMatrix()
+        neighbors=ConScape.N4, transition_weight=TargetWeight(), input_type=Cost()
     ) == graph_matrix_from_raster(r2; 
-        neighbors=ConScape.N4, weight=ConScape.TargetWeight(), matrix_type=ConScape.AffinityMatrix()
+        neighbors=ConScape.N4, transition_weight=TargetWeight(), input_type=Likelihood()
     ) == [
         0.0 2.0 3.0 0.0
         1.0 0.0 0.0 4.0
@@ -37,7 +38,7 @@ end;
         0.0 2.0 3.0 0.0
     ]
     @test graph_matrix_from_raster(r2; 
-        neighbors=ConScape.N4, weight=ConScape.AverageWeight(), matrix_type=ConScape.AffinityMatrix()
+        neighbors=ConScape.N4, transition_weight=AverageWeight(), input_type=Likelihood()
     ) ≈ [
         0.0 4/3 1.5 0.0
         4/3 0.0 0.0 8/3
@@ -45,7 +46,7 @@ end;
         0.0 8/3 24/7 0.0
     ]
     @test graph_matrix_from_raster(r2; 
-        neighbors=ConScape.N4, weight=ConScape.AverageWeight(), matrix_type=ConScape.CostMatrix()
+        neighbors=ConScape.N4, transition_weight=AverageWeight(), input_type=Cost()
     ) == [
         0.0 1.5 2.0 0.0
         1.5 0.0 0.0 3.0
@@ -54,7 +55,7 @@ end;
     ]
 
     @test graph_matrix_from_raster(r2; 
-        neighbors=ConScape.N8, weight=ConScape.TargetWeight()
+        neighbors=ConScape.N8, transition_weight=TargetWeight(), input_type=Likelihood()
     ) == [
         0.0                2.0                3.0                2.82842712474619
         1.0                0.0                2.1213203435596424 4.0
@@ -63,7 +64,7 @@ end;
     ]
 
     @test graph_matrix_from_raster(r2;
-        neighbors=ConScape.N8, weight=ConScape.AverageWeight(), matrix_type=ConScape.CostMatrix(),
+        neighbors=ConScape.N8, transition_weight=AverageWeight(), input_type=Cost(),
     ) == [
         0.0        1.5        2.0        2.5sqrt(2)
         1.5        0.0        2.5sqrt(2) 3.0
@@ -71,7 +72,7 @@ end;
         2.5sqrt(2) 3.0        3.5        0.0
     ]
     @test graph_matrix_from_raster(r2;
-        neighbors=ConScape.N8, weight=ConScape.AverageWeight(), matrix_type=ConScape.AffinityMatrix(),
+        neighbors=ConScape.N8, transition_weight=AverageWeight(), input_type=Likelihood(),
     ) ≈ [
         0.0 4/3 1.5 1.131370849898476
         4/3 0.0 1.697056274847714 8/3
@@ -88,8 +89,8 @@ end
     r3_8 = reshape(cat(n8, n8, n8, n8; dims=1), 8, 2, 2)
 
     # TODO: test these
-    graph_matrix_from_raster(r3_4)
-    graph_matrix_from_raster(r3_8)
+    graph_matrix_from_raster(r3_4; input_type=Likelihood())
+    graph_matrix_from_raster(r3_4; input_type=Likelihood())
 
 end
 
@@ -107,19 +108,27 @@ end
           0   0 1/4 1/4
           0   0 1/4 1/4]
 
-    g1 = ConScape.Grid(size(l1), affinitymatrix=graph_matrix_from_raster(l1))
-    g2 = ConScape.Grid(size(l2), affinitymatrix=graph_matrix_from_raster(l2))
+    g1 = ConScape.GridGraph(; 
+        transitionlikelihood=graph_matrix_from_raster(l1; input_type=Likelihood()), 
+        costfunction=MinusLog(),
+        quality=ones(size(l1)),
+    )
+    g2 = ConScape.GridGraph(; 
+        transitionlikelihood=graph_matrix_from_raster(l2; input_type=Likelihood()), 
+        costfunction=MinusLog(),
+        quality=ones(size(l2))
+    )
     sgs1 = ConScape.split_subgraphs(g1)
     sgs2 = ConScape.split_subgraphs(g2)
     @test length(sgs1) == 2
     @test length(sgs2) == 1
 
-    @test !ConScape.is_strongly_connected(g1)
-    @test ConScape.is_strongly_connected(sgs1[1])
-    @test ConScape.is_strongly_connected(sgs1[2])
-    @test !ConScape.is_strongly_connected(g2)
-    @test ConScape.is_strongly_connected(sgs2[1])
+    @test !Graphs.is_strongly_connected(g1)
+    @test Graphs.is_strongly_connected(sgs1[1])
+    @test Graphs.is_strongly_connected(sgs1[2])
+    @test !Graphs.is_strongly_connected(g2)
+    @test Graphs.is_strongly_connected(sgs2[1])
 
-    @test sgs1[1].costmatrix == sgs1[1].costmatrix
-    @test sgs1[1].affinitymatrix == sgs1[1].affinitymatrix
+    @test sgs1[1].transitioncost == sgs1[1].transitioncost
+    @test sgs1[1].transitionlikelihood == sgs1[1].transitionlikelihood
 end

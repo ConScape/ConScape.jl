@@ -62,10 +62,10 @@ $PROXIMITY_KEYWORDS
     PM<:ProximityMeasure,DT<:Function,T<:Real,DV,C<:Function
 } <: ArrivingMovement
     proximity_measure::PM = ExpectedCost()
-    distance_transformation::DT = MinusLog()
+    distance_transformation::DT = ExpMinus()
     theta::T
     diagvalue::DV = oneunit(theta)
-    costfunction::C = MinusLog()
+    costfunction::C = MinusLog() # TODO remove 
     approx::Bool = false
 end
 RandomisedShortestPath(proximity_measure; kw...) =

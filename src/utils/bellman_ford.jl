@@ -29,7 +29,7 @@ function bellman_ford(Pref::SparseMatrixCSC, C::SparseMatrixCSC, θ::Real, targe
     c̄ = copy(φ)
 
     # Compute the raw distances to the target for the DAG (in out case, the least-cost)
-    rawDistances = dijkstra_shortest_paths(SimpleWeightedDiGraph(C), target).dists
+    rawDistances = Graphs.dijkstra_shortest_paths(SimpleWeightedDiGraph(C), target).dists
     idx = sortperm(rawDistances) # Compute the update order (topological sorting)
     rawDistances = rawDistances[idx]
     convergence = false

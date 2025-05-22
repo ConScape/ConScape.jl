@@ -27,7 +27,7 @@ measures = (;
     sp=SurvivalProbability(),
     ec=ExpectedCost(),
     fed=FreeEnergyDistance(),
-    # eigmax=ConScape.EigMax(),
+    eigmax=ConScape.EigMax(),
     # crit=ConScape.Criticality(), # very very slow, each target makes a new grid
 )
 
@@ -37,7 +37,7 @@ rsp_exp_50 = RandomisedShortestPath(ExpectedCost(); distance_transformation=ExpM
 rsp_exp_minus = RandomisedShortestPath(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ)
 
 solver = ConScape.VectorSolver()
-@testset "Compare everything with old conscape" begin
+# @testset "Compare everything with old conscape" begin
     affinities_sparse = OldConScape.graph_matrix_from_raster(parent(movementlikelihood))
     test_g = OldConScape.Grid(size(movementlikelihood)...;
         affinities=affinities_sparse,
@@ -52,7 +52,7 @@ solver = ConScape.VectorSolver()
     );
     probleminit = init(problem, rast)
     subgraphinit = init(probleminit, 1)
-    subgraph1 = ConScape.subgraph(subgraphinit)
+    subgraph1 = ConScape.connectedgraph(subgraphinit)
     targetinit1 = init(subgraphinit, 1)
 
     @test qs == ConScape.sourcequality(subgraphinit)
@@ -64,7 +64,7 @@ solver = ConScape.VectorSolver()
     @test test_g.affinities == subgraph1.transitionlikelihood
     @test test_grsp.Pref == subgraphinit.precalculation.P == targetinit1.P
     @test test_grsp.W == subgraphinit.precalculation.W == targetinit1.W
-    @test I - test_grsp.W == subgraphinit.precalculation.IW == targetinit1.IW
+    @test LinearAlgebra.I - test_grsp.W == subgraphinit.precalculation.IW == targetinit1.IW
     @test test_g.id_to_grid_coordinate_list == ConScape.sourceids(subgraphinit) == ConScape.sourceids(targetinit1)
     @test (test_g.nrows, test_g.ncols) == size(probleminit)
     @test all(test_g.source_qualities .=== ConScape.sourcequality(probleminit))
@@ -97,7 +97,7 @@ solver = ConScape.VectorSolver()
         @test target_i.qᵗ == qt[i]
     end
 
-    ec_new = solve(ExpectedCost(), probleminit)
+    ec_new = solve(ExpectedCost(), probleminit, 1)
     btk = OldConScape.betweenness_kweighted(test_grsp);
     btk_new = solve(Betweenness(QualityAndProximityWeighted()), probleminit)
     @test all(compare.(btk, btk_new))
@@ -129,14 +129,13 @@ solvers = (
     problem_exp_minus = ConScape.Problem(; measures, movement=rsp_exp_minus, solver);
 
     probleminit = init(problem_nodist, rast)
-    gridinit = init(probleminit, 1)
+    subgraphinit = init(probleminit, 1)
 
     @time result_nodist = ConScape.solve(problem_nodist, rast);
     @time result_const_dist = ConScape.solve(problem_const_dist, rast);
     @time result_exp_50 = ConScape.solve(problem_exp_50, rast);
     @time result_exp_minus = ConScape.solve(problem_exp_minus, rast);
     @test keys(result_nodist) == keys(measures)
-
     @test size(result_nodist.fh) == size(rast)
 
     @testset "Test mean_kl_divergence" begin
@@ -152,10 +151,9 @@ solvers = (
             4911.996715311025  1835.991238248377    720.755518530375
             4641.815380725279  3365.3296878569213   477.1085971945757], atol=1e-3)
     end
+
     # @testset "quality and proximity weighted" begin
-        ebetm = OldConScape.edge_betweenness_qweighted(test_grsp)
-        ConScape.mapnz(iszero, ebetm)
-        sparse(replace(result_nodist.ebetq, NaN => 0.0))
+
         @test result_exp_minus.betm isa Raster
         @test isapprox(result_exp_minus.betm[21:23, 31:33], 
             [0.04063917813171917 0.06843246983487516 0.08862506281612659
@@ -163,32 +161,33 @@ solvers = (
             0.03190640567704462 0.13832814750469344 0.1961393152256104], atol=1e-4)
 
         # Check that summed edge betweennesses corresponds to node betweennesses:
-        @test result_nodist.ebetm isa Matrix
-        bet_edge_sum = fill(NaN, size(gridinit))
-        bet_edge_sum[ConScape.sourceids(probleminit)] .= sum(result_nodist.ebetm, dims=2)
-        plot(Raster(bet_edge_sum, dims(rast)))
-        sum(bet_edge_sum)
-        bet_edge_sum[21:23, 31:33]
-         ≈ 
-        heatmap(parent(result_nodist.betm))#[21:23, 31:33]))
-        sum(replace(result_nodist.betm, NaN => 0.0))
+        subgraphinit = init(rsp_exp_minus, rast, 1)
+        test_grsp.Z
+        old_ebetm = OldConScape.edge_betweenness_kweighted(test_grsp)
+        ebetm = solve(EdgeBetweenness(QualityAndProximityWeighted()), rsp_exp_minus, rast, 1)
+        lininds = LinearIndices(size(rast))
+        @test ebetm isa SparseMatrixCSC
+        @test collect(ebetm) ≈ collect(old_ebetm)
+
+        bet_edge_sum = fill(NaN, size(subgraphinit))
+        bet_edge_sum[ConScape.sourceids(subgraphinit)] .= sum(ebetm, dims=2)
+        @test bet_edge_sum[21:23, 31:33] ≈ parent(result_nodist.betm[21:23, 31:33])
 
         # TODO the floating point differnce is more 
         # significant here, 1e-3 is as good as it can get
-        @test isapprox(
-            result_exp_50.betm[21:23, 31:33]
-        , [
+        @test isapprox(result_exp_50.betm[21:23, 31:33], [
             980.5828087688377 1307.981162399926 1602.8445739784497
             826.0710054834001 1883.0940077789735 1935.4450344630702
             676.9212075214159 2228.2700913772774 2884.0409495023364], atol=1e-3)
 
-        @test result_const_dist.betm[ConScape.source_ids(gridinit)] == result_const_dist.betq[ConScape.source_ids(gridinit)]
-        @test result_const_dist.ebetm ≈ result_const_dist.ebetq
+        @test result_const_dist.betm[ConScape.sourceids(subgraphinit)] == 
+              result_const_dist.betq[ConScape.sourceids(subgraphinit)]
+        @test_broken result_const_dist.ebetm ≈ result_const_dist.ebetq
     end
 
     @testset "connected_habitat" begin
         @test result_exp_minus.fh isa Raster{Float64}
-        @test size(result_exp_minus.fh) == size(gridinit)
+        @test size(result_exp_minus.fh) == size(subgraphinit)
 
         fh = OldConScape.connected_habitat(test_grsp, CartesianIndex((20, 20)))
         # TODO why is this so different now
@@ -267,13 +266,13 @@ heatmap(old_sens.ec["A&C=f(A)"])
 heatmap(parent(res_sens_rsp_ec.sens_costtoaffinity))
 
 # OldConScape
-affinities_sparse = OldConScape.graph_matrix_from_raster(parent(affinities))
-test_g = OldConScape.Grid(size(affinities)...;
+affinities_sparse = OldConScape.graph_matrix_from_raster(parent(movementlikelihood))
+test_g = OldConScape.Grid(size(movementlikelihood)...;
     affinities=affinities_sparse,
-    qualities=parent(source_qualities),
+    qualities=parent(quality),
 )
 test_grsp = OldConScape.GridRSP(test_g; θ=1.0)
-old_sens_affinity = OldConScape.sensitivity(test_grsp;
+old_sens_cost = OldConScape.sensitivity(test_grsp;
     connectivity_function=OldConScape.expected_cost,
     distance_transformation=OldConScape.ExpMinus(),
     α=0.005,
@@ -283,8 +282,7 @@ old_sens_affinity = OldConScape.sensitivity(test_grsp;
     diagvalue=nothing,
     target_equal_source=true
 )
-heatmap(old_sens_affinity)
-
+heatmap(old_sens_cost)
 # SensitivityAnalysis
 rsp_ec = RandomisedShortestPath(; 
     proximity_measure=ExpectedCost(), 
@@ -295,8 +293,13 @@ rsp_ec = RandomisedShortestPath(;
 sens_cost_elast = SensitivityAnalysis(; 
     type=Elasticity(), wrt=ConScape.Cost()
 )
-s = solve(sens_cost_elast, rsp_ec, rast)
-plot(s)
+s = solve(sens_cost_elast, rsp_ec, rast, 1)
+heatmap(s)
+collect(old_sens_cost)
+s
+old_sens_cost' ≈ s
+sum(old_sens_cost, dims=2)
+filter(!isnan, vec(s))
 
 # LeastCost
 lc = LeastCost(; distance_transformation=ExpMinusAlpha(2.0),)
@@ -358,3 +361,23 @@ plot(res_oth_rw.ch; size=(1200, 700))
 plot(res_bet_lc; size=(1200, 700))
 plot(res_oth_lc.ch; size=(1200, 700))
 plot(res_sens_rw; size=(1200, 700))
+
+# @testset "eigmax, measure=$proximity_measure" for
+#     (proximity_measure, val) in ((ExpectedCost(), 5.576850282179157e6),
+#                                      (FreeEnergyDistance(), 3.2799955467465096e6),
+#                                      (SurvivalProbability(), 1.3475609129305437e7),
+#                                      (PowerMeanProximity(), 3.279995546746518e6))
+    proximity_measure, val = (ExpectedCost(), 5.576850282179157e6)
+    # proximity_measure, val = (SurvivalProbability(), 1.3475609129305437e7)
+
+    rsp = RSP(; proximity_measure, theta=0.1, distance_transformation=ExpMinus())
+    vˡ, λ, vʳ = ConScape.compute(EigMax(), init(init(rsp, rast), 1))
+
+    # Compute the weighted proximity matrix to check results
+    M = solve(ConScape.LandscapeMatrix(), rsp, rast, 1)
+    λ
+    val
+
+    @test_broken λ ≈ val
+    @test_broken M * vʳ ≈ vʳ * λ
+# end

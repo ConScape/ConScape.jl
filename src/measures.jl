@@ -206,6 +206,8 @@ The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
 struct FunctionalHabitat <: SpatialMeasure end
 
+struct LandscapeMatrix <: GraphMeasure end
+
 @kwdef struct Criticality{AV,QT,QS} <: SpatialMeasure
     avalue::AV = floatmin()
     qˢvalue::QS = 0.0
@@ -236,12 +238,19 @@ function Base.Symbol(m::SensitivityAnalysis)
     )
 end
 
+computelevel(::Measure) = TargetLevel()
+computelevel(::EigMax) = SubGraphLevel()
+# computelevel(::EdgeBetweenness) = SubGraphLevel()
+
 # Return type traits
 returntrait(::SpatialMeasure) = SumDenseSpatial()
-returntrait(::GraphMeasure) = AssignDense()
+returntrait(::GraphMeasure) = AssignSparse()
 returntrait(::PathDistributionMeasure) = SumScalar()
+returntrait(::EdgeBetweenness) = ReturnCustom()
+returntrait(::SensitivityAnalysis) = ReturnCustom()
+returntrait(::EigMax) = ReturnCustom()
 
-# Workspace allocation traits
+# Workspace allocation traits TODO make these accurate
 needs_workspaces(::Measure) = 2
 needs_workspaces(::Betweenness) = 2
 needs_workspaces(::EdgeBetweenness) = 4

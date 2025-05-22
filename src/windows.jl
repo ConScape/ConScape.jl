@@ -125,11 +125,11 @@ function solve(window_init::WindowedInit;
     function run(i, iw)
         verbose && println("Running window $i - $iw on thread $(Threads.threadid())")
         # Initialise the window using stored memory
-        probleminit = init(window_init, iw; verbose)
-        @assert probleminit isa ProblemInit
+        ggi = init(window_init, iw; verbose)
+        @assert ggi isa GridGraphInit
         # Solve for the window
         elapsed = @elapsed begin
-            output = solve(probleminit; verbose)
+            output = solve(ggi; verbose)
         end
         # Garbage collect for this window
         # Inneficient for few/small windows but
@@ -471,7 +471,7 @@ function _get_window_with_zeroed_buffer(
     shape=shape(p)
 )
     window = view(rast, rs...)
-    tq = _get_targetquality(window)
+    tq = _get_targetquality(window)::Raster
     tq_sparse = spzeros(eltype(tq), size(tq))
     target_ranges = _target_ranges(p, window)
     tq_sparse[target_ranges...] = tq[target_ranges...]
@@ -480,7 +480,7 @@ function _get_window_with_zeroed_buffer(
     end
 
     targetquality = rebuild(tq; data=tq_sparse)
-    sourcequality = modify(Array, _get_sourcequality(window))
+    sourcequality = modify(Array, _get_sourcequality(window)::Raster)
     
     # Handle :circle shaped buffers
     if shape == :circle
@@ -512,7 +512,7 @@ _valid_sources(f, p, rast::AbstractRasterStack) =
     _valid_sources(f, p, rast, axes(rast))
 function _valid_sources(f, p, rast::AbstractRasterStack, source_ranges::Tuple)
     # Get a window view
-    window = view(_get_sourcequality(rast), source_ranges...)
+    window = view(_get_sourcequality(rast)::Raster, source_ranges...)
     # If there are non-NaN cells above zero, keep the window
     # TODO allow users to change this condition?
     return f(_isvalid.(window))
@@ -526,13 +526,13 @@ function _valid_targets(
         r[b+1:end-b]
     end
     # Get a window view
-    window = view(_get_targetquality(rast), target_ranges...)
+    window = view(_get_targetquality(rast)::Raster, target_ranges...)
     # If there are non-NaN cells above zero, keep the window
     # TODO allow users to change this condition?
     return f(_isvalid.(window))
 end
 
-_isvalid(x) = !isnan(x) && x > zero(x)
+_isvalid(x::Real) = !isnan(x) && x > zero(x)
 _isvalid(x::Bool) = x
 
 _resolution(rast) = abs(step(lookup(rast, X)))

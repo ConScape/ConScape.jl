@@ -7,13 +7,13 @@ _tempdir = mkdir(tempname())
 θ = 0.1
 landscape = "sno_2000"
 # The way the ascii is read in is reversed and rotated from what GDAL does
-affinities = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "affinities_$landscape.asc")), NaN)); dims=X)
-source_qualities = reverse(rotr90(replace_missing(Raster(joinpath(datadir, "qualities_$landscape.asc")), NaN)); dims=X)
-source_qualities[(affinities .> 0) .& isnan.(source_qualities)] .= 1e-20
-rast = RasterStack((; affinities, source_qualities, target_qualities=source_qualities))
+movementlikelihood = reverse(rotr90(Raster(joinpath(datadir, "affinities_$landscape.asc"); missingval=NaN)); dims=X)
+quality = reverse(rotr90(Raster(joinpath(datadir, "qualities_$landscape.asc"); missingval=NaN)); dims=X)
+quality[(movementlikelihood .> 0) .& isnan.(quality)] .= 1e-20
+rast = RasterStack((; movementlikelihood, quality))
 
 measures = (;
-    betm=Betweenness(QualityAndProximityWeighted()),
+    betm=ConScape.MovementFlow(),
     # betq=Betweenness(QualityWeighted()), # Doesn't work windowed!
     ch=FunctionalHabitat(),
     # # TODO sens=ConScape.Sensitivity(),
@@ -39,12 +39,12 @@ solve(problem, rast; verbose=true)
     circle_st = ConScape._get_window_with_zeroed_buffer(circle_windowed_problem, rast, wi.ranges[6])
     square_st = ConScape._get_window_with_zeroed_buffer(square_windowed_problem, rast, wi.ranges[6])
     # Affinities never have rounded corners
-    @test circle_st.affinities[end] !== 0.0
-    @test square_st.affinities[end] !== 0.0
+    @test circle_st.movementlikelihood[end] !== 0.0
+    @test square_st.movementlikelihood[end] !== 0.0
     # Source qualities do for :circle 
-    @test circle_st.source_qualities[end] === 0.0
+    @test circle_st.sourcequality[end] === 0.0
     # But not for :square
-    @test square_st.source_qualities[end] !== 0.0
+    @test square_st.sourcequality[end] !== 0.0
 end
 
 @testset "target mosaicing matches original" begin
@@ -58,15 +58,16 @@ end
         (16:40, 1:25)  (16:40, 6:30)  (16:40, 11:35)  (16:40, 16:40)  (16:40, 21:45)  (16:40, 26:50)  (16:40, 31:55)  (16:40, 36:59) 
         (21:44, 1:25)  (21:44, 6:30)  (21:44, 11:35)  (21:44, 16:40)  (21:44, 21:45)  (21:44, 26:50)  (21:44, 31:55)  (21:44, 36:59) 
     ]
-    test_results = ConScape.solve(windowed_problem, rast)
-    inner_targets = copy(rast.target_qualities)
+    test_results = solve(windowed_problem, rast)
+    inner_targets = copy(rast.quality)
     replace!(inner_targets, NaN => 0.0)
     # Edge targets are lost with windowing
     inner_targets[1:10, :] .= 0
     inner_targets[:, 1:10] .= 0
     inner_targets[end-9:end, :] .= 0
     inner_targets[:, end-9:end] .= 0
-    @test parent(inner_targets) == parent(test_results.target_qualities)
+    keys(test_results)
+    @test parent(inner_targets) == parent(test_results.targetquality)
 end
 
 @testset "windowed results approximate non-windowed" begin

@@ -20,70 +20,9 @@ _no_nan_f64(x) = Float64(x) # == isnan(x) ? 0.0 : Float64(x)
 _unwrap_raster(R::Raster) = parent(R)
 _unwrap_raster(R::AbstractMatrix) = R
 
-function _maybe_raster(
-    measures::Union{MeasureTuple,MeasureNamedTuple}, 
-    mats::Union{Tuple,NamedTuple}, 
-    g::Initialisation
-)
-    map(measures, mats) do measure, mat 
-        _maybe_raster(returntrait(measure), mat, dims(g); name=Symbol(measure))
-    end
-end
-_maybe_raster(rt, mat::Raster, g::Initialisation; kw...) = mat
-_maybe_raster(rt, x, y; kw...) = x
-_maybe_raster(rt, mat::AbstractMatrix, g::Initialisation; kw...) =
-    _maybe_raster(rt, mat, dims(g); kw...)
-_maybe_raster(rt::DenseSpatial, mat::Matrix{T}, dims::Tuple; kw...) where T =
-    Raster(mat, dims; missingval=T(NaN), kw...)
-_maybe_raster(rt, vec::Vector{T}, dims::Tuple; kw...) where T =
-    Raster(vec, dims; missingval=T(NaN), kw...)
-
-# Compute a vector of the cartesian indices of nonzero target qualities and
-# the corresponding node id corresponding to the indices
-_target_spatial_ids(target_qauality::AbstractMatrix, source_spatial_ids::AbstractVector) = 
-    source_spatial_ids
-_target_spatial_ids(target_quality::Raster, source_spatial_ids::AbstractVector) = 
-    _target_spatial_ids(parent(target_quality), source_spatial_ids)
-function _target_spatial_ids(target_quality::SparseMatrixCSC, source_spatial_ids::AbstractVector)
-    is, js, _ = findnz(target_quality)
-    return intersect!(CartesianIndex.(is, js), source_spatial_ids)
-end
-
-function _target_ids(
-    target_quality_spatial::AbstractMatrix, 
-    source_spatial_ids::AbstractArray{<:CartesianIndex{2}}, 
-    all_spatial_ids::AbstractArray{<:CartesianIndex{2}}=source_spatial_ids,
-)
-    # Get spatial indices (CartesianIndex) of valid targets that are also spatial indices of sources
-    target_spatial_ids = _target_spatial_ids(target_quality_spatial, source_spatial_ids)
-    # Find the node ids (Int) for the source row corresponding with spatial indices
-
-    target_nodes = _find_all_sorted(source_spatial_ids, target_spatial_ids)
-    target_graph_ids = _find_all_sorted(all_spatial_ids, target_spatial_ids)
-    # Return Vector{NamedTuple} each with target.spatial and target.node
-    return map(target_spatial_ids, target_graph_ids, eachindex(target_nodes), target_nodes) do spatialidx, graphidx, subgraphidx, node
-        (; spatialidx, graphidx, subgraphidx, node)
-    end
-end
-
-function _find_all_sorted(haystack, needles)
-    i = 0
-    ids = Vector{Int}(undef, length(needles))
-    for (j, needle) in enumerate(needles)
-        while i <= length(haystack)
-            i += 1
-            if haystack[i] == needle
-                ids[j] = i
-                break
-            end
-        end
-    end
-    return ids
-end
-
 function _fill_matrix(values, g::Initialisation)
     matrix = fill(NaN, size(g))
-    matrix[source_ids(g)] .= values
+    matrix[sourceids(g)] .= values
     return matrix
 end
 
@@ -104,90 +43,6 @@ end
 #     _maybe_raster(_fill_matrix(values, p), p)
 # end
 
-"""
-    is_strongly_connected(g::GridGraph)::Bool
-
-Test if graph defined by Grid is fully connected.
-
-# Examples
-
-```jldoctests
-julia> affinities = [1/4 0 1/4 1/4
-                     1/4 0 1/4 1/4
-                     1/4 0 1/4 1/4
-                     1/4 0 1/4 1/4];
-
-julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities), prune=false)
-ConScape.Grid of size 4x4
-
-julia> ConScape.is_strongly_connected(grid)
-false
-```
-"""
-Graphs.is_strongly_connected(g::GridGraph) = 
-    Graphs.is_strongly_connected(SimpleWeightedDiGraph(g.transitionlikelihood))
-
-function split_subgraphs(g::GridGraph;
-    costfunction=nothing, likelihoodfunction=nothing,
-)
-    spatialidxs = vec(CartesianIndices(size(g)))
-    targetids = _target_ids(targetquality(g), spatialidxs)
-    # Convert cost matrix to graph, todo: is `permute=false` needed
-    graph = SimpleWeightedDiGraph(
-        isnothing(transitioncost(g)) ? transitionlikelihood(g) : transitioncost(g); 
-        permute=false
-    )
-
-    # Find the subgraphs
-    scc = Graphs.strongly_connected_components(graph)
-
-    # Keep all subgraphs that contain target nodes
-    subgraphs_with_targets = map(scc) do c
-        length(c) > 1 && any(t -> t.node in c, targetids)
-    end
-
-    # Sort subgraphs by number of nodes
-    subgraphs = sort!(scc[subgraphs_with_targets]; by=length, rev=true)
-
-    # Return a Vector of Grids for each subgraph
-    return map(subgraphs) do scci
-        # Sort subgraph indices
-        sort!(scci)
-
-        # Get permeability matrices for the subgraph 
-        transcost = if !isnothing(transitioncost(g))
-            transitioncost(g)[scci, scci]
-        end
-        translikelihood = if !isnothing(transitionlikelihood(g))
-            transitionlikelihood(g)[scci, scci]
-        end
-        if isnothing(transcost) && !isnothing(costfunction)
-            transcost = mapnz(costfunction, transitionlikelihood(g))
-        end
-        if isnothing(translikelihood) && !isnothing(likelihoodfunction) 
-            translikelihood = mapnz(likelihoodfunction, transitioncost(g))
-        end
-
-        # Get new source and target ids for subgraph
-        sourceidxs = view(spatialidxs, scci)
-        targets = _target_ids(targetquality(g), sourceidxs, spatialidxs)
-
-        # Get source and target quality vectors for subgraph
-        sourcequality_vector = view(sourcequality(g), sourceidxs)
-        targetquality_vector = [targetquality(g)[i.spatialidx] for i in targets]
-
-        # Return new grid for subgraph
-        ConnectedGraph(
-            transcost,
-            translikelihood,
-            sourcequality_vector,
-            targetquality_vector,
-            sourceidxs,
-            targets,
-        )
-    end
-end
-
 _maybe_set_diagonal!(ti::TargetInit, proximities) =
     _maybe_set_diagonal!(ti, proximities, diagvalue(ti))
 _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Nothing) = proximities
@@ -204,7 +59,8 @@ end
 # end
 
 # Fill a vector with zeros, and one for the target node
-function _rhs!(workspace, n::Int, target::TargetID)
+# If it was part of a square matrix this would be the diagonal
+function _diag_vec!(workspace, n::Int, target::TargetID)
     fill!(workspace, 0.0)
     workspace[target.node] = 1.0
     return workspace
@@ -232,17 +88,10 @@ _allocate_workspaces!(x::Nothing, problem::Problem, length::Int) =
 _allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
     free!(resize!(workspaces, length))
 
-_maybe_new_outputs(mes, mgi) =
-    mes === measures(mgi) ? outputs(mgi) : allocate_output(mes, mgi)
-
-function _maybe_raster_outputs(measures, outputs, mgi)
-    out = _maybe_raster(measures, outputs, mgi)
-    if all(map(o -> o isa Raster, out))
-        return RasterStack(out)
-    else
-        return out
-    end
-end
+_maybe_new_outputs(level::GridGraphLevel, mes, ggi::GridGraphInit) =
+    mes === measures(ggi) ? outputs(ggi) : allocate_output(level, mes, gridgraph(ggi), connectedgraphs(ggi))
+_maybe_new_outputs(level::Level, mes, cgi::Union{ConnectedGraphInit,TargetInit}) =
+    mes === measures(cgi) ? outputs(cgi) : allocate_output(level, mes, gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
 
 # Get layers from a RasterStack or return nothing
 _get_sourcequality(rast::RasterStack) = _keys_or_nothing(rast, (:sourcequality, :quality))
@@ -253,3 +102,29 @@ _get_cost(rast::RasterStack) = _keys_or_nothing(rast, (:cost, :movementcost))
 @inline _keys_or_nothing(rast, (key, keys...)::Tuple) =
     haskey(rast, key) ? rast[key] : _keys_or_nothing(rast, keys)
 @inline _keys_or_nothing(rast, ::Tuple{}) = nothing
+
+# Split measures into subgraph and target measures
+function _split_by_computelevel(ms::NamedTuple{K}) where K
+    sugraphkeys, targetkeys = foldl(map(=>, K, ms); init=((), ())) do (tosubgraph, totarget), (k, m)
+        if computelevel(m) isa TargetLevel 
+            (tosubgraph, (totarget..., k)) 
+        else
+            ((tosubgraph..., k), totarget)
+        end
+    end
+    return ms[sugraphkeys], ms[targetkeys]
+end
+
+# Fast sparse array update, we loop over non-zero values and indices directly.
+# adapted from `SparseArrays.findnz`
+# This is painfully slow without this optimization
+function foreachnz(f, S) 
+    count = 1
+    for col in 1:size(S, 2), k in SparseArrays.getcolptr(S)[col]:(SparseArrays.getcolptr(S)[col + 1] - 1)
+        @inbounds i = SparseArrays.rowvals(S)[k]
+        j = col
+        f(i, j, count)
+        count += 1
+    end
+    return nothing
+end

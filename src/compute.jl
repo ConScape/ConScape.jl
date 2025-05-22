@@ -1,9 +1,121 @@
+#------------------------------------------------------------------------------------------
+# ConnectedGraph level measures
+
+# Compute Target level measures for a connected subgraph
+function compute(m::Measure, si::ConnectedGraphInit)
+    output = allocate_output(ConnectedGraphLevel(), m, gridgraph(si), connectedgraph(si), precalculation(si))
+    for target in targetids(si)
+        ti = TargetInit(si, target)
+        x = compute(m, ti)
+        update_output!(output, m, ti, x)
+    end
+    return finalize_output!(output, m, si)
+end
+
+# Allocate sqauare matrix of target * target size
+allocate_output(level::Level, m::EigMax, ::GridGraph, connectedgraphs::Vector) = level => nothing # (n = length(targetids(si)); zeros(n, n))
+allocate_output(level::Level, m::EigMax, ::GridGraph, ::ConnectedGraph, precalculation) = level => nothing # (n = length(targetids(si)); zeros(n, n))
+function compute(::EigMax, ti::TargetInit)
+    return nothing
+    # (; M) = ti
+    # K = compute(proximity_measure(ti), ti) # TODO set diag etc
+    # # square submatrix defined by extracting the rows corresponding to landmarks
+    # M₀₀ = view(ti.workspace, 1:length(targetids(ti)))
+    # for t in targetids(ti)
+    #     M₀₀[t.connectedgraphidx] = M[t.node]
+    # end
+    # return M₀₀
+end
+
+update_output!(output::Pair, ::EigMax, si::TargetInit, v) = nothing # output[:, target(si).connectedgraphidx] .= v 
+
+# We do most of eigmax in finalize_output
+function finalize_output!(_, ::Level, ::EigMax, si::ConnectedGraphInit)
+    tol = 1e-14 # TODO as a keyword somewhere
+    targetnodes = map(x -> x.node, targetids(si))
+    # square submatrix defined by extracting the rows corresponding to landmarks
+    K = compute(proximity_measure(si), si) # TODO set diag etc
+    M = K .*= sourcequality(si)' .* targetquality(si)
+    M₀₀ = M[targetnodes, :]
+
+    # size of the full problem
+    n = nsources(connectedgraph(si))
+
+    # node ids for the non-landmarks
+    p₁ = setdiff(1:n, targetnodes)
+
+    # use an Arnoldi based eigensolver to compute the largest (absolute) eigenvalue and right vector (of submatrix)
+    Fps = ArnoldiMethod.partialschur(M₀₀; nev=1, tol)
+    λ₀, vʳ₀ = ArnoldiMethod.partialeigen(Fps[1])
+
+    # construct full right vector
+    vʳ = fill(NaN, n)
+    vʳ[targetnodes] = vʳ₀
+    vʳ[p₁] = M[p₁,:] * vʳ₀ / λ₀[1]
+
+    # compute left vector (of submatrix) by shift-invert
+    Flu = lu(M₀₀ - λ₀[1] * I)
+    vˡ₀ = ldiv!(Flu', rand(length(targetids(si))))
+    rmul!(vˡ₀, inv(vˡ₀[1]))
+
+    # construct full left vector
+    vˡ = zeros(n)
+    vˡ[targetnodes] = vˡ₀
+
+    return vˡ, λ₀[1], vʳ
+end
+
+function finalize_output!(outputs::NamedTuple, measures::NamedTuple, si)
+    return map(outputs, measures) do output, measure
+        finalize_output!(output, measure, si)
+    end
+end
+# Trivial default finish
+finalize_output!((level, output)::Pair, m::Measure, sgi::ConnectedGraphInit) = finalize_output!(output, level, m, sgi)
+finalize_output!(output, level::Level, ::Measure, ::ConnectedGraphInit) = output
+
+# EdgeBetweenness
+
+allocate_output(::GridGraphLevel, ::EdgeBetweenness, ::GridGraph, connectedgraphs::Vector) = 
+    Vector{SparseMatrixCSC{Float64,Int}}(undef, length(connectedgraphs))
+allocate_output(l::ConnectedGraphLevel, ::EdgeBetweenness, ::GridGraph, ::ConnectedGraph, precalculation) = 
+    l => mapnz(_ -> 0.0, precalculation.W)
+
+# RandomShortestPath / RandomWalk
+function compute(
+    m::EdgeBetweenness, ti::TargetInit{<:Union{RSP,RandomWalk}}
+)
+    (; Z, Zⁱ, Zrows, IW_adj_factorization, workspace) = ti
+    node = target(ti).node
+    weight = _weight(m, ti)
+    XZⁱ = workspace .= weight .* Zⁱ
+    x = sum(weight)
+    XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
+    XᵀZ .-= x .* Zⁱ[node] .* Zrows
+    return (; Z, XᵀZ)
+end
+
+function update_output!(output::AbstractMatrix, ::ConnectedGraphLevel, ::EdgeBetweenness, ti::TargetInit, v::Tuple)
+    (; Z, XᵀZ) = v
+    (; W) = ti
+    foreachnz(W) do i, j, n
+        @inbounds output.nzval[n] += W.nzval[n] * Z[j] * XᵀZ[i]
+    end
+    return output
+end
+
+# LeastCostPath EdgeBetweenness
+# Not implemented
+
+#------------------------------------------------------------------------------------------
+# Target based measures
+
 function get_or_compute!(ti::TargetInit, m::Measure)
     st = storage(ti)
     x = Symbol(m)
     haskey(st, x) && return st[x]
     output = compute(m, ti)
-    if returntrait(m) isa Union{AssignDense,SumDenseSpatial}
+    if returntrait(m) isa SumDenseSpatial
         st[x] = ReadOnlyArray(output)
     end
     return output
@@ -17,7 +129,7 @@ end
         ReadOnlyArray(_inv!(ti.workspace, ti.Z))
     elseif x === :Zrows
         _fundamentalrowmatrix(ti)
-    elseif x === :Y # Unadjusted expected cost
+    elseif x === :Y
         (; CW, Z, IW_factorization, workspace) = ti
         # Solve: (I - W) \ (C .* W) * Z ./ Z
         ReadOnlyArray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
@@ -55,7 +167,7 @@ end
         W
     elseif x === :CW
         (; W) = ti
-        CW = costmatrix(ti) .* W
+        CW = transitioncost(ti)::AbstractMatrix .* W
     elseif x === :K
         _proximitymatrix(ti)
     elseif x === :M
@@ -113,12 +225,13 @@ function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
 end
 function _fundamentalmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     workspace1, workspace2 = workspaces(ti)
-    b = _rhs!(workspace1, nsources(ti), target(ti))
-    b_copy = _rhs!(workspace2, nsources(ti), target(ti))
+    n = nsources(connectedgraph(ti))
+    b = _diag_vec!(workspace1, n, target(ti))
+    b_copy = _diag_vec!(workspace2, n, target(ti))
     return ReadOnlyArray(ldiv!(solver(ti), b, ti.IW_factorization, b_copy))
 end
 function _fundamentalrowmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
-    b = _rhs!(ti.workspace, nsources(ti), target(ti))
+    b = _diag_vec!(ti.workspace, nsources(connectedgraph(ti)), target(ti))
     return ReadOnlyArray(ldiv!(ti, ti.IW_adj_factorization, b))
 end
 function _landscapematrix(ti::TargetInit)
@@ -211,7 +324,7 @@ function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LCP})
     to = Vector{Int}(undef, length(output))
 
     n = length(from)
-    dsp = dijkstra_shortest_paths(cost_weighted_digraph, target(ti).node)
+    dsp = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, target(ti).node)
     parents = dsp.parents
     # TODO explain why this is needed
     parents[target(ti).node] = target(ti).node
@@ -261,6 +374,9 @@ end
 
 compute(::FunctionalHabitat, ti::TargetInit{<:Union{RSP,RandomWalk,LCP}}) = ti.M
 
+# This differs form FunctionalHabitat in that it returns the full size matrix
+compute(::LandscapeMatrix, ti::TargetInit{<:Union{RSP,RandomWalk,LCP}}) = ti.M
+
 ######################################################################################
 # Betweenness
 
@@ -276,7 +392,7 @@ function compute(m::Betweenness, ti::TargetInit{<:LCP})
     weights = _weight(m, ti)
     btw = workspace .= 0.1
 
-    @inbounds for s in eachindex(source_ids(ti))
+    @inbounds for s in eachindex(sourceids(ti))
         w = weights[s]
         for p in shortest_paths_enumerated[s]
             btw[p] += w 
@@ -307,31 +423,7 @@ _weight(::QualityAndProximityWeighted, ti::TargetInit) = ti.M
 _weight(::QualityWeighted, ti::TargetInit) = ti.Q
 _weight(w::CustomWeighted, ti::TargetInit) = w.weight
 
-######################################################################################
-# EdgeBetweenness
-
-# LeastCostPath
-
-# TODO: implement
-
-# RandomShortestPath / RandomWalk
-function compute(
-    m::EdgeBetweenness, ti::TargetInit{<:Union{RSP,RandomWalk}}
-)
-    (; W, Z, Zⁱ, Zrows, IW_adj_factorization, workspace) = ti
-    weight = _weight(m, ti)
-    MZⁱ = workspace .= weight .* Zⁱ
-#     k = sum(MZⁱ) TODO: which is it this or below
-    m = sum(weight)
-    MᵀZ = ldiv!(ti, IW_adj_factorization, MZⁱ)
-    MᵀZ .-= m .* Zⁱ[target(ti).node] .* Zrows
-    return _combine_edge_betweenness(W, Z, MᵀZ, ti)
-end
-
 #=
-    Zⁱ = inv.(Z)
-    Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Z)) # To prevent Inf*0 later...
-
     K̂ = qˢ .* K .* qᵗ'
     k̂ = vec(sum(K̂, dims=1))
     K̂ .*= Zⁱ
@@ -353,35 +445,18 @@ end
     edge_betweennesses = copy(W)
 
     for i in axes(W, 1)
-        # ZᵀZⁱ_minus_diag = ZᵀKZⁱ[i,:] .- (k.*Z[targetnodes,i].*(Zⁱ[targetnodes,targetnodes]))'
-        # ZᵀZⁱ_minus_diag = Z[:,i]'*K̂ .- (k.*Z[targetnodes,i].*diag(Zⁱ))'
-
         for j in findall(W[i,:].>0)
             edge_betweennesses[i,j] = W[i,j] .* (Z[j,:]'*K̂ᵀZ_minus_diag[:,i])[1]
         end
     end
 =#
 
-function _combine_edge_betweenness(W, Z, X, ti::TargetInit)
-    edge_betweennesses = ti.workspace
-    node = target(ti).node
-    for i in eachindex(edge_betweennesses)
-        w = W[i, node]
-        edge_betweennesses[i] = if w > 0 
-            w * Z[node] * X[i]
-        else
-            zero(eltype(edge_betweennesses))
-        end
-    end
-    return edge_betweennesses
-end
 
 
 ######################################################################################
 # Sensitivity
 function compute(m::SensitivityAnalysis{<:SourceQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; qˢ, qᵗ, K, workspace) = ti
-    # TODO: Senensitivity and Elasticity around the right way?
     if sensitivitytype(m) isa Elasticity
         target_sensitivity = workspace .*= qˢ .* K .* qᵗ[target(ti).node]
     else # sensitivitytype(m) isa Sensitivity
@@ -396,92 +471,131 @@ function compute(m::SensitivityAnalysis{<:TargetQuality}, ti::TargetInit{<:Union
     else # sensitivitytype(m) isa Sensitivity 
         target_sensitivity = workspace .= K .* qˢ
     end
-    return sum(target_sensitivity)
+    return target_sensitivity
 end
-function compute(m::SensitivityAnalysis{<:Permeability}, ti::TargetInit{<:Union{RSP,RandomWalk}})
-    st = storage(ti)
-    if haskey(st, :S_e_aff)
-        S_e_aff, S_e_cost = st[:S_e_aff], st[:S_e_cost]
-    else
-        S_e_aff, S_e_cost = _permeability_sensitivity(proximity_measure(ti), ti)
-        st[:S_e_aff] = ReadOnlyArray(S_e_aff)
-        st[:S_e_cost] = ReadOnlyArray(S_e_cost)
-    end
-    S_e_aff_scaled = _maybe_scale(S_e_aff, sensitivitytype(m), wrt(m), ti)
-    S_e_cost_scaled = _maybe_scale(S_e_cost, sensitivitytype(m), wrt(m), ti)
-
-    return _combine_sensitivity(wrt(m), S_e_aff_scaled, S_e_cost_scaled, ti)
-end
-
-_combine_sensitivity(::Likelihood, S_e_aff, S_e_cost, ti) = S_e_aff
-_combine_sensitivity(::Cost, S_e_aff, S_e_cost, ti) = S_e_cost
-function _combine_sensitivity(::CostToLikelihood, S_e_aff, S_e_cost, ti)
-    f = _diff_CA(costfunction(ti))
-    C = view(transitioncost(ti), :, target(ti).node)
-    # TODO: what happens with the zeros in `costmatrix``
-    # -inv(0.0) * 1.0 === NaN so we generate a lot of nans here
-    return ti.workspace .= S_e_aff .+ S_e_cost .* f.(C)# .* C .!= 0
-end
-function _combine_sensitivity(::LikelihoodToCost, S_e_aff, S_e_cost, ti)
-    f = _diff_AC(costfunction(ti))
-    A = view(transitionlikelihood(ti), :, target(ti).node)   
-    return ti.workspace .= S_e_cost .+ S_e_aff .* f.(A)
-end
-
-function _permeability_sensitivity(::ExpectedCost, ti::TargetInit)
-    (; θ, qˢ, qᵗ, K, Aⁱ, A_rowsums, C, Y, W, CW, IW_factorization, IW_adj_factorization, Z, Zⁱ, Zrows) = ti
+compute(m::SensitivityAnalysis{<:Permeability}, ti::TargetInit{<:Union{RSP,RandomWalk}}) = 
+    compute(proximity_measure(ti), m, ti)
+function compute(::ExpectedCost, ::SensitivityAnalysis{<:Permeability}, ti::TargetInit)
+    (; K, qˢ, qᵗ, Y, CW, IW_adj_factorization, Z, Zⁱ, Zrows) = ti
     node = target(ti).node
-    Md = ti.workspace .= _diff_KD(distance_transformation(ti)).(K) .* qˢ .* qᵗ
-    C̄ = ti.workspace .= Y .* Zⁱ
-    MdZⁱ = Md .*= Zⁱ
-
-    MdᵀZ = ldiv!(ti, IW_factorization, MdZⁱ) # MdᵀZ = MdZⁱ' / IW
-    
-
-    k̂diagZⁱ = sum(MdZⁱ) .* Zⁱ[node]
+    Kd = ti.workspace .= _diff_KD(distance_transformation(ti)).(K)
+    Md = ti.workspace .= Kd .* qˢ .* qᵗ
+    m = sum(Md)
+    MdZⁱ = Md .* Zⁱ
+    MdᵀZ = ti.workspace .= MdZⁱ 
+    ldiv!(ti, IW_adj_factorization, MdᵀZ) # MdᵀZ = MdZⁱ' / IW
+    k̂diagZⁱ = m * Zⁱ[target(ti).node]
 
     X3 = ti.workspace .= k̂diagZⁱ .* Zrows
     X6 = ti.workspace .= MdᵀZ .- X3
+    C̄ᵣ = ti.workspace .= Y .* Zⁱ
 
-    k̂diagC̄Zⁱ = k̂diagZⁱ * C̄[node]
-    RHS = vec((Md .* C̄)' .- (MdᵀZ' * CW) .+ (X3' * CW))
+    k̂diagC̄Zⁱ = k̂diagZⁱ * C̄ᵣ[node]
+    RHS = vec(MdZⁱ .* C̄ᵣ) .- vec((MdᵀZ' * CW) .+ (X3' * CW))
     X5 = ldiv!(ti, IW_adj_factorization, RHS) .- k̂diagC̄Zⁱ .* Zrows
 
-    Wt = ti.workspace .= view(W, :, node)
-    kΣ = ti.workspace .= Wt # k-weighted negative covariance matrix
-    kB = ti.workspace .= Wt # k-weighted edge betweenness matrix
-
-    for i in eachindex(Wt)
-        w = Wt[i]
-        # TODO explain this
-        w > 0 || continue
-        kB[i] *= Z[node] * X6[i]
-        kΣ[i] *= Z[node] * X5[i] - Y[node] * X6[i] - C[i] * kB[i] / w
-    end
-
-    # TODO this seems wrong, dims=2 means sum does nothing
-    kΣ_node = sum(kΣ; dims=2)
-
-    S_cost = .-(kB .+ θ .* kΣ)
-    S_aff = kΣ_node ./ A_rowsums .* (Wt .> 0) .- kΣ .* view(Aⁱ, :, node)
-
-    return S_aff, S_cost
+    return (; Z, Y, X5, X6)
 end
-function _permeability_sensitivity(m::PowerMeanProximity, ti::TargetInit)
-    (; θ, A, Aⁱ, A_rowsums) = ti
-    node = target(ti).node
-
-    weight = get_or_compute!(ti, m)
+function compute(pmp::PowerMeanProximity, ::SensitivityAnalysis{<:Permeability}, ti::TargetInit)
+    weight = nothing # ?
     bet_node_k = compute(Betweenness(CustomWeighted(weight)), ti)
     bet_edge_k = compute(EdgeBetweenness(CustomWeighted(weight)), ti)
-
-    S_aff, S_cost = workspaces(ti)
-    S_cost .= .-(bet_edge_k)
-    S_aff .= (bet_edge_k .* view(Aⁱ, :, node) .-
-        (bet_node_k ./ A_rowsums) .* (view(A, :, node) .> 0)) .* θ
-
-    return S_aff, S_cost
+    return (; bet_node_k, bet_edge_k)
 end
+
+
+# kB and kΣ are set up as zeroed-out W matrices
+allocate_output(l::Union{ConnectedGraphLevel,TargetLevel}, m::SensitivityAnalysis{<:Permeability}, args...) = 
+    allocate_output(l, proximity_measure(x), m, args...)
+function allocate_output(::Level, ::PowerMeanProximity, m::SensitivityAnalysis{<:Permeability}, ::GridGraph, ::ConnectedGraph, precalculation)
+    bet_edge_k = mapnz(_ -> 0.0, precalculation.W)
+    bet_node_k = zeros(size(bet_edge_k, 1))
+    result = mapnz(_ -> 0.0, precalculation.W)
+    return (; bet_node_k, bet_edge_k, result)
+end
+# kB and kΣ are set up as zeroed-out W matrices
+function allocate_output(::Level, ::ExpectedCost, m::SensitivityAnalysis, ::GridGraph, ::ConnectedGraph, precalculation)
+    kB = mapnz(_ -> 0.0, precalculation.W)
+    kΣ = mapnz(_ -> 0.0, precalculation.W)
+    result = mapnz(_ -> 0.0, precalculation.W)
+    return (; kB, kΣ, result)
+end
+
+# And we store into them for each target
+update_output!(output, m::SensitivityAnalysis{<:Permeability}, ti::TargetInit, v) =
+    update_output!(output, proximity_measure(ti), m, ti, v)
+function update_output!(output, ::ExpectedCost, m::SensitivityAnalysis{<:Permeability}, ti::TargetInit, v)
+    (; W, C) = ti
+    (; kB, kΣ) = output
+    (; Z, Y, X5, X6) = v
+
+    foreachnz(W) do i, j, n
+        kB.nzval[n] += W.nzval[n] * Z[j] * X6[i]
+        kΣ.nzval[n] += Z[j] * X5[i] - Y[j] * X6[i] - C.nzval[n] * kB.nzval[n] / W.nzval[n]
+    end
+    return output
+end
+function update_output!(output, ::PowerMeanProximity, m::SensitivityAnalysis{<:Permeability}, ti::TargetInit, v)
+    (; bet_edge_k, bet_node_k) = v
+    (; edge, node) = output
+    # Just call update_output! on the component parts
+    update_output!(edge, EdgeBetweenness(CustomWeighted(nothing)), ti, bet_edge_k)
+    update_output!(node, Betweenness(CustomWeighted(nothing)), ti, bet_node_k)
+    return nothing
+end
+
+# And after all targets run, finalize them 
+finalize_output!(output, m::SensitivityAnalysis{<:Permeability}, sgi::ConnectedGraphInit) =
+    finalize_output!(output, proximity_measure(sgi), m, sgi)
+function finalize_output!(output, ::ExpectedCost, m::SensitivityAnalysis{<:Permeability}, sgi::ConnectedGraphInit)
+    (; kB, kΣ, result) = output
+    (; A_rowsums, Aⁱ) = precalculation(sgi)
+
+    kΣ_node = sum(kΣ, dims=2)
+    foreachnz(Aⁱ) do i, j, n 
+        S_cost = kB.nzval[n] + theta(sgi) * kΣ.nzval[n]
+        S_likelihood = (kΣ_node[j] / A_rowsums[j]) * 1 - kΣ.nzval[n] * Aⁱ.nzval[n]
+        S_e_likelihood = _maybe_scale(S_likelihood, sensitivitytype(m), wrt(m), sgi, n)
+        S_e_cost_scaled = _maybe_scale(S_cost, sensitivitytype(m), wrt(m), sgi, n)
+        result.nzval[n] = _combine_sensitivity(wrt(m), S_e_likelihood, S_e_cost_scaled, sgi, n)
+    end
+
+    return result
+end
+function finalize_output!(outpout, ::PowerMeanProximity, ::SensitivityAnalysis{<:Permeability}, sgi::ConnectedGraphInit)
+    (; bet_edge_k, bet_node_k, result) = output
+    foreachnz(Aⁱ) do i, j, n 
+        S_cost = bet_edge_k.nzval[n]
+        S_likelihood = bet_edge_k.nzval[n] * Aⁱ.nzval[n] - bet_node_k[j] / A_rowsums[j] * A.nzval[n] * theta(sgi)
+        S_e_likelihood = _maybe_scale(S_likelihood, sensitivitytype(m), wrt(m), sgi, n)
+        S_e_cost_scaled = _maybe_scale(S_cost, sensitivitytype(m), wrt(m), sgi, n)
+        result.nzval[n] = _combine_sensitivity(wrt(m), S_e_likelihood, S_e_cost_scaled, sgi, n)
+    end
+    # TODO dont allocate
+    return sum(result; dims=1)
+end
+
+transfer_output!(dest::AbstractMatrix, source::Vector, ::SensitivityAnalysis, cgi::ConnectedGraphInit) =
+    dest[sourceids(cgi)] .= source
+
+_combine_sensitivity(::Likelihood, S_e_likelihood, S_e_cost, ti, n) = S_e_likelihood
+_combine_sensitivity(::Cost, S_e_likelihood, S_e_cost, ti, n) = S_e_cost
+function _combine_sensitivity(::CostToLikelihood, S_e_likelihood, S_e_cost, ti, n)
+    f = _diff_CA(costfunction(ti))
+    C = transitioncost(ti)
+    S_e_likelihood + S_e_cost * f(C.nzval[n])
+end
+function _combine_sensitivity(::LikelihoodToCost, S_e_likelihood, S_e_cost, ti, n)
+    f = _diff_AC(costfunction(ti))
+    L = transitionlikelihood(ti)
+    S_e_cost + S_e_likelihood * f(L.nzval[n])
+end
+
+_maybe_scale(a, ::Elasticity, ::Union{Likelihood,LikelihoodToCost}, ti, n) =
+    a * transitionlikelihood(ti).nzval[n]
+_maybe_scale(a, ::Elasticity, ::Union{Cost,CostToLikelihood}, ti, n) =
+    a * transitioncost(ti).nzval[n]
+_maybe_scale(a, ::Sensitivity, ::Permeability, ti, n) = a
 
 _diff_CA(::MinusLog) = x -> -inv(x)
 _diff_AC(::MinusLog) = x -> -(x)
@@ -491,13 +605,6 @@ _diff_AC(::Inv) = x -> -inv(x^2)
 _diff_KD(x::ExpMinusAlpha) = k -> -k * x.alpha
 _diff_KD(::ExpMinus) = k -> -k
 _diff_KD(::Inv) = k -> -k ^ 2
-
-_maybe_scale(a, ::Elasticity, ::Union{Likelihood,LikelihoodToCost}, ti) =
-    ti.workspace .= a .* view(transitionlikelihood(ti), :, target(ti).node)
-_maybe_scale(a, ::Elasticity, ::Union{Cost,CostToLikelihood}, ti) =
-    ti.workspace .= a .* view(transitioncost(ti), :, target(ti).node)
-_maybe_scale(a, ::Sensitivity, ::Permeability, ti) = a
-
 
 # TODO: handle self connectivity for single isolated nodes
 # fill_isolated_node(::FunctionalHabitat, init::Initalisation, target::CartesianIndex) =

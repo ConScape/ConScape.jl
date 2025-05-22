@@ -35,6 +35,8 @@ export Cumulative, Eigen
 
 export Quality, Cost, Likelihood, CostToLikelihood, LikelihoodToCost
 
+export TargetWeight, AverageWeight
+
 export VectorSolver, LinearSolver
 
 export MinusLog, MinusLogAlpha, Inv, OddsFor, OddsAgainst, ExpMinus, ExpMinusAlpha
@@ -66,12 +68,13 @@ include("inputs.jl")
 include("utils/workspaces.jl")
 include("utils/readonlyarray.jl")
 include("utils/bellman_ford.jl")
-include("utils/graph_generation.jl")
 include("transformations.jl")
 include("measures.jl")
 include("movement.jl")
 include("problem.jl")
+include("graphs.jl")
 include("initialisation.jl")
+include("solve.jl")
 include("return.jl")
 include("solvers.jl")
 include("compute.jl")

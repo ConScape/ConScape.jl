@@ -6,10 +6,10 @@ Creates a sparse matrix of target qualities for the landmarks based on merging n
 coarse_graining(rast::AbstractRaster, npix; kw...) =
     rebuild(rast, coarse_graining(parent(rast), npix; kw...))
 function coarse_graining(rast::AbstractRasterStack, npix; kw...)
-    target = _get_target_qualities(rast)
+    target = _get_targetquality(rast)::Raster
     # Get target qualities or qualities
-    target_qualities = coarse_graining(target, npix; kw...)
-    return Base.setindex(rast, target_qualities, :target_qualities)
+    targetquality = coarse_graining(target, npix; kw...)
+    return Base.setindex(rast, targetquality, :targetquality)
 end
 function coarse_graining(M::AbstractMatrix, npix;
     sourceids=vec(CartesianIndices(size(M)))
