@@ -118,8 +118,8 @@ end
         costfunction=MinusLog(),
         quality=ones(size(l2))
     )
-    sgs1 = ConScape.split_subgraphs(g1)
-    sgs2 = ConScape.split_subgraphs(g2)
+    sgs1 = ConScape.split_connected_graphs(g1)
+    sgs2 = ConScape.split_connected_graphs(g2)
     @test length(sgs1) == 2
     @test length(sgs2) == 1
 

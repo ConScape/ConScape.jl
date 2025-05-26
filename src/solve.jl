@@ -1,7 +1,7 @@
 
 # solve methods
 
-solve(p::Problem, x::Union{GridGraph,RasterStack}; kw...) = 
+solve(p::Problem, x::Union{GridGraph,RasterStack}, args...; kw...) = 
     solve(init(p, x, args...; kw...))
 # TODO put measures into the Problem before solving
 solve(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::Problem, input::Union{GridGraph,RasterStack}, args...; kw...) = 
@@ -24,9 +24,9 @@ function solve(ggi::GridGraphInit; kw...)
         sgi = init(ggi, i)
         # Intitalise sparse matrices and precalculate e.g. LU factorizations
         solve(sgi)
-        transfer_output!(outputs, sgi)
+        transfer_output!(outputs(ggi), sgi)
     end
-    return _maybe_raster_return(measures(ggi), outputs, ggi)
+    return _maybe_rasterstack(ggi)
 end
 solve(ggi::GridGraphInit, i::Int; kw...) =
     solve(init(measures, ggi, i; outputlevel=ConnectedGraphLevel(), kw...))
@@ -37,8 +37,8 @@ function solve(cgi::ConnectedGraphInit; outputlevel=ConnectedGraphLevel(), kw...
         # Precalculate for this target and graph measures
         solve(init(cgi, target_id; kw...); outputlevel)
     end
-    finalize_output!(outputs(cgi), cgi)
-    return _maybe_raster_return(outputs(cgi), cgi)
+    finalize_output!(cgi)
+    return _maybe_rasterstack(cgi)
 end
 solve(measures::Union{MeasureTuple,MeasureNamedTuple}, gi::ConnectedGraphInit, i::Int; kw...) =
     solve(init(measures, gi, targetids(gi)[i]); kw...)
@@ -46,13 +46,13 @@ solve(measures::MeasureNamedTuple, ti::TargetInit; outputlevel=TargetLevel(), kw
     solve(init(measures, ti; kw...); outputlevel)
 function solve(ti::TargetInit; outputlevel=TargetLevel())
     # Allocate target vectors rather than matrices
-    outputs1 = if isnothing(outputs)
+    outputs1 = if isnothing(outputs(ti))
         allocate_output(outputlevel, measures, ti)
     else
-        outputs
+        outputs(ti)
     end
     # Store outputs
-    results = map(measures(ti), outputs1[K]) do measure, output
+    results = map(measures(ti), outputs1) do measure, output
         # Dont compute the same measure multiple times
         v = get_or_compute!(ti, measure)
         # Write values to output object
@@ -60,7 +60,7 @@ function solve(ti::TargetInit; outputlevel=TargetLevel())
     end
     # When just running one target we return Raster/RasterStack
     if outputlevel isa TargetLevel
-        return _maybe_raster_return(measures, outputs1, ti)
+        return _maybe_rasterstack(measures, outputs1, ti)
     else
         return results
     end

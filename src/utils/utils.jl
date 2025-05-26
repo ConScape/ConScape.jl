@@ -103,18 +103,6 @@ _get_cost(rast::RasterStack) = _keys_or_nothing(rast, (:cost, :movementcost))
     haskey(rast, key) ? rast[key] : _keys_or_nothing(rast, keys)
 @inline _keys_or_nothing(rast, ::Tuple{}) = nothing
 
-# Split measures into subgraph and target measures
-function _split_by_computelevel(ms::NamedTuple{K}) where K
-    sugraphkeys, targetkeys = foldl(map(=>, K, ms); init=((), ())) do (tosubgraph, totarget), (k, m)
-        if computelevel(m) isa TargetLevel 
-            (tosubgraph, (totarget..., k)) 
-        else
-            ((tosubgraph..., k), totarget)
-        end
-    end
-    return ms[sugraphkeys], ms[targetkeys]
-end
-
 # Fast sparse array update, we loop over non-zero values and indices directly.
 # adapted from `SparseArrays.findnz`
 # This is painfully slow without this optimization

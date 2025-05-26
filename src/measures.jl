@@ -243,9 +243,9 @@ computelevel(::EigMax) = SubGraphLevel()
 # computelevel(::EdgeBetweenness) = SubGraphLevel()
 
 # Return type traits
-returntrait(::SpatialMeasure) = SumDenseSpatial()
-returntrait(::GraphMeasure) = AssignSparse()
-returntrait(::PathDistributionMeasure) = SumScalar()
+returntrait(::SpatialMeasure) = ReturnDenseSpatialSum()
+returntrait(::GraphMeasure) = ReturnAssignedSparse()
+returntrait(::PathDistributionMeasure) = ReturnScalarSum()
 returntrait(::EdgeBetweenness) = ReturnCustom()
 returntrait(::SensitivityAnalysis) = ReturnCustom()
 returntrait(::EigMax) = ReturnCustom()

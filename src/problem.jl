@@ -67,15 +67,27 @@ solve(singleinit)
 solve(targetinit) 
 ```
 """
-@kwdef struct Problem{MM<:MovementMode,M,S<:Solver,CF,LF,N,NW} <: AbstractProblem
+@kwdef struct Problem{MM<:MovementMode,M,S<:Solver,G,CF,LF,N,NW} <: AbstractProblem
     movement::MM = RandomisedShortestPath()
-    measures::M = ()
+    measures::M = (;)
     solver::S = VectorSolver()
-    grain::Union{Nothing,Int} = nothing # Better name here - target_density?
+    grain::G = nothing # Better name here - target_density?
     costfunction::CF = MinusLog()
     likelyhoodfunction::LF = nothing
     neighbors::N = N8
     transition_weight::NW = TargetWeight()
+    function Problem(
+        movement::MM, m::M, solver::S, grain::G, costfunction::CF, likelyhoodfunction::LF, neighbors::N, transition_weight::NW
+    ) where {MM,M,S,G,CF,LF,N,NW}
+        m1 = if m isa Measure
+            NamedTuple{(Symbol(m),)}((m,))
+        elseif m isa Tuple
+            NamedTuple{map(Symbol, m)}(m)
+        else
+            m
+        end
+        return new{MM,typeof(m1),S,G,CF,LF,N,NW}(movement, m1, solver, grain, costfunction, likelyhoodfunction, neighbors, transition_weight)
+    end
 end
 Problem(measure::Measure; kw...) = Problem(; measures=(measure,), kw...)
 Problem(measures::Union{Tuple,NamedTuple}; kw...) = Problem(; measures, kw...)

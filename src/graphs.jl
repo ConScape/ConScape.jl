@@ -170,7 +170,7 @@ nsources(cg::ConnectedGraph) = length(sourceids(cg))
 ntargets(cg::ConnectedGraph) = length(targetids(cg))
 connectedgraph_size(cg::ConnectedGraph) = (nsources(cg), ntargets(cg))
 
-function _split_connected_graphs(g::GridGraph;
+function split_connected_graphs(g::GridGraph;
     costfunction=nothing, likelihoodfunction=nothing,
 )
     spatialidxs = vec(CartesianIndices(size(g)))

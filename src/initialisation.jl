@@ -71,7 +71,7 @@ function GridGraphInit(problem::Problem, gridgraph::GridGraph;
     outputlevel=GridGraphLevel(), 
 )
     _check_inputs(problem, gridgraph)
-    connectedgraphs = _split_connected_graphs(gridgraph; 
+    connectedgraphs = split_connected_graphs(gridgraph; 
         costfunction=costfunction(problem),
         likelihoodfunction=likelihoodfunction(problem),
     )
@@ -182,7 +182,7 @@ function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int;
         storage = connectedgraph_storage(movement(ggi), workspaces)
     end
     precalculation = connectedgraph_precalculation(problem(ggi), connectedgraph)
-    outputs = allocate_output(outputlevel, measures(ggi), gridgraph(ggi), connectedgraph, precalculation)
+    outputs = allocate_output(outputlevel, problem(ggi), gridgraph(ggi), connectedgraph, precalculation)
     return ConnectedGraphInit(problem(ggi), gridgraph(ggi), connectedgraph, outputs, workspaces, storage, precalculation, connectedgraphid)
 end
 
@@ -409,6 +409,8 @@ end
 
 # `CommonSolve.init`
 
+init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation, args...; kw...) = 
+    init(init(m, i), args...; kw...)
 init(movement::MovementMode, x::Union{RasterStack,GridGraph}, args...; kw...) = 
     init(Problem(; movement, kw...), x, args...)
 init(measure::Union{Measure,MeasureTuple,MeasureNamedTuple}, 
@@ -424,27 +426,28 @@ init(problem::Problem, x::Union{RasterStack,GridGraph}, connectedgraph::Int; out
 # We don't want to allocate outputs if we work at the target level
 init(problem::Problem, x::Union{RasterStack,GridGraph}, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
     init(GridGraphInit(problem, x; outputs=nothing, kw...), connectedgraph, target; outputlevel=TargetLevel())
-init(pi::GridGraphInit, connectedgraph::Int; kw...) = ConnectedGraphInit(pi, connectedgraph; kw...)
-init(pi::GridGraphInit, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
-    init(ConnectedGraphInit(pi, connectedgraph; kw...), target)
+init(ggi::GridGraphInit, connectedgraph::Int; kw...) = ConnectedGraphInit(ggi, connectedgraph; kw...)
+init(ggi::GridGraphInit, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
+    init(ConnectedGraphInit(ggi, connectedgraph; kw...), target)
 init(gi::ConnectedGraphInit, target::Union{Int,CartesianIndex,TargetID}) = TargetInit(gi, target)
 init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::Problem, args...; kw...) =
     init(setmeasures(p, m), args...; kw...)
-init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, gi::Initialisation; outputlevel=defaultoutputlevel(gi)) =
-    setmeasures(p, m; outputlevel)
+init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation; outputlevel=defaultoutputlevel(i)) =
+    setmeasures(i, m; outputlevel)
 
-setmeasures(p::Problem, m::Measure) = rebuild(p; measures=NamedTuple{(Symbol(m),)}(m))
-setmeasures(p::Problem, measures::Union{MeasureTuple,MeasureNamedTuple}) = rebuild(p; measures)
+setmeasures(p::Problem, m::Measure) = setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
+setmeasures(p::Problem, measures::Union{MeasureTuple,MeasureNamedTuple}) = 
+    ConstructionBase.setproperties(p, (; measures))
 function setmeasures(i::Union{GridGraphInit,ConnectedGraphInit}, m; outputlevel)
-    problem = setmeasures(problem(i), m)
+    problem = setmeasures(ConScape.problem(i), m)
     outputs = map(measures(problem)) do m
-        allocate_output(outputlevel, i, m)
+        allocate_output(outputlevel, m, i)
     end
-    return ConStructionBase.setproperties(x, (; problem, outputs))
+    return ConstructionBase.setproperties(i, (; problem, outputs))
 end
 function setmeasures(i::TargetInit, m; outputlevel)
-    connectedgraphinit = setmeasures(problem(i), m; outputlevel)
-    return ConStructionBase.setproperties(i, (; connectedgraphinit))
+    connectedgraphinit = setmeasures(connectedgraphinit(i), m; outputlevel)
+    return ConstructionBase.setproperties(i, (; connectedgraphinit))
 end
 
 

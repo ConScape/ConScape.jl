@@ -1,5 +1,6 @@
 nothing
-using ConScape, Test, SparseArrays, LinearAlgebra, LinearSolve
+using ConScape, Test, SparseArrays, LinearAlgebra
+# using LinearSolve
 using Rasters, ArchGDAL
 using OldConScape
 
@@ -50,25 +51,25 @@ solver = ConScape.VectorSolver()
     problem = ConScape.Problem(; 
         measures, movement=rsp_exp_minus, solver, costfunction=MinusLog(),
     );
-    probleminit = init(problem, rast)
-    subgraphinit = init(probleminit, 1)
-    subgraph1 = ConScape.connectedgraph(subgraphinit)
-    targetinit1 = init(subgraphinit, 1)
+    gridgraphinit = init(problem, rast)
+    connectedgraphinit = init(gridgraphinit, 1)
+    connectedgraph1 = ConScape.connectedgraph(connectedgraphinit)
+    targetinit1 = init(connectedgraphinit, 1)
 
-    @test qs == ConScape.sourcequality(subgraphinit)
-    @test qt == ConScape.targetquality(subgraphinit)
-    @test all(test_g.target_qualities .=== ConScape.targetquality(probleminit))
-    @test all(test_g.source_qualities .=== ConScape.sourcequality(probleminit))
-    @test test_g.costmatrix == subgraph1.transitioncost == targetinit1.C
-    @test test_g.costmatrix .* test_grsp.W == subgraphinit.precalculation.CW == targetinit1.CW
-    @test test_g.affinities == subgraph1.transitionlikelihood
-    @test test_grsp.Pref == subgraphinit.precalculation.P == targetinit1.P
-    @test test_grsp.W == subgraphinit.precalculation.W == targetinit1.W
-    @test LinearAlgebra.I - test_grsp.W == subgraphinit.precalculation.IW == targetinit1.IW
-    @test test_g.id_to_grid_coordinate_list == ConScape.sourceids(subgraphinit) == ConScape.sourceids(targetinit1)
-    @test (test_g.nrows, test_g.ncols) == size(probleminit)
-    @test all(test_g.source_qualities .=== ConScape.sourcequality(probleminit))
-    @test all(test_g.target_qualities .=== ConScape.targetquality(probleminit))
+    @test qs == ConScape.sourcequality(connectedgraphinit)
+    @test qt == ConScape.targetquality(connectedgraphinit)
+    @test all(test_g.target_qualities .=== ConScape.targetquality(gridgraphinit))
+    @test all(test_g.source_qualities .=== ConScape.sourcequality(gridgraphinit))
+    @test test_g.costmatrix == connectedgraph1.transitioncost == targetinit1.C
+    @test test_g.costmatrix .* test_grsp.W == connectedgraphinit.precalculation.CW == targetinit1.CW
+    @test test_g.affinities == connectedgraph1.transitionlikelihood
+    @test test_grsp.Pref == connectedgraphinit.precalculation.P == targetinit1.P
+    @test test_grsp.W == connectedgraphinit.precalculation.W == targetinit1.W
+    @test LinearAlgebra.I - test_grsp.W == connectedgraphinit.precalculation.IW == targetinit1.IW
+    @test test_g.id_to_grid_coordinate_list == ConScape.sourceids(connectedgraphinit) == ConScape.sourceids(targetinit1)
+    @test (test_g.nrows, test_g.ncols) == size(gridgraphinit)
+    @test all(test_g.source_qualities .=== ConScape.sourcequality(gridgraphinit))
+    @test all(test_g.target_qualities .=== ConScape.targetquality(gridgraphinit))
 
     # Dense variables
     ec = OldConScape.expected_cost(test_grsp)
@@ -83,7 +84,7 @@ solver = ConScape.VectorSolver()
     M = qs .* K .* qt'
 
     for i in axes(test_grsp.Z, 2)
-        target_i = ConScape.init(subgraphinit, ConScape.targetids(subgraphinit)[i])
+        target_i = ConScape.init(connectedgraphinit, ConScape.targetids(connectedgraphinit)[i])
         @test target_i.Z == test_grsp.Z[:, i]
         @test all(isapprox.(target_i.Zⁱ, Zⁱ[:, i]))
         @test all(isapprox.(target_i.Q, Q[:, i]))
@@ -97,16 +98,17 @@ solver = ConScape.VectorSolver()
         @test target_i.qᵗ == qt[i]
     end
 
-    ec_new = solve(ExpectedCost(), probleminit, 1)
+    ec_new = solve(ExpectedCost(), gridgraphinit, 1)
     btk = OldConScape.betweenness_kweighted(test_grsp);
-    btk_new = solve(Betweenness(QualityAndProximityWeighted()), probleminit)
+    btk_new = solve(Betweenness(QualityAndProximityWeighted()), gridgraphinit)
     @test all(compare.(btk, btk_new))
     btq = OldConScape.betweenness_qweighted(test_grsp);
-    btq_new = solve(Betweenness(QualityWeighted()), probleminit)
+    btq_new = solve(Betweenness(QualityWeighted()), gridgraphinit)
     @test all(compare.(btq, btq_new))
     ch = OldConScape.connected_habitat(test_grsp);
-    ch_new = solve(FunctionalHabitat(), probleminit)
+    ch_new = solve(FunctionalHabitat(), gridgraphinit)
     @test all(compare.(ch, ch_new))
+
 end
 
 solvers = (
@@ -128,8 +130,8 @@ solvers = (
     problem_exp_50 = ConScape.Problem(; measures, movement=rsp_exp_50, solver);
     problem_exp_minus = ConScape.Problem(; measures, movement=rsp_exp_minus, solver);
 
-    probleminit = init(problem_nodist, rast)
-    subgraphinit = init(probleminit, 1)
+    gridgraphinit = init(problem_nodist, rast)
+    connectedgraphinit = init(gridgraphinit, 1)
 
     @time result_nodist = ConScape.solve(problem_nodist, rast);
     @time result_const_dist = ConScape.solve(problem_const_dist, rast);
@@ -161,7 +163,7 @@ solvers = (
             0.03190640567704462 0.13832814750469344 0.1961393152256104], atol=1e-4)
 
         # Check that summed edge betweennesses corresponds to node betweennesses:
-        subgraphinit = init(rsp_exp_minus, rast, 1)
+        connectedgraphinit = init(rsp_exp_minus, rast, 1)
         test_grsp.Z
         old_ebetm = OldConScape.edge_betweenness_kweighted(test_grsp)
         ebetm = solve(EdgeBetweenness(QualityAndProximityWeighted()), rsp_exp_minus, rast, 1)
@@ -169,8 +171,8 @@ solvers = (
         @test ebetm isa SparseMatrixCSC
         @test collect(ebetm) ≈ collect(old_ebetm)
 
-        bet_edge_sum = fill(NaN, size(subgraphinit))
-        bet_edge_sum[ConScape.sourceids(subgraphinit)] .= sum(ebetm, dims=2)
+        bet_edge_sum = fill(NaN, size(connectedgraphinit))
+        bet_edge_sum[ConScape.sourceids(connectedgraphinit)] .= sum(ebetm, dims=2)
         @test bet_edge_sum[21:23, 31:33] ≈ parent(result_nodist.betm[21:23, 31:33])
 
         # TODO the floating point differnce is more 
@@ -180,21 +182,22 @@ solvers = (
             826.0710054834001 1883.0940077789735 1935.4450344630702
             676.9212075214159 2228.2700913772774 2884.0409495023364], atol=1e-3)
 
-        @test result_const_dist.betm[ConScape.sourceids(subgraphinit)] == 
-              result_const_dist.betq[ConScape.sourceids(subgraphinit)]
+        @test result_const_dist.betm[ConScape.sourceids(connectedgraphinit)] == 
+              result_const_dist.betq[ConScape.sourceids(connectedgraphinit)]
         @test_broken result_const_dist.ebetm ≈ result_const_dist.ebetq
+
     end
 
     @testset "connected_habitat" begin
         @test result_exp_minus.fh isa Raster{Float64}
-        @test size(result_exp_minus.fh) == size(subgraphinit)
-
+        @test size(result_exp_minus.fh) == size(connectedgraphinit)
         fh = OldConScape.connected_habitat(test_grsp, CartesianIndex((20, 20)))
         # TODO why is this so different now
         @test all(compare.(result_exp_minus.fh, fh; atol=1e-2))
         # @test cl isa Raster{Float64}
         @test sum(replace(result_exp_minus.fh, NaN => 0.0)) ≈ 109.4795495188798 atol=1e-2
     end
+
 end
 
 end
@@ -214,14 +217,14 @@ sensitivity_measures = (;
 
 # Movement modes
 # RSP
-rsp_pmp = RandomisedShortestPath(; 
-    proximity_measure=PowerMeanProximity(), 
+rsp_ec = RandomisedShortestPath(; 
+    proximity_measure=ExpectedCost(), 
     distance_transformation=ExpMinus(),
     costfunction=ConScape.MinusLog(),
     theta=1.0, 
 )
-rsp_ec = RandomisedShortestPath(; 
-    proximity_measure=ExpectedCost(), 
+rsp_pmp = RandomisedShortestPath(; 
+    proximity_measure=PowerMeanProximity(), 
     distance_transformation=ExpMinus(),
     costfunction=ConScape.MinusLog(),
     theta=1.0, 
@@ -229,13 +232,13 @@ rsp_ec = RandomisedShortestPath(;
 
 # RSP
 @time res_sens_rsp_ec = solve(sensitivity_measures, rsp_ec, rast)
-@time res_sens_rsp_pmp = solve(sensitivity_measures, rsp_pmp, rast)
+# @time res_sens_rsp_pmp = solve(sensitivity_measures, rsp_pmp, rast)
 
 using OldConScape
-affinities_sparse = OldConScape.graph_matrix_from_raster(parent(affinities))
-test_g = OldConScape.Grid(size(affinities)...;
+affinities_sparse = OldConScape.graph_matrix_from_raster(parent(movementlikelihood))
+test_g = OldConScape.Grid(size(movementlikelihood)...;
     affinities=affinities_sparse,
-    qualities=parent(source_qualities),
+    qualities=parent(quality),
 )
 test_grsp = OldConScape.GridRSP(test_g; θ=1.0)
 wrts = ["A", "C", "Q", "C&A=f(C)", "A&C=f(A)"]

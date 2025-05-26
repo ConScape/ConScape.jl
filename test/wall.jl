@@ -28,25 +28,23 @@ using ConScape, Test, SparseArrays
             511.0 510.0 509.0]
     end
 
-    problem = ConScape.Problem(
-        measures = (
-            kld = KullbackLeiblerDivergence(),
-            betq = Betweenness(QualityWeighted()),
-            betk = Betweenness(QualityAndProximityWeighted()),
-            ebetq = EdgeBetweenness(QualityWeighted()),
-            ebetk = EdgeBetweenness(QualityAndProximityWeighted()),
-            ch = FunctionalHabitat(),
-            pmp = PowerMeanProximity(),
-            sp = SurvivalProbability(),
-            fed = FreeEnergyDistance(),
-            ex = ExpectedCost(),
-        ),
-        movement=RandomisedShortestPath(ExpectedCost(); theta=θ, diagvalue=0.0)
+    movement = RandomisedShortestPath(ExpectedCost(); theta=θ, diagvalue=0.0)
+    measures = (
+        kld = KullbackLeiblerDivergence(),
+        betq = Betweenness(QualityWeighted()),
+        betk = Betweenness(QualityAndProximityWeighted()),
+        ebetq = EdgeBetweenness(QualityWeighted()),
+        ebetk = EdgeBetweenness(QualityAndProximityWeighted()),
+        ch = FunctionalHabitat(),
+        pmp = PowerMeanProximity(),
+        sp = SurvivalProbability(),
+        fed = FreeEnergyDistance(),
+        ex = ExpectedCost(),
     )
-
-    targetinit = init(init(problem, g), 1, 100)
+    problem = ConScape.Problem(; movement, measures)
 
     @testset "init fields" begin
+        targetinit = init(init(problem, g), 1, 100)
         @test ConScape.transitioncost(targetinit).nzval[end-2:end] ≈ [
             1.039720770839918
             0.6931471805599453
@@ -62,8 +60,9 @@ using ConScape, Test, SparseArrays
     end
 
     results = solve(problem, g)
+
     @testset "Test mean_kl_divergence" begin
-        @test results.kld[] ≈ 2.4405084252728125e13
+        @test results.kld[1] ≈ 2.4405084252728125e13
     end
 
     @testset "Test betweenness" begin
@@ -71,11 +70,13 @@ using ConScape, Test, SparseArrays
         bet_node = results.betq
         bet_edge = results.ebetq
         bet = fill(NaN, size(g))
-        bet[ConScape.sourceids(g)] = sum(results.ebetq; dims=2)
+        bet[ConScape.sourceids(g)] = sum(results.ebetq[1]; dims=2)
         # Edge betweenness is broken
-        @test_broken bet ≈ bet_node
+        @test bet ≈ bet_node
     end
+
     @testset "FunctionalHabitat" begin
+
         kw = (; theta=0.2, diagvalue=0.0)
         @test solve(FunctionalHabitat(), RSP(ExpectedCost(); distance_transformation=ExpMinus(), kw...), g)[28:30, 58:60]' ≈ [
              11082.654882969266 2664.916100189486 89.420910249988
@@ -97,6 +98,7 @@ using ConScape, Test, SparseArrays
                  93.0825   140.907    362.669
                  41.1656    63.2089   159.685
                  3.65643    4.04458    4.23555] rtol=1e-3
+
     end
 
     @testset "mean_lc_kl_divergence" begin
@@ -104,25 +106,27 @@ using ConScape, Test, SparseArrays
     end
 
     # Eigmax doesn't work per-target
-    # @testset "eigmax, proximity_measure=$proximity_measure" for
-    #     (proximity_measure, val) in ((ExpectedCost()       , 5.576850282179157e6),
-    #                                     (FreeEnergyDistance(), 3.2799955467465096e6),
-    #                                     (SurvivalProbability(), 1.3475609129305437e7),
-    #                                     (PowerMeanProximity(), 3.279995546746518e6))
-    #     proximity_measure = ExpectedCost()
-    #     rsp = RSP(proximity_measure; theta=θ)
-    #     vˡ, λ, vʳ = solve(EigMax(), rsp, g)
+    @testset "eigmax, proximity_measure=$proximity_measure" for
+        (proximity_measure, val) in ((ExpectedCost()       , 5.576850282179157e6),
+                                        (FreeEnergyDistance(), 3.2799955467465096e6),
+                                        (SurvivalProbability(), 1.3475609129305437e7),
+                                        (PowerMeanProximity(), 3.279995546746518e6))
+        (ExpectedCost(), 5.576850282179157e6)
+        (proximity_measure, val) = (PowerMeanProximity(), 3.279995546746518e6)
+        proximity_measure = ExpectedCost()
+        rsp = RSP(proximity_measure; theta=θ)
+        vˡ, λ, vʳ = solve(EigMax(), rsp, g)[1]
 
-    #     # Compute the weighted proximity matrix to check results
-    #     S = solve(proximity_measure, rsp, g)
-    #     if connectivity_function <: DistanceFunction
-    #         map!(ExpMinus(), S, S)
-    #     end
-    #     qSq = g.source_qualities[:] .* S .* grsp.g.target_qualities[:]'
+        # Compute the weighted proximity matrix to check results
+        K = solve(proximity_measure, rsp, g)
+        if proximity_measure isa ConScape.DistanceMeasure
+            map!(ExpMinus(), K, K)
+        end
+        M = g.sourcequality[ConScape.sourceids(g)] .* Matrix(K) .* g.targetquality[ConScape.sourceids(g)]'
 
-    #     @test λ ≈ val
-    #     @test qSq*vʳ ≈ vʳ*λ
-    # end
+        @test λ[] ≈ val
+        @test M * vʳ ≈ vʳ * λ[]
+    end
 
     @testset "Coarse graining: merging pixels to landmarks" begin
         g_coarse = ConScape.permeable_wall_sim(30, 60; corridorwidths=(3,2),
@@ -137,15 +141,14 @@ using ConScape, Test, SparseArrays
             0.0     0.0 0.0 0.0     0.0
             0.0 14031.0 0.0 0.0 14004.0]
 
-        # @testset "eigmax, proximity_measure=$proximity_measure" for
-        #     (proximity_measure, val) in ((ExpectedCost(), 2.7249231390873615e7),
-        #                                     (FreeEnergyDistance(), 2.7217089009360086e7),
-        #                                     (SurvivalProbability(), 3.0731253357215535e7),
-        #                                     (PowerMeanProximity(), 2.7217089009360246e7))
-
-        #     vˡ, λ, vʳ = solve(EigMax(), init(RSP(proximity_measure; theta=θ), g_coarse_rsp))
-        #     @test λ ≈ val
-        # end
+        @testset "eigmax, proximity_measure=$proximity_measure" for
+            (proximity_measure, val) in ((ExpectedCost(), 2.7249231390873615e7),
+                                            (FreeEnergyDistance(), 2.7217089009360086e7),
+                                            (SurvivalProbability(), 3.0731253357215535e7),
+                                            (PowerMeanProximity(), 2.7217089009360246e7))
+            (vˡ, λ, vʳ) = solve(EigMax(), RSP(proximity_measure; theta=θ), g_coarse)[1]
+            @test λ[] ≈ val
+        end
 
         @testset "FunctionalHabitat" begin
             @testset "expected_cost" begin
