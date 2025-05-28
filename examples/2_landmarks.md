@@ -38,7 +38,7 @@ rast = RasterStack((; permeabilities, qualities))
 
 # Coarse graining
 
-`ConScape.Problem` has a `grain` keyword that triggers coarse graining
+`ConScapeProblem` has a `grain` keyword that triggers coarse graining
 when the `target_qualities` data is loaded from a `RasterStack`.
 
 Here we define a problem that uses it, and one that doesn't.
@@ -95,7 +95,7 @@ betm_coarse = @time solve(Betweenness(QualityAndProximityWeighted()), rsp, rast;
 cor(filter(!isnan, betm), filter(!isnan, betm_coarse))
 ```
 
-We can write this whole comparison using `Problem` definitions:
+We can write this whole comparison using `ConScapeProblem` definitions:
 
 ```julia
 measures = (;
@@ -103,8 +103,8 @@ measures = (;
     betq=ConScape.Betweenness(QualityWeighted()),
     betm=ConScape.Betweenness(QualityAndProximityWeighted()),
 )
-problem = ConScape.Problem(; measures, movement)
-problem_coarse = ConScape.Problem(; measures, movement, grain)
+problem = ConScapeProblem(; measures, movement)
+problem_coarse = ConScapeProblem(; measures, movement, grain)
 ```
 
 Then run it for all operations on both normal and coarse grids

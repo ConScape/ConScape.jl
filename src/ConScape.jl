@@ -43,7 +43,7 @@ export MinusLog, MinusLogAlpha, Inv, OddsFor, OddsAgainst, ExpMinus, ExpMinusAlp
 
 export solve, init, assess, reassess
 
-export WindowedProblem, BatchProblem
+export ConScapeProblem, WindowedProblem, BatchProblem
 
 """
     Solver
