@@ -41,7 +41,7 @@ using ConScape, Test, SparseArrays
         fed = FreeEnergyDistance(),
         ex = ExpectedCost(),
     )
-    problem = ConScape.Problem(; movement, measures)
+    problem = ConScapeProblem(; movement, measures)
 
     @testset "init fields" begin
         targetinit = init(init(problem, g), 1, 100)

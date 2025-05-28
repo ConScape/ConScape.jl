@@ -37,7 +37,7 @@ rsp_const_dist = RandomisedShortestPath(ExpectedCost(); distance_transformation=
 rsp_exp_50 = RandomisedShortestPath(ExpectedCost(); distance_transformation=ExpMinusAlpha(1/50), theta=θ)
 rsp_exp_minus = RandomisedShortestPath(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ)
 
-solver = ConScape.VectorSolver()
+solver = VectorSolver()
 # @testset "Compare everything with old conscape" begin
     affinities_sparse = OldConScape.graph_matrix_from_raster(parent(movementlikelihood))
     test_g = OldConScape.Grid(size(movementlikelihood)...;
@@ -48,7 +48,7 @@ solver = ConScape.VectorSolver()
     qs = [test_grsp.g.source_qualities[i] for i in test_grsp.g.id_to_grid_coordinate_list]
     qt = [test_grsp.g.target_qualities[i] for i in test_grsp.g.id_to_grid_coordinate_list ∩ OldConScape._targetidx_and_nodes(test_g)[1]]
 
-    problem = ConScape.Problem(; 
+    problem = ConScapeProblem(; 
         measures, movement=rsp_exp_minus, solver, costfunction=MinusLog(),
     );
     gridgraphinit = init(problem, rast)
@@ -80,7 +80,7 @@ solver = ConScape.VectorSolver()
     Zⁱ = inv.(test_grsp.Z)
     Zⁱ[.!isfinite.(Zⁱ)] .= floatmax(eltype(Zⁱ)) # To prevent Inf*0 later...
     Q = qs .* qt'
-    K = ConScape.ExpMinus().(ec)
+    K = ExpMinus().(ec)
     M = qs .* K .* qt'
 
     for i in axes(test_grsp.Z, 2)
@@ -112,8 +112,8 @@ solver = ConScape.VectorSolver()
 end
 
 solvers = (
-    ConScape.VectorSolver(),
-    # ConScape.LinearSolver(), # TODO: really slow currently
+    VectorSolver(),
+    # LinearSolver(), # TODO: really slow currently
 )
 
 # for solver in solvers @testset "$solver" begin
@@ -124,19 +124,19 @@ solvers = (
     )
     test_grsp = OldConScape.GridRSP(test_g; θ)
     println("\n Testing with solver: ", solver)
-    # Basic Problem
-    problem_nodist = ConScape.Problem(; measures, movement=rsp_nodist, solver);
-    problem_const_dist = ConScape.Problem(; measures, movement=rsp_const_dist, solver);
-    problem_exp_50 = ConScape.Problem(; measures, movement=rsp_exp_50, solver);
-    problem_exp_minus = ConScape.Problem(; measures, movement=rsp_exp_minus, solver);
+    # Basic ConScapeProblem
+    problem_nodist = ConScapeProblem(; measures, movement=rsp_nodist, solver);
+    problem_const_dist = ConScapeProblem(; measures, movement=rsp_const_dist, solver);
+    problem_exp_50 = ConScapeProblem(; measures, movement=rsp_exp_50, solver);
+    problem_exp_minus = ConScapeProblem(; measures, movement=rsp_exp_minus, solver);
 
     gridgraphinit = init(problem_nodist, rast)
     connectedgraphinit = init(gridgraphinit, 1)
 
-    @time result_nodist = ConScape.solve(problem_nodist, rast);
-    @time result_const_dist = ConScape.solve(problem_const_dist, rast);
-    @time result_exp_50 = ConScape.solve(problem_exp_50, rast);
-    @time result_exp_minus = ConScape.solve(problem_exp_minus, rast);
+    @time result_nodist = solve(problem_nodist, rast);
+    @time result_const_dist = solve(problem_const_dist, rast);
+    @time result_exp_50 = solve(problem_exp_50, rast);
+    @time result_exp_minus = solve(problem_exp_minus, rast);
     @test keys(result_nodist) == keys(measures)
     @test size(result_nodist.fh) == size(rast)
 
@@ -232,7 +232,7 @@ rsp_pmp = RandomisedShortestPath(;
 
 # RSP
 @time res_sens_rsp_ec = solve(sensitivity_measures, rsp_ec, rast)
-# @time res_sens_rsp_pmp = solve(sensitivity_measures, rsp_pmp, rast)
+@time res_sens_rsp_pmp = solve(sensitivity_measures, rsp_pmp, rast)
 
 using OldConScape
 affinities_sparse = OldConScape.graph_matrix_from_raster(parent(movementlikelihood))

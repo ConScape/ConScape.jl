@@ -81,11 +81,11 @@ function _reshape!(A::Array, size::Tuple{Vararg{Int}})
     end
 end
 
-_allocate_workspaces!(x, problem::Problem, graph::ConnectedGraph) =
+_allocate_workspaces!(x, problem::ConScapeProblem, graph::ConnectedGraph) =
     _allocate_workspaces!(x, problem, nsources(graph))
-_allocate_workspaces!(x::Nothing, problem::Problem, length::Int) =
+_allocate_workspaces!(x::Nothing, problem::ConScapeProblem, length::Int) =
     Workspaces(length, nworkspaces(problem) + 20)
-_allocate_workspaces!(workspaces::Workspaces, ::Problem, length::Int) =
+_allocate_workspaces!(workspaces::Workspaces, ::ConScapeProblem, length::Int) =
     free!(resize!(workspaces, length))
 
 _maybe_new_outputs(level::GridGraphLevel, mes, ggi::GridGraphInit) =

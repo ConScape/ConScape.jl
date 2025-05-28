@@ -7,7 +7,7 @@ connectivity_function(p::AbstractProblem) =
 isthreaded(p::AbstractProblem) = false
 
 """
-    Problem(measures; movement, solver, θ)
+    ConScapeProblem(measures; movement, solver, θ)
 
 A `Problem` collects all parameters required to generate one or multiple 
 [`Measure`](@ref) outputs from a single `RasterStack` or `Grid` input.
@@ -44,7 +44,7 @@ sparse matrix factorizations, and solves.
 Problems are solved with `solve`:
 
 ```julia
-problem = ConScape.Problem(measures; movement)
+problem = ConScapeProblem(measures; movement)
 rast = RasterStack((source_qualities=qualpath, affinities=affinitypath))
 result = solve(problem, rast)
 ```
@@ -67,7 +67,7 @@ solve(singleinit)
 solve(targetinit) 
 ```
 """
-@kwdef struct Problem{MM<:MovementMode,M,S<:Solver,G,CF,LF,N,NW} <: AbstractProblem
+@kwdef struct ConScapeProblem{MM<:MovementMode,M,S<:Solver,G,CF,LF,N,NW} <: AbstractProblem
     movement::MM = RandomisedShortestPath()
     measures::M = (;)
     solver::S = VectorSolver()
@@ -89,28 +89,28 @@ solve(targetinit)
         return new{MM,typeof(m1),S,G,CF,LF,N,NW}(movement, m1, solver, grain, costfunction, likelyhoodfunction, neighbors, transition_weight)
     end
 end
-Problem(measure::Measure; kw...) = Problem(; measures=(measure,), kw...)
-Problem(measures::Union{Tuple,NamedTuple}; kw...) = Problem(; measures, kw...)
+ConScapeProblem(measure::Measure; kw...) = ConScapeProblem(; measures=(measure,), kw...)
+ConScapeProblem(measures::Union{Tuple,NamedTuple}; kw...) = ConScapeProblem(; measures, kw...)
 
-# function Base.show(io, mime, p::Problem; indent="")
-    # println(io, typeof(p).name.wrapper)
-    # println(io, indent, "measures:             ", p.measures)
-    # println(io, indent, "movement:        ", p.movement)
-    # println(io, indent, "costs:                ", p.costs)
-    # println(io, indent, "solver:               ", p.solver)
-    # println(io, indent, "diagvalue:            ", typeof(p.diagvalue))
-    # println(io, indent, "prune:                ", p.prune)
-# end
+function Base.show(io, mime, p::ConScapeProblem; indent="")
+    println(io, typeof(p).name.wrapper)
+    println(io, indent, "measures:             ", p.measures)
+    println(io, indent, "movement:        ", p.movement)
+    println(io, indent, "costs:                ", p.costs)
+    println(io, indent, "solver:               ", p.solver)
+    println(io, indent, "diagvalue:            ", typeof(p.diagvalue))
+    println(io, indent, "prune:                ", p.prune)
+end
 
-movement(p::Problem) = p.movement
-measures(p::Problem) = p.measures
-solver(p::Problem) = p.solver
-grain(p::Problem) = p.grain
-costfunction(p::Problem) = p.costfunction
-likelihoodfunction(p::Problem) = p.likelyhoodfunction
-neighbors(p::Problem) = p.neighbors
-transition_weight(p::Problem) = p.transition_weight
-proximity_measure(p::Problem) = proximity_measure(movement(p))
-distance_transformation(p::Problem) = distance_transformation(movement(p))
-diagvalue(p::Problem) = diagvalue(movement(p))
-theta(p::Problem) = theta(movement(p))
+movement(p::ConScapeProblem) = p.movement
+measures(p::ConScapeProblem) = p.measures
+solver(p::ConScapeProblem) = p.solver
+grain(p::ConScapeProblem) = p.grain
+costfunction(p::ConScapeProblem) = p.costfunction
+likelihoodfunction(p::ConScapeProblem) = p.likelyhoodfunction
+neighbors(p::ConScapeProblem) = p.neighbors
+transition_weight(p::ConScapeProblem) = p.transition_weight
+proximity_measure(p::ConScapeProblem) = proximity_measure(movement(p))
+distance_transformation(p::ConScapeProblem) = distance_transformation(movement(p))
+diagvalue(p::ConScapeProblem) = diagvalue(movement(p))
+theta(p::ConScapeProblem) = theta(movement(p))

@@ -27,7 +27,7 @@ struct GridGraphLevel <: Level end
 # allocate_output
 #
 # Preallocate the output for a measure, depending on the output level and returntrait.
-allocate_output(l::Level, problem::Problem, args...) = allocate_output(l, measures(problem), problem, args...)
+allocate_output(l::Level, problem::ConScapeProblem, args...) = allocate_output(l, measures(problem), problem, args...)
 allocate_output(l::Level, measures::Union{Tuple,NamedTuple}, args...) = 
     map(m -> allocate_output(l, m, args...), measures)
 # By default allocate output based on the return trait
@@ -35,27 +35,27 @@ allocate_output(l::Level, m::Measure, ggi::GridGraphInit) = allocate_output(l, m
 allocate_output(l::Level, m::Measure, cgi::ConnectedGraphInit) = allocate_output(l, m, problem(cgi), gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
 allocate_output(l::Level, m::Measure, args...) = allocate_output(l, returntrait(m), args...)
 
-allocate_output(l::Union{ConnectedGraphLevel,TargetLevel}, ::ReturnScalarSum, ::Problem, ::GridGraph, ::ConnectedGraph, precalculation) = l => Ref(0.0)
-allocate_output(l::GridGraphLevel, rt::ReturnScalarSum, ::Problem, ::GridGraph, connectedgraphs::Vector) = GridGraphLevel() => zeros(Float64, length(connectedgraphs))
+allocate_output(l::Union{ConnectedGraphLevel,TargetLevel}, ::ReturnScalarSum, ::ConScapeProblem, ::GridGraph, ::ConnectedGraph, precalculation) = l => Ref(0.0)
+allocate_output(l::GridGraphLevel, rt::ReturnScalarSum, ::ConScapeProblem, ::GridGraph, connectedgraphs::Vector) = GridGraphLevel() => zeros(Float64, length(connectedgraphs))
 
-function allocate_output(l::Union{ConnectedGraphLevel,TargetLevel}, ::ReturnDenseSpatial, ::Problem, gridgraph::GridGraph, connectedgraph::ConnectedGraph, precalculation)
+function allocate_output(l::Union{ConnectedGraphLevel,TargetLevel}, ::ReturnDenseSpatial, ::ConScapeProblem, gridgraph::GridGraph, connectedgraph::ConnectedGraph, precalculation)
     A = fill(NaN, size(gridgraph))
     # Initialise pixels in the connected subgraph
     A[sourceids(connectedgraph)] .= 0.0
     return l => A
 end
 # We need to zero out all connected subgraphs
-function allocate_output(l::GridGraphLevel, rt::ReturnDenseSpatial, ::Problem, gridgraph::GridGraph, connectedgraphs::Vector)
+function allocate_output(l::GridGraphLevel, rt::ReturnDenseSpatial, ::ConScapeProblem, gridgraph::GridGraph, connectedgraphs::Vector)
     A = fill(NaN, size(gridgraph))
     return l => A
 end
 # We need to use output size specific to Level
-allocate_output(l::GridGraphLevel, rt::ReturnSparseGraph, ::Problem, gridgraph::GridGraph, connectedgraphs::Vector) = 
+allocate_output(l::GridGraphLevel, rt::ReturnSparseGraph, ::ConScapeProblem, gridgraph::GridGraph, connectedgraphs::Vector) = 
     l => spzeros(Float64, gridgraph_size(gridgraph))
 # Use a zeroed out W matrix so the indices match
-allocate_output(l::ConnectedGraphLevel, ::ReturnSparseGraph, ::Problem, ::GridGraph, connectedgraph::ConnectedGraph, precalculation) = 
+allocate_output(l::ConnectedGraphLevel, ::ReturnSparseGraph, ::ConScapeProblem, ::GridGraph, connectedgraph::ConnectedGraph, precalculation) = 
     l => spzeros(Float64, connectedgraph_size(connectedgraph))
-function allocate_output(l::TargetLevel, ::ReturnSparseGraph, ::Problem, gridgraph::GridGraph, ::ConnectedGraph, precalculation)
+function allocate_output(l::TargetLevel, ::ReturnSparseGraph, ::ConScapeProblem, gridgraph::GridGraph, ::ConnectedGraph, precalculation)
     A = fill(NaN, size(gridgraph))
     return l => A
 end

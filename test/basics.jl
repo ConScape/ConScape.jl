@@ -179,7 +179,7 @@ end
         pmp=PowerMeanProximity(),
     )
      
-    problem = ConScape.Problem(;
+    problem = ConScapeProblem(;
         measures,
         movement=RandomisedShortestPath(ExpectedCost(); theta=2.0),
     )
@@ -328,7 +328,7 @@ end
         )
 
         h_c = init(RandomisedShortestPath(; theta=0.2), grid)
-        @test h_c isa ConScape.MultiGridInitialisation{<:ConScape.Problem{<:RandomisedShortestPath}}
+        @test h_c isa ConScape.MultiGridInitialisation{<:ConScapeProblem{<:RandomisedShortestPath}}
     end
 
     affinities[1,2] = 1.1 # Causes negative cost for C[1,2] when costs=MinusLog

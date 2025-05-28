@@ -25,14 +25,14 @@ movement = RandomisedShortestPath(ExpectedCost();
 )
 
 solver = ConScape.VectorSolver()
-problem = ConScape.Problem(; measures, movement, solver);
+problem = ConScapeProblem(; measures, movement, solver);
 solve(problem, rast; verbose=true)
 
 @testset "window shape" begin
-    circle_windowed_problem = ConScape.WindowedProblem(problem; 
+    circle_windowed_problem = WindowedProblem(problem; 
         buffer=10, centersize=5, threaded=true, test_windows=true, shape=:circle
     )
-    square_windowed_problem = ConScape.WindowedProblem(problem; 
+    square_windowed_problem = WindowedProblem(problem; 
         buffer=10, centersize=5, threaded=true, test_windows=true, shape=:square
     )
     wi = init(circle_windowed_problem, rast)
@@ -48,7 +48,7 @@ solve(problem, rast; verbose=true)
 end
 
 @testset "target mosaicing matches original" begin
-    windowed_problem = ConScape.WindowedProblem(problem; 
+    windowed_problem = WindowedProblem(problem; 
         buffer=10, centersize=5, threaded=true, test_windows=true
     )
     @test collect(ConScape.window_ranges(windowed_problem, rast)) == [
@@ -94,7 +94,7 @@ end
     # Use a higher alpha to catch differences
     distance_transformation = x -> exp(-x / 50)
     movement = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
-    problem = ConScape.Problem(; measures, movement, solver);
+    problem = ConScapeProblem(; measures, movement, solver);
 
     kw = (; buffer=10, centersize=5)
     windowed_problem = WindowedProblem(problem; kw...)
@@ -120,7 +120,7 @@ end
 
     # BatchProblem can be run as batch jobs for clusters
     # We just need a new path to make sure the result is from a new run
-    batch_jobs_problem = ConScape.BatchProblem(problem; 
+    batch_jobs_problem = BatchProblem(problem; 
         datapath=tempname(), kw...
     )
     assessment = ConScape.assess(batch_jobs_problem, rast)
@@ -133,7 +133,7 @@ end
     end
     batch_jobs_result = mosaic(batch_jobs_problem, rast)
 
-    batch_jobs_init_problem = ConScape.BatchProblem(problem; datapath=tempname(), kw...)
+    batch_jobs_init_problem = BatchProblem(problem; datapath=tempname(), kw...)
     assessment = ConScape.assess(batch_jobs_init_problem, rast)
     for job in 1:assessment.njobs
         batch_jobs_init = init(batch_jobs_init_problem, rast, assessment; verbose=true)

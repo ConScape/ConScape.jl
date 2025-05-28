@@ -1,5 +1,5 @@
 # This file is a work in progress...
-abstract type AbstractWindowedProblem{P} <: AbstractProblem end
+abstract type AbstractWindowedProblem{P<:AbstractProblem} <: AbstractProblem end
 
 buffer(p::AbstractWindowedProblem) = p.buffer
 buffer(p::AbstractProblem) = 0
@@ -18,7 +18,7 @@ to be run over windowed grids.
 
 ## Arguments
 
-`problem`: A [`Problem`](@ref) object.
+`problem`: A [`ConScapeProblem`](@ref) object.
 
 ## Keywords
 
@@ -196,18 +196,18 @@ end
 """
     BatchProblem(problem::AbstractProblem; buffer, centersize, path, ext)
 
-Split a large `Problem` into windowed batches, similar to `WindowedProblem`,
+Split a large `ConScapeProblem` into windowed batches, similar to `WindowedProblem`,
 but allow launching individual batches separately with a batch id, and stores
 them to separate files when finished, rather than returning the finished job.   
 
 `BatchProblem` is useful when compute times are long and intermediate storage is needed,
 and is designed for use with SLURM and similar computate clusters.
 
-`problem` can be a [`Problem`](@ref) object or a `WindowedProblem` for nested operations.
-Deciding to use a Problem or NestedProblem will depend on the tradeoffs of loading and 
+`problem` can be a [`ConScapeProblem`](@ref) object or a `WindowedProblem` for nested operations.
+Deciding to use a ConScapeProblem or NestedProblem will depend on the tradeoffs of loading and 
 saving raster data for each window area. This may be relatively expensive if the batch windows are
 not very large. Due to the ON^2 scaling of connectivity calculations large batches will also 
-become expensive using `Problem` directly.
+become expensive using `ConScapeProblem` directly.
 
 If `problem` is a `WindowedProblem` IO overheads should be negligible in
 comparison to the workload of running `solve` for all windows in a batch.
@@ -277,7 +277,7 @@ mosaic(batch_problem; to=rast, filename="dest_filename.tif")
     datapath::String
     ext::String = ".tif"
 end
-function BatchProblem(problem::Problem;
+function BatchProblem(problem::ConScapeProblem;
     centersize::Union{Int,Tuple{Int,Int}}, kw...
 )
     centersize = centersize isa Tuple{Int,Int} ? centersize : (centersize, centersize)
@@ -369,7 +369,7 @@ function init(bi::BatchInit{<:BatchProblem{<:WindowedProblem}}, i::Int; verbose=
     return init(problem(problem(bi)), rast; verbose, indices, sparse_sizes)
 end
 # Or to GridInit for Problem
-function init(bi::BatchInit{<:BatchProblem{<:Problem}}, i::Int; verbose=false, kw...)
+function init(bi::BatchInit{<:BatchProblem{<:ConScapeProblem}}, i::Int; verbose=false, kw...)
     ranges = bi.batch_ranges[bi.batch_indices[i]]
     problem_rast = _get_window_with_zeroed_buffer(bi, ranges)
     return init(problem(problem(bi)), problem_rast; verbose)

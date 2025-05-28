@@ -52,7 +52,7 @@ Base.size(a::ProblemAssessment) = a.size
     WindowAssessment <: ProblemAssessment
 
 Assessment of an AbstractWindowedProblem that holds
-a `Problem`.
+a `ConScapeProblem`.
 
 # Fields
 - `size::Tuple{Int,Int}`: the size of the input and output RasterStack
@@ -120,7 +120,7 @@ This can be used to indicate memory and time reequiremtents on a cluster.
 """
 function assess end
 
-function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack; 
+function assess(p::AbstractWindowedProblem{<:ConScapeProblem}, rast::AbstractRasterStack; 
     inner_target_bools=nothing,
     target_ranges=_target_ranges(p, rast),
     kw...
@@ -251,9 +251,9 @@ solve(p::BatchProblem, rast::RasterStack, a::ProblemAssessment, i::Int; kw...) =
    
 init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack, a::NestedAssessment, i::Int...; kw...) =
     init(p, rast, i...; _assessment_keywords(p, rast, a)..., kw...)
-init(p::BatchProblem{<:Problem}, rast::RasterStack, a::WindowAssessment, i::Int...; kw...) =
+init(p::BatchProblem{<:ConScapeProblem}, rast::RasterStack, a::WindowAssessment, i::Int...; kw...) =
     init(p, rast, i...; batch_indices=a.indices)
-init(p::WindowedProblem{<:Problem}, rast::RasterStack, a::WindowAssessment; kw...) =
+init(p::WindowedProblem{<:ConScapeProblem}, rast::RasterStack, a::WindowAssessment; kw...) =
     init(p, rast; sparse_sizes=a.sparse_sizes, indices=a.indices, kw...)
 
 # Keywords to pass from an Assessment to `init` or `solve`

@@ -42,7 +42,7 @@ To construct a `GridGraphInit` :
 ggi = init(problem, rast)
 ```
 
-To solve measures in the `Problem`:
+To solve measures in the `ConScapeProblem`:
 
 ```julia
 results = solve(ggi)
@@ -55,7 +55,7 @@ ec = solve(ExpectedCost(), ggi)
 ec, ch = solve((ExpectedCost(), ConnectedHabitat()), ggi)
 ```
 """
-struct GridGraphInit{P<:Problem,G<:GridGraph,SG<:ConnectedGraph,W<:AbstractVector,S<:Dict,O} <: Initialisation
+struct GridGraphInit{P<:ConScapeProblem,G<:GridGraph,SG<:ConnectedGraph,W<:AbstractVector,S<:Dict,O} <: Initialisation
     problem::P
     gridgraph::G
     connectedgraphs::Vector{SG}
@@ -63,9 +63,9 @@ struct GridGraphInit{P<:Problem,G<:GridGraph,SG<:ConnectedGraph,W<:AbstractVecto
     storage::S
     outputs::O
 end
-GridGraphInit(problem::Problem, rast::RasterStack; kw...) =
+GridGraphInit(problem::ConScapeProblem, rast::RasterStack; kw...) =
     GridGraphInit(problem, GridGraph(problem, rast); kw...)
-function GridGraphInit(problem::Problem, gridgraph::GridGraph; 
+function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph; 
     workspaces=nothing, 
     verbose=false, 
     outputlevel=GridGraphLevel(), 
@@ -133,7 +133,7 @@ probleminit = init(problem, rast)
 si = init(probleminit, 1)
 ````
 
-To solve measures in the `Problem` for this connectedgraph:
+To solve measures in the `ConScapeProblem` for this connectedgraph:
 
 ```julia
 results = solve(si)
@@ -146,7 +146,7 @@ ec = solve(ExpectedCost(), si)
 ec, ch = solve((ExpectedCost(), ConnectedHabitat()), si)
 ```
 """
-struct ConnectedGraphInit{MM,P<:Problem{MM},GG<:GridGraph,SG<:ConnectedGraph,O<:Union{Nothing,NamedTuple,Tuple},W<:AbstractArray,S<:Dict,Pr} <: Initialisation
+struct ConnectedGraphInit{MM,P<:ConScapeProblem{MM},GG<:GridGraph,SG<:ConnectedGraph,O<:Union{Nothing,NamedTuple,Tuple},W<:AbstractArray,S<:Dict,Pr} <: Initialisation
     problem::P
     gridgraph::GG
     connectedgraph::SG
@@ -162,7 +162,7 @@ struct ConnectedGraphInit{MM,P<:Problem{MM},GG<:GridGraph,SG<:ConnectedGraph,O<:
 
     function ConnectedGraphInit(
         problem::P, gridgraph::GG, connectedgraph::SG, outputs::O, workspaces::Workspaces{W}, storage::S, precalculation::Pr, id::Int
-    ) where {P<:Problem{MM},GG,SG,O,W,S,Pr} where MM
+    ) where {P<:ConScapeProblem{MM},GG,SG,O,W,S,Pr} where MM
         @assert length(workspaces) == nsources(connectedgraph)
         empty!(storage)
         free!(workspaces)
@@ -222,7 +222,7 @@ on demand in `getproperty` (e.g. `tp.Z`) and stored for subsequent requests.
 These variables use preallocated [`Workspaces`](@ref) to avoid allocations.
 
 Variables from the parent `ConnectedGraphInit` can also be accessed with
-`getpropery`, e.g. `tp.W` returns a sparse matrix calculated for all targets.
+`getproperty`, e.g. `tp.W` returns a sparse matrix calculated for all targets.
 
 Stores outputs and lazily calculated variables for use in `RandomisedShortestPath`-based measures.
 
@@ -251,7 +251,7 @@ target_idx = 7
 ti = init(connectedgraphinit, target_idx)
 ````
 
-To solve measures in the `Problem` for this target:
+To solve measures in the `ConScapeProblem` for this target:
 
 ```julia
 results = solve(ti)
@@ -323,7 +323,7 @@ precalculation(i::TargetInit) = precalculation(connectedgraphinit(i))
     return get_or_compute!(ti, x)
 end
 
-function connectedgraph_precalculation(problem::Problem{<:RSP}, graph::ConnectedGraph)
+function connectedgraph_precalculation(problem::ConScapeProblem{<:RSP}, graph::ConnectedGraph)
     _check_inputs(problem, graph)
     P, A_rowsums = _transitionprobability(transitionlikelihood(graph)::AbstractMatrix)
     W = _substochasticmatrix(movement(problem), P, transitioncost(graph)::AbstractMatrix)
@@ -344,7 +344,7 @@ function connectedgraph_precalculation(problem::Problem{<:RSP}, graph::Connected
 
     return (; P, W, IW, IW_adj, CW, IW_factorization, IW_adj_factorization, Aⁱ, A_rowsums)
 end
-function connectedgraph_precalculation(p::Problem{<:LCP}, graph::ConnectedGraph)
+function connectedgraph_precalculation(p::ConScapeProblem{<:LCP}, graph::ConnectedGraph)
     _check_inputs(p, graph)
     P, L_rowsums = _transitionprobability(transitionlikelihood(graph)::AbstractMatrix)
     # TODO: use a raster based shortest path algorithm from Geomorphometry.jl
@@ -356,7 +356,7 @@ function connectedgraph_precalculation(p::Problem{<:LCP}, graph::ConnectedGraph)
     path_allocs = Vector{eltype(parents)}[Vector{eltype(parents)}() for _ in 1:length(parents)]
     (; P, L_rowsums, cost_weighted_digraph, path_allocs)
 end
-function connectedgraph_precalculation(problem::Problem{<:RandomWalk}, graph::ConnectedGraph)
+function connectedgraph_precalculation(problem::ConScapeProblem{<:RandomWalk}, graph::ConnectedGraph)
     _check_inputs(problem, graph)
     P, L_rowsums = _transitionprobability(transitionlikelihood(graph)::AbstractMatrix)
     Lⁱ = mapnz(inv, transitionlikelihood(graph)::AbstractMatrix)
@@ -366,7 +366,7 @@ function connectedgraph_precalculation(problem::Problem{<:RandomWalk}, graph::Co
     IP_factorization = init(solver(problem), IP)
     return (; Lⁱ, L_rowsums, P, PC, PC_rowsums, IP, IP_factorization)
 end
-function connectedgraph_precalculation(::Problem{<:Euclidean}, ::ConnectedGraph)
+function connectedgraph_precalculation(::ConScapeProblem{<:Euclidean}, ::ConnectedGraph)
     (;)
 end
 
@@ -412,31 +412,31 @@ end
 init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation, args...; kw...) = 
     init(init(m, i), args...; kw...)
 init(movement::MovementMode, x::Union{RasterStack,GridGraph}, args...; kw...) = 
-    init(Problem(; movement, kw...), x, args...)
+    init(ConScapeProblem(; movement, kw...), x, args...)
 init(measure::Union{Measure,MeasureTuple,MeasureNamedTuple}, 
     movement::MovementMode, 
     x::Union{RasterStack,GridGraph}, 
     args...; 
     kw...
-) = init(Problem(measure; movement, kw...), x, args...)
-init(problem::Problem, x::Union{RasterStack,GridGraph}; kw...) = 
+) = init(ConScapeProblem(measure; movement, kw...), x, args...)
+init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}; kw...) = 
     GridGraphInit(problem, x; kw...)
-init(problem::Problem, x::Union{RasterStack,GridGraph}, connectedgraph::Int; outputlevel=ConnectedGraphLevel(), kw...) = 
+init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}, connectedgraph::Int; outputlevel=ConnectedGraphLevel(), kw...) = 
     init(GridGraphInit(problem, x; outputlevel, kw...), connectedgraph; outputlevel)
 # We don't want to allocate outputs if we work at the target level
-init(problem::Problem, x::Union{RasterStack,GridGraph}, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
+init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
     init(GridGraphInit(problem, x; outputs=nothing, kw...), connectedgraph, target; outputlevel=TargetLevel())
 init(ggi::GridGraphInit, connectedgraph::Int; kw...) = ConnectedGraphInit(ggi, connectedgraph; kw...)
 init(ggi::GridGraphInit, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
     init(ConnectedGraphInit(ggi, connectedgraph; kw...), target)
 init(gi::ConnectedGraphInit, target::Union{Int,CartesianIndex,TargetID}) = TargetInit(gi, target)
-init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::Problem, args...; kw...) =
+init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::ConScapeProblem, args...; kw...) =
     init(setmeasures(p, m), args...; kw...)
 init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation; outputlevel=defaultoutputlevel(i)) =
     setmeasures(i, m; outputlevel)
 
-setmeasures(p::Problem, m::Measure) = setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
-setmeasures(p::Problem, measures::Union{MeasureTuple,MeasureNamedTuple}) = 
+setmeasures(p::ConScapeProblem, m::Measure) = setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
+setmeasures(p::ConScapeProblem, measures::Union{MeasureTuple,MeasureNamedTuple}) = 
     ConstructionBase.setproperties(p, (; measures))
 function setmeasures(i::Union{GridGraphInit,ConnectedGraphInit}, m; outputlevel)
     problem = setmeasures(ConScape.problem(i), m)
