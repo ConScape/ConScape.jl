@@ -55,7 +55,7 @@ end
         W
     elseif x === :CW
         (; W) = ti
-        CW = transitioncost(ti)::AbstractMatrix .* W
+        CW = stepcost(ti)::AbstractMatrix .* W
     elseif x === :K
         _proximitymatrix(ti)
     elseif x === :M
@@ -554,7 +554,7 @@ end
 function finalize_output!(output::NamedTuple, ::PowerMeanProximity, m::SensitivityAnalysis{<:Permeability}, sgi::ConnectedGraphInit)
     (; bet_edge_k, bet_node_k, result, resultrows) = output
     (; A_rowsums, Aⁱ) = precalculation(sgi)
-    A = transitionlikelihood(sgi)
+    A = steplikelihood(sgi)
     foreachnz(Aⁱ) do i, j, n 
         S_cost = bet_edge_k[2].nzval[n]
         S_likelihood = bet_edge_k[2].nzval[n] * Aⁱ.nzval[n] - bet_node_k[2][j] / A_rowsums[j] * A.nzval[n] * theta(sgi)
@@ -573,19 +573,19 @@ _combine_sensitivity(::Likelihood, S_e_likelihood, S_e_cost, ti, n) = S_e_likeli
 _combine_sensitivity(::Cost, S_e_likelihood, S_e_cost, ti, n) = S_e_cost
 function _combine_sensitivity(::CostToLikelihood, S_e_likelihood, S_e_cost, ti, n)
     f = _diff_CA(costfunction(ti))
-    C = transitioncost(ti)
+    C = stepcost(ti)
     S_e_likelihood + S_e_cost * f(C.nzval[n])
 end
 function _combine_sensitivity(::LikelihoodToCost, S_e_likelihood, S_e_cost, ti, n)
     f = _diff_AC(costfunction(ti))
-    L = transitionlikelihood(ti)
+    L = steplikelihood(ti)
     S_e_cost + S_e_likelihood * f(L.nzval[n])
 end
 
 _maybe_scale(a, ::Elasticity, ::Union{Likelihood,LikelihoodToCost}, ti, n) =
-    a * transitionlikelihood(ti).nzval[n]
+    a * steplikelihood(ti).nzval[n]
 _maybe_scale(a, ::Elasticity, ::Union{Cost,CostToLikelihood}, ti, n) =
-    a * transitioncost(ti).nzval[n]
+    a * stepcost(ti).nzval[n]
 _maybe_scale(a, ::Sensitivity, ::Permeability, ti, n) = a
 
 _diff_CA(::MinusLog) = x -> -inv(x)

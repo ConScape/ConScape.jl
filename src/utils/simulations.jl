@@ -10,8 +10,8 @@ function permeable_wall_sim(nrows::Int, ncols::Int;
     kw...
 )
     # 1. initialize landscape
-    transitionlikelihood = _generate_likelihood(nrows, ncols, nhood_size) .* scaling
-    gridgraph = GridGraph(; transitionlikelihood, kw...)
+    steplikelihood = _generate_likelihood(nrows, ncols, nhood_size) .* scaling
+    gridgraph = GridGraph(; steplikelihood, kw...)
 
     # # 2. compute the wall
     wpt = round(Int, ncols * wallposition - wallwidth/2 + 1)
@@ -64,22 +64,22 @@ function _set_impossible_nodes(g::GridGraph, node_list::Vector{CartesianIndex{2}
     node_list_idx = [findfirst(isequal(n), sourceids(g))::Int for n in node_list]
 
     # Copy affinities and qualities for modification
-    transitionlikelihood = copy(g.transitionlikelihood)
+    steplikelihood = copy(g.steplikelihood)
     sourcequality = copy(g.sourcequality)
     targetquality = copy(g.targetquality)
 
     # Set (nonzero) values to impossible_affinity:
     # affinitymatrix
     # FIXME! Row slicing of a sparse matrix is really inefficient
-    transitionlikelihood[node_list_idx, :] = impossible_affinity .* (transitionlikelihood[node_list_idx, :] .> 0)
-    transitionlikelihood[:, node_list_idx] = impossible_affinity .* (transitionlikelihood[:, node_list_idx] .> 0)
+    steplikelihood[node_list_idx, :] = impossible_affinity .* (steplikelihood[node_list_idx, :] .> 0)
+    steplikelihood[:, node_list_idx] = impossible_affinity .* (steplikelihood[:, node_list_idx] .> 0)
 
-    dropzeros!(transitionlikelihood)
+    dropzeros!(steplikelihood)
 
     # Qualities
     sourcequality[node_list] .= 0
     targetquality[node_list] .= 0
 
     # Generate a new Grid based on the modified affinitymatrix
-    return GridGraph(; transitionlikelihood, transitioncost=g.transitioncost, sourcequality, targetquality)
+    return GridGraph(; steplikelihood, stepcost=g.stepcost, sourcequality, targetquality)
 end

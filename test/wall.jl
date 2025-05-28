@@ -10,7 +10,7 @@ using ConScape, Test, SparseArrays
 
     @testset "Grid fields" begin
         @test size(g) == (30, 60)
-        @test g.transitionlikelihood[1000:1002, 1000:1002] == [
+        @test g.steplikelihood[1000:1002, 1000:1002] == [
             0.0 0.5 0.0
             0.5 0.0 0.5
             0.0 0.5 0.0]
@@ -45,7 +45,7 @@ using ConScape, Test, SparseArrays
 
     @testset "init fields" begin
         targetinit = init(init(problem, g), 1, 100)
-        @test ConScape.transitioncost(targetinit).nzval[end-2:end] ≈ [
+        @test ConScape.stepcost(targetinit).nzval[end-2:end] ≈ [
             1.039720770839918
             0.6931471805599453
             0.6931471805599453]

@@ -97,21 +97,21 @@ workspaces(ggi::GridGraphInit) = ggi.workspaces
 outputs(ggi::GridGraphInit) = ggi.outputs
 storage(ggi::GridGraphInit) = ggi.storage
 nconnectedgraphs(ggi::GridGraphInit) = length(connectedgraphs(ggi))
-transitioncost(p::GridGraphInit) = transitioncost(gridgraph(p))
-transitionlikelihood(p::GridGraphInit) = transitionlikelihood(gridgraph(p))
+stepcost(p::GridGraphInit) = stepcost(gridgraph(p))
+steplikelihood(p::GridGraphInit) = steplikelihood(gridgraph(p))
 sourcequality(p::GridGraphInit) = sourcequality(gridgraph(p))
 targetquality(p::GridGraphInit) = targetquality(gridgraph(p))
 
 _check_inputs(x, init) = _check_inputs(movement(x), init)
 function _check_inputs(::RSP, g)
-    isnothing(transitioncost(g)) && throw(ArgumentError("GridGraph has no transitioncost for RSP"))
-    isnothing(transitionlikelihood(g)) && throw(ArgumentError("GridGraph has no transitionlikelihood for RSP"))
+    isnothing(stepcost(g)) && throw(ArgumentError("GridGraph has no stepcost for RSP"))
+    isnothing(steplikelihood(g)) && throw(ArgumentError("GridGraph has no steplikelihood for RSP"))
 end
 function _check_inputs(::LCP, g)
-    isnothing(transitioncost(g)) && throw(ArgumentError("GridGraph has no transitioncost for LCP"))
+    isnothing(stepcost(g)) && throw(ArgumentError("GridGraph has no stepcost for LCP"))
 end
 function _check_inputs(::RandomWalk, g)
-    isnothing(transitionlikelihood(g)) && throw(ArgumentError("GridGraph has no transitionlikelihood for LCP"))
+    isnothing(steplikelihood(g)) && throw(ArgumentError("GridGraph has no steplikelihood for LCP"))
 end
 _check_inputs(::Euclidean, g) = nothing
 
@@ -197,8 +197,8 @@ connectedgraphid(sgi::ConnectedGraphInit) = sgi.connectedgraphid
 nsources(sgi::ConnectedGraphInit) = nsources(connectedgraph(sgi))
 ntargets(sgi::ConnectedGraphInit) = ntargets(connectedgraph(sgi))
 
-transitioncost(sgi::ConnectedGraphInit) = transitioncost(connectedgraph(sgi))
-transitionlikelihood(sgi::ConnectedGraphInit) = transitionlikelihood(connectedgraph(sgi))
+stepcost(sgi::ConnectedGraphInit) = stepcost(connectedgraph(sgi))
+steplikelihood(sgi::ConnectedGraphInit) = steplikelihood(connectedgraph(sgi))
 sourcequality(sgi::ConnectedGraphInit) = sourcequality(connectedgraph(sgi))
 targetquality(sgi::ConnectedGraphInit) = targetquality(connectedgraph(sgi))
 sourceids(sgi::ConnectedGraphInit) = sourceids(connectedgraph(sgi))
@@ -290,8 +290,8 @@ connectedgraph(ti::TargetInit) = connectedgraph(connectedgraphinit(ti))
 problem(ti::TargetInit) = problem(connectedgraphinit(ti))
 storage(ti::TargetInit) = storage(connectedgraphinit(ti))
 workspaces(ti::TargetInit) = workspaces(connectedgraphinit(ti))
-transitioncost(p::TargetInit) = transitioncost(connectedgraph(p))
-transitionlikelihood(p::TargetInit) = transitionlikelihood(connectedgraph(p))
+stepcost(p::TargetInit) = stepcost(connectedgraph(p))
+steplikelihood(p::TargetInit) = steplikelihood(connectedgraph(p))
 sourcequality(p::TargetInit) = sourcequality(connectedgraph(p))
 targetquality(p::TargetInit) = targetquality(connectedgraph(p))
 sourceids(p::TargetInit) = sourceids(connectedgraph(p))
@@ -312,9 +312,9 @@ precalculation(i::TargetInit) = precalculation(connectedgraphinit(i))
     elseif x === :qˢ
         return sourcequality(ti)
     elseif x === :A
-        return transitionlikelihood(ti)
+        return steplikelihood(ti)
     elseif x === :C
-        return transitioncost(ti)
+        return stepcost(ti)
     elseif hasproperty(connectedgraphinit(ti).precalculation, x)
         return Base.getproperty(connectedgraphinit(ti).precalculation, x)
     end
@@ -325,11 +325,11 @@ end
 
 function connectedgraph_precalculation(problem::ConScapeProblem{<:RSP}, graph::ConnectedGraph)
     _check_inputs(problem, graph)
-    P, A_rowsums = _transitionprobability(transitionlikelihood(graph)::AbstractMatrix)
-    W = _substochasticmatrix(movement(problem), P, transitioncost(graph)::AbstractMatrix)
+    P, A_rowsums = _transitionprobability(steplikelihood(graph)::AbstractMatrix)
+    W = _substochasticmatrix(movement(problem), P, stepcost(graph)::AbstractMatrix)
     IW = I - W
     IW_factorization = init(solver(problem), IW)
-    Aⁱ = mapnz(inv, transitionlikelihood(graph)::AbstractMatrix)
+    Aⁱ = mapnz(inv, steplikelihood(graph)::AbstractMatrix)
     if solver(problem) isa VectorSolver
         IW_adj = IW'
         # Use adjoint factorization of A rather than recalculating for A'
@@ -340,17 +340,17 @@ function connectedgraph_precalculation(problem::ConScapeProblem{<:RSP}, graph::C
         IW_adj = sparse(IW')
         IW_adj_factorization = init(solver(problem), IW_adj)
     end
-    CW = transitioncost(graph) .* W
+    CW = stepcost(graph) .* W
 
     return (; P, W, IW, IW_adj, CW, IW_factorization, IW_adj_factorization, Aⁱ, A_rowsums)
 end
 function connectedgraph_precalculation(p::ConScapeProblem{<:LCP}, graph::ConnectedGraph)
     _check_inputs(p, graph)
-    P, L_rowsums = _transitionprobability(transitionlikelihood(graph)::AbstractMatrix)
+    P, L_rowsums = _transitionprobability(steplikelihood(graph)::AbstractMatrix)
     # TODO: use a raster based shortest path algorithm from Geomorphometry.jl
     # disjkstra is especially slow due to allocations,
     # searchsorted for index lookups, and Dict getindex/setindex!.
-    cost_weighted_digraph = SimpleWeightedDiGraph(transitioncost(graph)::AbstractMatrix)
+    cost_weighted_digraph = SimpleWeightedDiGraph(stepcost(graph)::AbstractMatrix)
     dsp1 = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, 1)
     parents = dsp1.parents
     path_allocs = Vector{eltype(parents)}[Vector{eltype(parents)}() for _ in 1:length(parents)]
@@ -358,9 +358,9 @@ function connectedgraph_precalculation(p::ConScapeProblem{<:LCP}, graph::Connect
 end
 function connectedgraph_precalculation(problem::ConScapeProblem{<:RandomWalk}, graph::ConnectedGraph)
     _check_inputs(problem, graph)
-    P, L_rowsums = _transitionprobability(transitionlikelihood(graph)::AbstractMatrix)
-    Lⁱ = mapnz(inv, transitionlikelihood(graph)::AbstractMatrix)
-    PC = P .* transitioncost(graph)::AbstractMatrix
+    P, L_rowsums = _transitionprobability(steplikelihood(graph)::AbstractMatrix)
+    Lⁱ = mapnz(inv, steplikelihood(graph)::AbstractMatrix)
+    PC = P .* stepcost(graph)::AbstractMatrix
     PC_rowsums = sum(PC; dims=2)
     IP = I - P
     IP_factorization = init(solver(problem), IP)

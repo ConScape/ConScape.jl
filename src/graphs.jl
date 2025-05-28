@@ -1,17 +1,17 @@
 """
     GridGraph(size::Tuple{Int,Int}; kw...)
 
-Construct a `GridGraph` from an `transitionlikelihood` matrix of type `SparseMatrixCSC`. 
+Construct a `GridGraph` from an `steplikelihood` matrix of type `SparseMatrixCSC`. 
 
 # Keywords
 
-- `transitionlikelihood`: nothing
+- `steplikelihood`: nothing
 - `qualities::Matrix`: ones(nrows, ncols)
 - `source_qualities::Matrix`: qualities
 - `target_qualities::AbstractMatrix`: qualities
 - `costfunction`: `MinusLog()` by default.
-- `transitioncost`: optionally specify a sparse cost matrix. 
-    By default it is calculated from `costfunction.(transitionlikelihood)`
+- `stepcost`: optionally specify a sparse cost matrix. 
+    By default it is calculated from `costfunction.(steplikelihood)`
 - `prune`: if the likelihood and cost matrices will be pruned 
     to exclude unreachable nodes. `true` by default.
 
@@ -26,8 +26,8 @@ struct GridGraph{
     TQ<:AbstractMatrix,
     D<:Union{Tuple,Nothing}
 }
-    transitioncost::C
-    transitionlikelihood::L
+    stepcost::C
+    steplikelihood::L
     sourcequality::SQ
     targetquality::TQ
     dims::D
@@ -38,8 +38,8 @@ function GridGraph(;
     targetquality::Union{AbstractMatrix,Nothing}=nothing,
     cost=nothing,
     likelihood=nothing,
-    transitioncost=nothing,
-    transitionlikelihood=nothing,
+    stepcost=nothing,
+    steplikelihood=nothing,
     costfunction::Union{Function,Transformation,Nothing}=MinusLog(),
     likelihoodfunction::Union{Function,Transformation,Nothing}=nothing,
     grain=nothing,
@@ -57,51 +57,51 @@ function GridGraph(;
         targetquality
     end::AbstractMatrix
 
-    isnothing(transitioncost) && isnothing(transitionlikelihood) && 
+    isnothing(stepcost) && isnothing(steplikelihood) && 
         isnothing(cost) && isnothing(likelihood) && 
             throw(ArgumentError("At least one of `cost` and `likelihood` must be specified"))
     if !isnothing(likelihood) 
-        transitionlikelihood = graph_matrix_from_raster(likelihood; input_type=Likelihood(), kw...)
+        steplikelihood = graph_matrix_from_raster(likelihood; input_type=Likelihood(), kw...)
     end
     if !isnothing(cost)
-        transitioncost = graph_matrix_from_raster(cost; input_type=Cost(), kw...) 
+        stepcost = graph_matrix_from_raster(cost; input_type=Cost(), kw...) 
     end
-    if isnothing(transitionlikelihood) && !isnothing(transitioncost) && !isnothing(likelihoodfunction)
-        transitionlikelihood = mapnz(likelihoodfunction, transitioncost)
+    if isnothing(steplikelihood) && !isnothing(stepcost) && !isnothing(likelihoodfunction)
+        steplikelihood = mapnz(likelihoodfunction, stepcost)
     end
-    if isnothing(transitioncost) && !isnothing(transitionlikelihood) && !isnothing(costfunction)
-        transitioncost = mapnz(costfunction, transitionlikelihood)
+    if isnothing(stepcost) && !isnothing(steplikelihood) && !isnothing(costfunction)
+        stepcost = mapnz(costfunction, steplikelihood)
     end
 
     # This is too expensive to calculate for small target grids
     # if check
-    #     if any(t -> t < 0, nonzeros(transitioncost))
+    #     if any(t -> t < 0, nonzeros(stepcost))
     #         throw(ArgumentError("The cost graph can have only non-negative edge weights. Perhaps you should change the cost function?"))
     #     end
-    #     cost_digraph = SimpleDiGraph(transitioncost)
-    #     likelihood_digraph = SimpleDiGraph(transitionlikelihood)
+    #     cost_digraph = SimpleDiGraph(stepcost)
+    #     likelihood_digraph = SimpleDiGraph(steplikelihood)
 
     #     if ne(difference(cost_digraph, likelihood_digraph)) > 0
     #         throw(ArgumentError("cost graph contains edges not present in the likelihood graph"))
     #     end
     # end
 
-    if !isnothing(transitionlikelihood) && prod(size(sourcequality)) != (n = LinearAlgebra.checksquare(transitionlikelihood))
-        throw(ArgumentError("quality size $(length(sourcequality)) is incompatible with size of transitionlikelihood matrix ($n, $n)"))
+    if !isnothing(steplikelihood) && prod(size(sourcequality)) != (n = LinearAlgebra.checksquare(steplikelihood))
+        throw(ArgumentError("quality size $(length(sourcequality)) is incompatible with size of steplikelihood matrix ($n, $n)"))
     end
-    if !isnothing(transitioncost) && prod(size(sourcequality)) != (n = LinearAlgebra.checksquare(transitioncost))
-        throw(ArgumentError("quality size $size is incompatible with size of transitioncost matrix ($n, $n)"))
+    if !isnothing(stepcost) && prod(size(sourcequality)) != (n = LinearAlgebra.checksquare(stepcost))
+        throw(ArgumentError("quality size $size is incompatible with size of stepcost matrix ($n, $n)"))
     end
 
-    # TODO check exact indices of transitioncost and transitionlikelihood match
+    # TODO check exact indices of stepcost and steplikelihood match
 
     # Subset of source_ids with valid quality
     if !isnothing(grain)
         targetquality = coarse_graining(targetquality, grain)
     end
     return GridGraph(
-        transitioncost,
-        transitionlikelihood,
+        stepcost,
+        steplikelihood,
         _prepare_qualities(sourcequality),
         _prepare_qualities(targetquality),
         dims(sourcequality),
@@ -127,8 +127,8 @@ function GridGraph(p::AbstractProblem, rast::RasterStack; kw...)
     )
 end
 
-transitionlikelihood(g::GridGraph) = g.transitionlikelihood
-transitioncost(g::GridGraph) = g.transitioncost
+steplikelihood(g::GridGraph) = g.steplikelihood
+stepcost(g::GridGraph) = g.stepcost
 sourcequality(g::GridGraph) = g.sourcequality
 targetquality(g::GridGraph) = g.targetquality
 sourceids(g::GridGraph) = vec(CartesianIndices(sourcequality(g)))
@@ -152,16 +152,16 @@ struct ConnectedGraph{
     SI<:AbstractVector,
     TI<:AbstractVector,
 }
-    transitioncost::C
-    transitionlikelihood::L
+    stepcost::C
+    steplikelihood::L
     sourcequality::SQ
     targetquality::TQ
     sourceids::SI
     targetids::TI
 end
 
-transitioncost(cg::ConnectedGraph) = cg.transitioncost
-transitionlikelihood(cg::ConnectedGraph) = cg.transitionlikelihood
+stepcost(cg::ConnectedGraph) = cg.stepcost
+steplikelihood(cg::ConnectedGraph) = cg.steplikelihood
 sourcequality(cg::ConnectedGraph) = cg.sourcequality
 targetquality(cg::ConnectedGraph) = cg.targetquality
 sourceids(cg::ConnectedGraph) = cg.sourceids
@@ -177,7 +177,7 @@ function split_connected_graphs(g::GridGraph;
     targetids = _target_ids(targetquality(g), spatialidxs)
     # Convert cost matrix to graph, todo: is `permute=false` needed
     graph = SimpleWeightedDiGraph(
-        (isnothing(transitioncost(g)) ? transitionlikelihood(g) : transitioncost(g))::AbstractMatrix; 
+        (isnothing(stepcost(g)) ? steplikelihood(g) : stepcost(g))::AbstractMatrix; 
         permute=false
     )
 
@@ -198,17 +198,17 @@ function split_connected_graphs(g::GridGraph;
         sort!(scci)
 
         # Get permeability matrices for the subgraph 
-        transcost = if !isnothing(transitioncost(g))
-            transitioncost(g)[scci, scci]
+        transcost = if !isnothing(stepcost(g))
+            stepcost(g)[scci, scci]
         end
-        translikelihood = if !isnothing(transitionlikelihood(g))
-            transitionlikelihood(g)[scci, scci]
+        translikelihood = if !isnothing(steplikelihood(g))
+            steplikelihood(g)[scci, scci]
         end
         if isnothing(transcost) && !isnothing(costfunction)
-            transcost = mapnz(costfunction, transitionlikelihood(g))
+            transcost = mapnz(costfunction, steplikelihood(g))
         end
         if isnothing(translikelihood) && !isnothing(likelihoodfunction) 
-            translikelihood = mapnz(likelihoodfunction, transitioncost(g))
+            translikelihood = mapnz(likelihoodfunction, stepcost(g))
         end
 
         # Get new source and target ids for subgraph
@@ -296,12 +296,12 @@ false
 ```
 """
 function Graphs.is_strongly_connected(g::GridGraph)
-    isnothing(transitionlikelihood(g)) && throw(ArgumentError("GridGraph has no transitionlikelihood"))
-    Graphs.is_strongly_connected(SimpleWeightedDiGraph(transitionlikelihood(g)))
+    isnothing(steplikelihood(g)) && throw(ArgumentError("GridGraph has no steplikelihood"))
+    Graphs.is_strongly_connected(SimpleWeightedDiGraph(steplikelihood(g)))
 end
 function Graphs.is_strongly_connected(g::ConnectedGraph)
-    isnothing(transitionlikelihood(g)) && throw(ArgumentError("ConnectedGraph has no transitionlikelihood"))
-    Graphs.is_strongly_connected(SimpleWeightedDiGraph(transitionlikelihood(g)))
+    isnothing(steplikelihood(g)) && throw(ArgumentError("ConnectedGraph has no steplikelihood"))
+    Graphs.is_strongly_connected(SimpleWeightedDiGraph(steplikelihood(g)))
 end
 
 # This neighborhood ordering makes i ordered for the sparse matrix

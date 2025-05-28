@@ -109,12 +109,12 @@ end
           0   0 1/4 1/4]
 
     g1 = ConScape.GridGraph(; 
-        transitionlikelihood=graph_matrix_from_raster(l1; input_type=Likelihood()), 
+        steplikelihood=graph_matrix_from_raster(l1; input_type=Likelihood()), 
         costfunction=MinusLog(),
         quality=ones(size(l1)),
     )
     g2 = ConScape.GridGraph(; 
-        transitionlikelihood=graph_matrix_from_raster(l2; input_type=Likelihood()), 
+        steplikelihood=graph_matrix_from_raster(l2; input_type=Likelihood()), 
         costfunction=MinusLog(),
         quality=ones(size(l2))
     )
@@ -129,6 +129,6 @@ end
     @test !Graphs.is_strongly_connected(g2)
     @test Graphs.is_strongly_connected(sgs2[1])
 
-    @test sgs1[1].transitioncost == sgs1[1].transitioncost
-    @test sgs1[1].transitionlikelihood == sgs1[1].transitionlikelihood
+    @test sgs1[1].stepcost == sgs1[1].stepcost
+    @test sgs1[1].steplikelihood == sgs1[1].steplikelihood
 end

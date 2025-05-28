@@ -60,9 +60,9 @@ solver = VectorSolver()
     @test qt == ConScape.targetquality(connectedgraphinit)
     @test all(test_g.target_qualities .=== ConScape.targetquality(gridgraphinit))
     @test all(test_g.source_qualities .=== ConScape.sourcequality(gridgraphinit))
-    @test test_g.costmatrix == connectedgraph1.transitioncost == targetinit1.C
+    @test test_g.costmatrix == connectedgraph1.stepcost == targetinit1.C
     @test test_g.costmatrix .* test_grsp.W == connectedgraphinit.precalculation.CW == targetinit1.CW
-    @test test_g.affinities == connectedgraph1.transitionlikelihood
+    @test test_g.affinities == connectedgraph1.steplikelihood
     @test test_grsp.Pref == connectedgraphinit.precalculation.P == targetinit1.P
     @test test_grsp.W == connectedgraphinit.precalculation.W == targetinit1.W
     @test LinearAlgebra.I - test_grsp.W == connectedgraphinit.precalculation.IW == targetinit1.IW
