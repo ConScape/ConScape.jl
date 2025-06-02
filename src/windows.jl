@@ -538,9 +538,9 @@ _isvalid(x::Bool) = x
 
 _resolution(rast) = abs(step(lookup(rast, X)))
 
-function Rasters.mosaic(p::BatchProblem, rast::RasterStack; filename=nothing, lazy=true, force=false, progress=true)
-    paths = filter(isdir, batch_paths(p, rast))
+function Rasters.mosaic(p::BatchProblem; to::RasterStack, filename=nothing, force=false, progress=true, kw...)
+    paths = filter(isdir, batch_paths(p, to))
     isempty(paths) && error("No directories exist to mosaic, have any batches been run?")
     stacks = [RasterStack(path; lazy=true) for path in paths]
-    return mosaic(sum, stacks; filename, lazy, force, progress, missingval=NaN)
+    return mosaic(sum, stacks; to, filename, force, progress, missingval=NaN, kw...)
 end

@@ -55,7 +55,7 @@ $PROXIMITY_KEYWORDS
     (TODO: more detail)
 """
 @kwdef struct RandomisedShortestPath{
-    PM<:ProximityMeasure,DT<:Function,T<:Real,DV
+    PM<:ProximityMeasure,DT<:Union{Function,Nothing},T<:Real,DV
 } <: ArrivingMovement
     proximity_measure::PM = ExpectedCost()
     distance_transformation::DT = ExpMinus()
