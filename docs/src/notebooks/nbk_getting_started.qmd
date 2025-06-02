@@ -87,9 +87,9 @@ raster layers.
 
 These can be the following:
 
-- `movementlikelihood` / `likelihood` : likelihood of movement (required).
+- `steplikelihood` / `likelihood` : likelihood of movement (required).
     This maybe calculated from `cost` using the `likelihoodfunction` passed to `Problem`.
-- `movementcost`/ `cost` : cost of movement. This maybe calculated from  
+- `stepcost`/ `cost` : cost of movement. This maybe calculated from  
     `likelihood` using the `costfunction` passed to `Problem`.
 - `quality`: habitat quality (required, or the below alternatives)
 - `sourcequality`: source habitat quality if it does not match targetquality
@@ -97,7 +97,7 @@ These can be the following:
 
 ```{julia}
 # Define the paths to the raster files
-paths = (movementlikelihood=joinpath(datadir, "mov_prob_1000.asc"),
+paths = (steplikelihood=joinpath(datadir, "mov_prob_1000.asc"),
          quality=joinpath(datadir, "hab_qual_1000.asc"))
 rast = RasterStack(paths; missingval=NaN)
 ```
@@ -233,7 +233,7 @@ for instance, two pixels:
 demo_quality = zeros(dims(rast))
 demo_quality[70, 60] = 1
 demo_quality[105, 50] = 1
-demo_rast = RasterStack((; quality=demo_quality, movementlikelihood=rast.movementlikelihood))
+demo_rast = RasterStack((; quality=demo_quality, steplikelihood=rast.steplikelihood))
 plot(demo_quality; axis=(; title = "Source and target pixel"))
 ```
 

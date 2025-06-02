@@ -34,10 +34,10 @@ sparse matrix factorizations, and solves.
 -  `neighbors`: Whether to use 8 (queen) or 4 (rook) neighbors when generating, 
     graphs from a two-dimensional raster. `ConScape.N8` by default, can be `ConScape.N4`.
     With a three-dimensional matrix, `neighbors` keyword is not used.
-- `transition_weight`: `TargetWeight()` by default, using only the value of the
+- `stepweight`: `TargetWeight()` by default, using only the value of the
     destination pixel (neighbor). Can be `AverageWeight()` to use the average of
     both neighboring nodes. If a three-dimensional matrix is provided, 
-    `transition_weight` is not used as the array values are already transitions.
+    `stepweight` is not used as the array values are already transitions.
 
 ## Initialising and solving
 
@@ -67,17 +67,17 @@ solve(singleinit)
 solve(targetinit) 
 ```
 """
-@kwdef struct ConScapeProblem{MM<:MovementMode,M,S<:Solver,G,CF,LF,N,NW} <: AbstractProblem
-    movement::MM = RandomisedShortestPath()
-    measures::M = (;)
-    solver::S = VectorSolver()
-    grain::G = nothing # Better name here - target_density?
-    costfunction::CF = MinusLog()
-    likelyhoodfunction::LF = nothing
-    neighbors::N = N8
-    transition_weight::NW = TargetWeight()
-    function Problem(
-        movement::MM, m::M, solver::S, grain::G, costfunction::CF, likelyhoodfunction::LF, neighbors::N, transition_weight::NW
+struct ConScapeProblem{MM<:MovementMode,M<:NamedTuple,S<:Solver,G<:Union{Int,Nothing},CF,LF,N,SW<:StepWeight} <: AbstractProblem
+    movement::MM
+    measures::M
+    solver::S
+    grain::G
+    costfunction::CF
+    likelyhoodfunction::LF
+    neighbors::N
+    stepweight::SW
+    function ConScapeProblem(
+        movement::MM, m::M, solver::S, grain::G, costfunction::CF, likelyhoodfunction::LF, neighbors::N, stepweight::NW
     ) where {MM,M,S,G,CF,LF,N,NW}
         m1 = if m isa Measure
             NamedTuple{(Symbol(m),)}((m,))
@@ -86,20 +86,34 @@ solve(targetinit)
         else
             m
         end
-        return new{MM,typeof(m1),S,G,CF,LF,N,NW}(movement, m1, solver, grain, costfunction, likelyhoodfunction, neighbors, transition_weight)
+        return new{MM,typeof(m1),S,G,CF,LF,N,NW}(movement, m1, solver, grain, costfunction, likelyhoodfunction, neighbors, stepweight)
     end
 end
-ConScapeProblem(measure::Measure; kw...) = ConScapeProblem(; measures=(measure,), kw...)
-ConScapeProblem(measures::Union{Tuple,NamedTuple}; kw...) = ConScapeProblem(; measures, kw...)
+ConScapeProblem(measures::Union{Measure,Tuple,NamedTuple}; kw...) = ConScapeProblem(; measures, kw...)
+function ConScapeProblem(;
+    movement=RandomisedShortestPath(),
+    measures=(;),
+    solver=VectorSolver(),
+    grain=nothing, # Better name here - target_density?
+    costfunction=MinusLog(),
+    likelyhoodfunction=nothing,
+    neighbors=N8,
+    stepweight=TargetWeight(),
+)
+    ConScapeProblem(movement, measures, solver, grain, costfunction, likelyhoodfunction, neighbors, stepweight)
+end
 
-function Base.show(io, mime, p::ConScapeProblem; indent="")
+function Base.show(io::IO, mime::MIME"text/plain", p::ConScapeProblem; indent="")
     println(io, typeof(p).name.wrapper)
-    println(io, indent, "measures:             ", p.measures)
-    println(io, indent, "movement:        ", p.movement)
-    println(io, indent, "costs:                ", p.costs)
-    println(io, indent, "solver:               ", p.solver)
-    println(io, indent, "diagvalue:            ", typeof(p.diagvalue))
-    println(io, indent, "prune:                ", p.prune)
+    println(io)
+    println(io, indent, "measures:             ", measures(p))
+    println(io, indent, "movement:             ", movement(p))
+    println(io, indent, "costfunction:         ", costfunction(p))
+    println(io, indent, "likelihoodfunction:   ", likelihoodfunction(p))
+    println(io, indent, "solver:               ", solver(p))
+    println(io, indent, "grain:                ", grain(p))
+    println(io, indent, "stepweight:           ", stepweight(p))
+    # println(io, indent, "neighbors:          ", neighbors(p))
 end
 
 movement(p::ConScapeProblem) = p.movement
@@ -109,7 +123,7 @@ grain(p::ConScapeProblem) = p.grain
 costfunction(p::ConScapeProblem) = p.costfunction
 likelihoodfunction(p::ConScapeProblem) = p.likelyhoodfunction
 neighbors(p::ConScapeProblem) = p.neighbors
-transition_weight(p::ConScapeProblem) = p.transition_weight
+stepweight(p::ConScapeProblem) = p.stepweight
 proximity_measure(p::ConScapeProblem) = proximity_measure(movement(p))
 distance_transformation(p::ConScapeProblem) = distance_transformation(movement(p))
 diagvalue(p::ConScapeProblem) = diagvalue(movement(p))

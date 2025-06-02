@@ -97,8 +97,9 @@ function init(wi::WindowedInit, i::Int; verbose=false)
 end
 
 solve(p::WindowedProblem, rast::RasterStack; verbose=false, kw...) =
-    solve(init(p, rast; verbose, kw...); verbose)
-function solve(window_init::WindowedInit; 
+    solve!(init(p, rast; verbose, kw...); verbose)
+
+function solve!(window_init::WindowedInit; 
     verbose::Bool=false,
     mosaic_return=problem(window_init).mosaic_return,
     timed=problem(window_init).timed,
@@ -129,7 +130,7 @@ function solve(window_init::WindowedInit;
         @assert ggi isa GridGraphInit
         # Solve for the window
         elapsed = @elapsed begin
-            output = solve(ggi; verbose)
+            output = solve!(ggi; verbose)
         end
         # Garbage collect for this window
         # Inneficient for few/small windows but
@@ -334,7 +335,7 @@ end
 problem(wi::BatchInit) = wi.problem
 
 solve(problem::BatchProblem, rast::RasterStack, i::Int...; verbose=false, kw...) =
-    solve(init(problem, rast; kw...), i...; verbose)
+    solve!(init(problem, rast; kw...), i...; verbose)
 
 # Initialise BatchProblem to a BatchInit
 init(problem::BatchProblem, rast::RasterStack, i::Int; verbose=false, kw...) =
@@ -376,13 +377,13 @@ function init(bi::BatchInit{<:BatchProblem{<:ConScapeProblem}}, i::Int; verbose=
 end
 
 # Solve a single batch job (there is no method to solve all jobs)
-function solve(bi::BatchInit, i::Int; verbose=false)
+function solve!(bi::BatchInit, i::Int; verbose=false)
     verbose && println("Initialising window memory...")
     inner_init = init(bi, i; verbose)
     ib = bi.batch_indices[i]
     ranges = bi.batch_ranges[ib]
     verbose && println("Running batch $i for window $ib over ranges $ranges...")
-    output = solve(inner_init; verbose)
+    output = solve!(inner_init; verbose)
      # Store the output raster/s for this job to disk and return the file path
     return if ismissing(output)
         println("WARNING: Output was empty for job $i at window $ib over ranges $ranges")
@@ -395,8 +396,8 @@ function solve(bi::BatchInit, i::Int; verbose=false)
 end
 # Solve all batches. 
 # Not the main intent of `BatchProblem` but here as a convenience.
-solve(bi::BatchInit; verbose=false) =
-    [solve(bi, i; verbose) for i in eachindex(bi.batch_indices)]
+solve!(bi::BatchInit; verbose=false) =
+    [solve!(bi, i; verbose) for i in eachindex(bi.batch_indices)]
 
 """
     batch_paths(p::BatchProblem, x::RasterStack)

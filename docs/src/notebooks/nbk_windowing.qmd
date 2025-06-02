@@ -49,7 +49,7 @@ raster dataset for each windowed job. ConScape will later read just the range
 that it needs from the lazy raster.
 
 ```{julia}
-paths = (movementlikelihood=joinpath(datadir, "mov_prob_1000.asc"),
+paths = (steplikelihood=joinpath(datadir, "mov_prob_1000.asc"),
          sourcequality=joinpath(datadir, "hab_qual_1000.asc"))
 rast = RasterStack(paths; missingval=NaN)
 mask!(rast; with=rast)

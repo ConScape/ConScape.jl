@@ -9,7 +9,6 @@ abstract type MovementMode end
 
 distance_transformation(mm::MovementMode) = mm.distance_transformation
 diagvalue(mm::MovementMode) = mm.diagvalue
-costfunction(::MovementMode) = nothing # Only RSP has a costfunction
 
 """
     ArrivingMovement
@@ -51,21 +50,17 @@ Assumes partial knowledge and immortality.
 - `proximity_measure`: the measure to use for the probability of arrival at the target.
     By default this is `ExpectedCost()`
 $PROXIMITY_KEYWORDS
-- `costfunction`: A function to transform affinities to costs, usually
-    a [`Transformation`](@ref) but custom function also work. 
-    The default is [`MinusLog`](@ref).
 - `theta`: the inverse temperature (TODO: in more ecological terms)
 - `approx`: Whether to use an approximate algorithm, `false` by default.
     (TODO: more detail)
 """
 @kwdef struct RandomisedShortestPath{
-    PM<:ProximityMeasure,DT<:Function,T<:Real,DV,C<:Function
+    PM<:ProximityMeasure,DT<:Function,T<:Real,DV
 } <: ArrivingMovement
     proximity_measure::PM = ExpectedCost()
     distance_transformation::DT = ExpMinus()
     theta::T
     diagvalue::DV = oneunit(theta)
-    costfunction::C = MinusLog() # TODO remove 
     approx::Bool = false
 end
 RandomisedShortestPath(proximity_measure; kw...) =
@@ -76,7 +71,6 @@ const RSP = RandomisedShortestPath
 proximity_measure(mm::RandomisedShortestPath) = mm.proximity_measure
 approx(mm::RandomisedShortestPath) = mm.approx
 theta(mm::RandomisedShortestPath) = mm.theta
-costfunction(mm::RandomisedShortestPath) = mm.costfunction
 
 """
     LeastCostPath <: ArrivingMovementMode

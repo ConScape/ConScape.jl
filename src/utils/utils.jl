@@ -96,8 +96,8 @@ _maybe_new_outputs(level::Level, mes, cgi::Union{ConnectedGraphInit,TargetInit})
 # Get layers from a RasterStack or return nothing
 _get_sourcequality(rast::RasterStack) = _keys_or_nothing(rast, (:sourcequality, :quality))
 _get_targetquality(rast::RasterStack) = _keys_or_nothing(rast, (:targetquality, :quality, :sourcequality))
-_get_likelihood(rast::RasterStack) = _keys_or_nothing(rast, (:likelihood, :movementlikelihood))
-_get_cost(rast::RasterStack) = _keys_or_nothing(rast, (:cost, :movementcost))
+_get_likelihood(rast::RasterStack) = _keys_or_nothing(rast, (:likelihood, :steplikelihood))
+_get_cost(rast::RasterStack) = _keys_or_nothing(rast, (:cost, :stepcost))
 
 @inline _keys_or_nothing(rast, (key, keys...)::Tuple) =
     haskey(rast, key) ? rast[key] : _keys_or_nothing(rast, keys)

@@ -36,7 +36,7 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 We use the data provided in [@marx2020samc]:
 
 ```{julia}
-movementlikelihood = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
+steplikelihood = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
 quality = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
 ```
 
@@ -47,7 +47,7 @@ independent quality data).
 
 We remove negative values:
 ```{julia}
-movementlikelihood = max.(0, movementlikelihood)
+steplikelihood = max.(0, steplikelihood)
 quality = max.(0, quality);
 ```
 
@@ -72,7 +72,7 @@ cost = -log.(1 .- mortalityrisk);
 We can then create a `RasterStack` from the three input `Raster`s:
 
 ```{julia}
-rast = RasterStack((; quality, movementlikelihood, cost))
+rast = RasterStack((; quality, steplikelihood, cost))
 mask!(rast; with=rast)
 ```
 

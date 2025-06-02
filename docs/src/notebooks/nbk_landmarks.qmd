@@ -36,7 +36,7 @@ datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
 ```{julia}
-paths = (movementlikelihood=joinpath(datadir, "mov_prob_1000.asc"),
+paths = (steplikelihood=joinpath(datadir, "mov_prob_1000.asc"),
          quality=joinpath(datadir, "hab_qual_1000.asc"))
 rast = RasterStack(paths; missingval=NaN)
 mask!(rast; with=rast) # Self masking

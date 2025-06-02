@@ -5,19 +5,18 @@ Construct a `GridGraph` from an `steplikelihood` matrix of type `SparseMatrixCSC
 
 # Keywords
 
-- `steplikelihood`: nothing
 - `qualities::Matrix`: ones(nrows, ncols)
 - `source_qualities::Matrix`: qualities
 - `target_qualities::AbstractMatrix`: qualities
 - `costfunction`: `MinusLog()` by default.
 - `stepcost`: optionally specify a sparse cost matrix. 
     By default it is calculated from `costfunction.(steplikelihood)`
-- `prune`: if the likelihood and cost matrices will be pruned 
-    to exclude unreachable nodes. `true` by default.
+- `steplikelyhood`: optionally specify a sparse likelihood matrix. 
+    By default it is calculated from `likelihoodfunction.(stepcost)`
 
 It is possible to also supply matrices of `source_qualities` and `target_qualities` as well as
 
-Alternatively, it is possible to supply a matrix to `costs` directly. If `prune=true` (the default), 
+Alternatively, it is possible to supply a matrix to `costs` directly.
 """
 struct GridGraph{
     C<:Union{AbstractMatrix,Nothing},
@@ -61,10 +60,10 @@ function GridGraph(;
         isnothing(cost) && isnothing(likelihood) && 
             throw(ArgumentError("At least one of `cost` and `likelihood` must be specified"))
     if !isnothing(likelihood) 
-        steplikelihood = graph_matrix_from_raster(likelihood; input_type=Likelihood(), kw...)
+        steplikelihood = graph_matrix_from_raster(likelihood; input_type=StepLikelihood(), kw...)
     end
     if !isnothing(cost)
-        stepcost = graph_matrix_from_raster(cost; input_type=Cost(), kw...) 
+        stepcost = graph_matrix_from_raster(cost; input_type=StepCost(), kw...) 
     end
     if isnothing(steplikelihood) && !isnothing(stepcost) && !isnothing(likelihoodfunction)
         steplikelihood = mapnz(likelihoodfunction, stepcost)
@@ -122,7 +121,7 @@ function GridGraph(p::AbstractProblem, rast::RasterStack; kw...)
         costfunction=costfunction(p),
         likelihoodfunction=likelihoodfunction(p),
         neighbors=neighbors(p),
-        transition_weight=transition_weight(p),
+        stepweight=stepweight(p),
         kw...
     )
 end
@@ -288,7 +287,7 @@ julia> affinities = [1/4 0 1/4 1/4
                      1/4 0 1/4 1/4
                      1/4 0 1/4 1/4];
 
-julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities), prune=false)
+julia> grid = ConScape.Grid(size(affinities)..., affinities=ConScape.graph_matrix_from_raster(affinities))
 ConScape.Grid of size 4x4
 
 julia> ConScape.is_strongly_connected(grid)
@@ -320,19 +319,19 @@ const N8 = ((-1, -1,  √2, 1), # SE
             ( 1,  1,  √2, 8)) # NW
 
 # TODO document
-abstract type AdjacencyWeight end
+abstract type StepWeight end
 
-struct TargetWeight <: AdjacencyWeight end
-struct AverageWeight <: AdjacencyWeight end
+struct TargetWeight <: StepWeight end
+struct AverageWeight <: StepWeight end
 
 # TODO document these equations
-weightedval(::TargetWeight, ::Likelihood, baseval, targetval, distance) =
+weightedval(::TargetWeight, ::StepLikelihood, baseval, targetval, distance) =
     targetval / distance
-weightedval(::TargetWeight, ::Cost, baseval, targetval, distance) =
+weightedval(::TargetWeight, ::StepCost, baseval, targetval, distance) =
     targetval * distance
-weightedval(::AverageWeight, ::Cost, baseval, targetval, distance) =
+weightedval(::AverageWeight, ::StepCost, baseval, targetval, distance) =
     ((baseval + targetval) * distance) / 2
-weightedval(::AverageWeight, ::Likelihood, baseval, targetval, distance) =
+weightedval(::AverageWeight, ::StepLikelihood, baseval, targetval, distance) =
     2 / ((inv(baseval) + inv(targetval)) * distance)
 
 """
@@ -347,13 +346,13 @@ The values can be computed with respect to eight `neighbors`` (`N8`) or four nei
 
 # Keywords
 
-- `transition_weight`: `TargetWeight` or `AverageWeight`, TargetWeight by default.
+- `stepweight`: `TargetWeight` or `AverageWeight`, TargetWeight by default.
 - `neighbors` : `N4` or `N8`, `N8` by default.
 - `input_type`: `Likelyhood()` or `Cost()`, `Likelyhood()` by default
 """
 function graph_matrix_from_raster(R::AbstractMatrix;
     neighbors::Tuple=N8,
-    transition_weight=TargetWeight(),
+    stepweight=TargetWeight(),
     input_type,
 )
     m, n = size(R)
@@ -373,7 +372,7 @@ function graph_matrix_from_raster(R::AbstractMatrix;
             # Target node
             targetval = R[i + ki, j + kj]
             (iszero(targetval) || isnan(targetval)) && continue
-            val = weightedval(transition_weight, input_type, baseval, targetval, distance)
+            val = weightedval(stepweight, input_type, baseval, targetval, distance)
             # Add edge
             _maybe_push_sparse!(is, js, vals, m, n, i, j, ki, kj, val)
         end
@@ -383,7 +382,7 @@ end
 # A 3 dimensional Array already encodes edge weights
 function graph_matrix_from_raster(R::AbstractArray{<:Any,3};
     neighbors::Tuple=N8,
-    transition_weight=TargetWeight(),
+    stepweight=TargetWeight(),
     input_type,
 )
     nneighbors, m, n = size(R)
@@ -426,13 +425,13 @@ Compute a graph matrix, i.e. an affinity or cost matrix from the geometies `geom
 
 # Keywords
 
-- `input_type`: `Likelyhood()` or `Cost()`.
-- `transition_weight`: `TargetWeight()` or `AverageWeight()`, `TargetWeight()` by default.
+- `input_type`: `StepLikelyhood()` or `StepCost()`.
+- `stepweight`: `TargetWeight()` or `AverageWeight()`, `TargetWeight()` by default.
 - `cutoff_distance`: the distance at which to stop computing affinities.
     Should be in the same units as the geometry projection.
 """
 function graph_matrix_from_geometries(geoms::AbstractVector, values::AbstractVector;
-    transition_weight=TargetWeight(),
+    stepweight=TargetWeight(),
     cutoff_distance,
     input_type,
 )
@@ -458,7 +457,7 @@ function graph_matrix_from_geometries(geoms::AbstractVector, values::AbstractVec
             distance > cutoff_distance && continue
             # Get the distance weigth value
             targetval = values[j]
-            val = weightedval(transition_weight, input_type, baseval, targetval, distance)
+            val = weightedval(stepweight, input_type, baseval, targetval, distance)
             # Add edge for this geometry
             # i is the current geometry index
             push!(is, i)

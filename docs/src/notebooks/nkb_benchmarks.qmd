@@ -32,12 +32,12 @@ Define a function to benchmark allocations during initialisation:
 ```{julia}
 function benchmark_init_allocs(mm, s; sparsity=nothing)
     rast_s = RasterStack((quality=Raster(rand(X(s), Y(s))), 
-                          movementlikelihood=Raster(rand(X(s), Y(s)))))
+                          steplikelihood=Raster(rand(X(s), Y(s)))))
     if !isnothing(sparsity) && sparsity > 0
         n = round(Int, length(rast_s) * sparsity)
         inds = sample(eachindex(rast_s), n; replace=false)
         rast_s.quality[inds] .= NaN
-        rast_s.movementlikelihood[inds] .= NaN
+        rast_s.steplikelihood[inds] .= NaN
     end
     allocs = @allocated begin
         mgi = init(mm, rast_s)

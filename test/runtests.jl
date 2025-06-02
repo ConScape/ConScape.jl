@@ -4,10 +4,11 @@ using Aqua
 using JET
 using SafeTestsets
 
-# @testset "ConScape.jl" begin
+@testset "ConScape.jl" begin
     @testset "Code quality (Aqua.jl)" begin
         Aqua.test_all(ConScape)
     end
+    # TODO: The ConScapeProblem constructor has minor problems
     @testset "Code linting (JET.jl)" begin
         JET.test_package(ConScape; target_defined_modules = true)
     end

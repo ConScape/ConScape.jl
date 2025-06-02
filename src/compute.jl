@@ -489,8 +489,8 @@ end
 
 
 # kB and kΣ are set up as zeroed-out W matrices
-allocate_output(l::GridGraphLevel, m::SensitivityAnalysis{<:Permeability}, args...) = 
-    allocate_output(l, ReturnDenseSpatialSum(), args...)
+allocate_output(l::GridGraphLevel, m::SensitivityAnalysis{<:Permeability}, p::ConScapeProblem, args...) = 
+    allocate_output(l, ReturnDenseSpatialSum(), p, args...)
 allocate_output(l::Union{ConnectedGraphLevel,TargetLevel}, m::SensitivityAnalysis{<:Permeability}, p::ConScapeProblem, args...) = 
     allocate_output(l, proximity_measure(p), m, p, args...)
 function allocate_output(l::Level, ::PowerMeanProximity, m::SensitivityAnalysis{<:Permeability}, p::ConScapeProblem, gg::GridGraph, cg::ConnectedGraph, precalculation)
@@ -569,22 +569,22 @@ end
 transfer_output!(dest::AbstractMatrix, source::NamedTuple, ::SensitivityAnalysis, cgi::ConnectedGraphInit) =
     dest[sourceids(cgi)] .= source.resultrows
 
-_combine_sensitivity(::Likelihood, S_e_likelihood, S_e_cost, ti, n) = S_e_likelihood
-_combine_sensitivity(::Cost, S_e_likelihood, S_e_cost, ti, n) = S_e_cost
-function _combine_sensitivity(::CostToLikelihood, S_e_likelihood, S_e_cost, ti, n)
+_combine_sensitivity(::StepLikelihood, S_e_likelihood, S_e_cost, ti, n) = S_e_likelihood
+_combine_sensitivity(::StepCost, S_e_likelihood, S_e_cost, ti, n) = S_e_cost
+function _combine_sensitivity(::StepCostToLikelihood, S_e_likelihood, S_e_cost, ti, n)
     f = _diff_CA(costfunction(ti))
     C = stepcost(ti)
     S_e_likelihood + S_e_cost * f(C.nzval[n])
 end
-function _combine_sensitivity(::LikelihoodToCost, S_e_likelihood, S_e_cost, ti, n)
+function _combine_sensitivity(::StepLikelihoodToCost, S_e_likelihood, S_e_cost, ti, n)
     f = _diff_AC(costfunction(ti))
     L = steplikelihood(ti)
     S_e_cost + S_e_likelihood * f(L.nzval[n])
 end
 
-_maybe_scale(a, ::Elasticity, ::Union{Likelihood,LikelihoodToCost}, ti, n) =
+_maybe_scale(a, ::Elasticity, ::Union{StepLikelihood,StepLikelihoodToCost}, ti, n) =
     a * steplikelihood(ti).nzval[n]
-_maybe_scale(a, ::Elasticity, ::Union{Cost,CostToLikelihood}, ti, n) =
+_maybe_scale(a, ::Elasticity, ::Union{StepCost,StepCostToLikelihood}, ti, n) =
     a * stepcost(ti).nzval[n]
 _maybe_scale(a, ::Sensitivity, ::Permeability, ti, n) = a
 

@@ -15,7 +15,7 @@ import SortTileRecursiveTree as STR
 using Rasters.DimensionalData
 using Rasters.Extents
 
-import CommonSolve: solve, init
+import CommonSolve: solve, solve!, init
 
 using WoodburyMatrices: Woodbury
 using SimpleWeightedGraphs: SimpleWeightedGraph, SimpleWeightedDiGraph
@@ -33,7 +33,7 @@ export Sensitivity, Elasticity
 
 export Cumulative, Eigen
 
-export Quality, Cost, Likelihood, CostToLikelihood, LikelihoodToCost
+export Quality, SourceQuality, TargetQuality, StepCost, StepLikelihood, StepCostToLikelihood, StepLikelihoodToCost
 
 export TargetWeight, AverageWeight
 
@@ -41,7 +41,7 @@ export VectorSolver, LinearSolver
 
 export MinusLog, MinusLogAlpha, Inv, OddsFor, OddsAgainst, ExpMinus, ExpMinusAlpha
 
-export solve, init, assess, reassess
+export solve, solve!, init, assess, reassess
 
 export ConScapeProblem, WindowedProblem, BatchProblem
 
@@ -69,10 +69,10 @@ include("utils/workspaces.jl")
 include("utils/readonlyarray.jl")
 include("utils/bellman_ford.jl")
 include("transformations.jl")
+include("graphs.jl")
 include("measures.jl")
 include("movement.jl")
 include("problem.jl")
-include("graphs.jl")
 include("initialisation.jl")
 include("solve.jl")
 include("return.jl")

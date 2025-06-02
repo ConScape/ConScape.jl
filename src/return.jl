@@ -85,8 +85,8 @@ update_output!(output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSp
     output[:, target(ti).connectedgraphidx] .= v
 
 # Transfer output from ConnectedGraphInit to GridGraphInit
-transfer_output!(outputs, cgi::ConnectedGraphInit) = 
-    transfer_output!(outputs, ConScape.outputs(cgi), measures(cgi), cgi) 
+transfer_output!(outputs::NamedTuple, cgi::ConnectedGraphInit) = 
+    transfer_output!(outputs::NamedTuple, ConScape.outputs(cgi)::NamedTuple, measures(cgi), cgi) 
 function transfer_output!(dest::NamedTuple, source::NamedTuple, measures::NamedTuple, cgi)
     map(dest, source, measures) do d, s, m
         transfer_output!(d, s, m, cgi)

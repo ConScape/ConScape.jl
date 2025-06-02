@@ -4,7 +4,8 @@ const SourceID = CartesianIndex{2}
 abstract type Initialisation end
 
 movement(i::Initialisation) = movement(problem(i))
-costfunction(i::Initialisation) = costfunction(movement(i))
+costfunction(i::Initialisation) = costfunction(problem(i))
+likelihoodfunction(i::Initialisation) = likelihoodfunction(problem(i))
 solver(i::Initialisation) = solver(problem(i))
 measures(i::Initialisation) = measures(problem(i))
 proximity_measure(i::Initialisation) = proximity_measure(problem(i))

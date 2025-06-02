@@ -12,10 +12,10 @@ _tempdir = mkdir(tempname())
 θ = 0.1
 landscape = "sno_2000"
 # The way the ascii is read in is reversed and rotated from what GDAL does
-movementlikelihood = reverse(rotr90(Raster(joinpath(datadir, "affinities_$landscape.asc"); missingval=NaN)); dims=X)
+steplikelihood = reverse(rotr90(Raster(joinpath(datadir, "affinities_$landscape.asc"); missingval=NaN)); dims=X)
 quality = reverse(rotr90(Raster(joinpath(datadir, "qualities_$landscape.asc"); missingval=NaN)); dims=X)
-quality[(movementlikelihood .> 0) .& isnan.(quality)] .= 1e-20
-rast = RasterStack((; movementlikelihood, quality))
+quality[(steplikelihood .> 0) .& isnan.(quality)] .= 1e-20
+rast = RasterStack((; steplikelihood, quality))
 
 measures = (;
     fh=FunctionalHabitat(),
@@ -38,9 +38,10 @@ rsp_exp_50 = RandomisedShortestPath(ExpectedCost(); distance_transformation=ExpM
 rsp_exp_minus = RandomisedShortestPath(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ)
 
 solver = VectorSolver()
-# @testset "Compare everything with old conscape" begin
-    affinities_sparse = OldConScape.graph_matrix_from_raster(parent(movementlikelihood))
-    test_g = OldConScape.Grid(size(movementlikelihood)...;
+
+@testset "Compare internals with old conscape" begin
+    affinities_sparse = OldConScape.graph_matrix_from_raster(parent(steplikelihood))
+    test_g = OldConScape.Grid(size(steplikelihood)...;
         affinities=affinities_sparse,
         qualities=parent(quality)
     )
@@ -98,15 +99,15 @@ solver = VectorSolver()
         @test target_i.qᵗ == qt[i]
     end
 
-    ec_new = solve(ExpectedCost(), gridgraphinit, 1)
+    ec_new = solve!(gridgraphinit, ExpectedCost(), 1)
     btk = OldConScape.betweenness_kweighted(test_grsp);
-    btk_new = solve(Betweenness(QualityAndProximityWeighted()), gridgraphinit)
+    btk_new = solve!(gridgraphinit, Betweenness(QualityAndProximityWeighted()))
     @test all(compare.(btk, btk_new))
     btq = OldConScape.betweenness_qweighted(test_grsp);
-    btq_new = solve(Betweenness(QualityWeighted()), gridgraphinit)
+    btq_new = solve!(gridgraphinit, Betweenness(QualityWeighted()))
     @test all(compare.(btq, btq_new))
     ch = OldConScape.connected_habitat(test_grsp);
-    ch_new = solve(FunctionalHabitat(), gridgraphinit)
+    ch_new = solve!(gridgraphinit, FunctionalHabitat())
     @test all(compare.(ch, ch_new))
 
 end
@@ -116,9 +117,9 @@ solvers = (
     # LinearSolver(), # TODO: really slow currently
 )
 
-# for solver in solvers @testset "$solver" begin
-    affinities_sparse = OldConScape.graph_matrix_from_raster(parent(movementlikelihood))
-    test_g = OldConScape.Grid(size(movementlikelihood)...;
+for solver in solvers @testset "RSP measures with $solver" begin
+    affinities_sparse = OldConScape.graph_matrix_from_raster(parent(steplikelihood))
+    test_g = OldConScape.Grid(size(steplikelihood)...;
         affinities=affinities_sparse,
         qualities=parent(quality)
     )
@@ -154,7 +155,7 @@ solvers = (
             4641.815380725279  3365.3296878569213   477.1085971945757], atol=1e-3)
     end
 
-    # @testset "quality and proximity weighted" begin
+    @testset "quality and proximity weighted" begin
 
         @test result_exp_minus.betm isa Raster
         @test isapprox(result_exp_minus.betm[21:23, 31:33], 
@@ -184,7 +185,7 @@ solvers = (
 
         @test result_const_dist.betm[ConScape.sourceids(connectedgraphinit)] == 
               result_const_dist.betq[ConScape.sourceids(connectedgraphinit)]
-        @test_broken result_const_dist.ebetm ≈ result_const_dist.ebetq
+        @test result_const_dist.ebetm ≈ result_const_dist.ebetq
 
     end
 
@@ -192,7 +193,7 @@ solvers = (
         @test result_exp_minus.fh isa Raster{Float64}
         @test size(result_exp_minus.fh) == size(connectedgraphinit)
         fh = OldConScape.connected_habitat(test_grsp, CartesianIndex((20, 20)))
-        # TODO why is this so different now
+        # TODO why does this need such a high atol now
         @test all(compare.(result_exp_minus.fh, fh; atol=1e-2))
         # @test cl isa Raster{Float64}
         @test sum(replace(result_exp_minus.fh, NaN => 0.0)) ≈ 109.4795495188798 atol=1e-2
@@ -201,113 +202,6 @@ solvers = (
 end
 
 end
-
-# Sensitivity
-
-sensitivity_measures = (;
-    sens_cost=SensitivityAnalysis(; wrt=Cost()),
-    sens_affinity=SensitivityAnalysis(; wrt=Likelihood()),
-    sens_costtoaffinity=SensitivityAnalysis(; wrt=CostToLikelihood()),
-    sens_affinitytocost=SensitivityAnalysis(; wrt=LikelihoodToCost()),
-    sens_cost_elast=SensitivityAnalysis(; type=Elasticity(), wrt=Cost()),
-    sens_affinity_elast=SensitivityAnalysis(; type=Elasticity(), wrt=Likelihood()),
-    sens_costtoaffinity_elast=SensitivityAnalysis(; type=Elasticity(), wrt=CostToLikelihood()),
-    sens_affinitytocost_elast=SensitivityAnalysis(; type=Elasticity(), wrt=ConScape.LikelihoodToCost()),
-)
-
-# Movement modes
-# RSP
-rsp_ec = RandomisedShortestPath(; 
-    proximity_measure=ExpectedCost(), 
-    distance_transformation=ExpMinus(),
-    costfunction=ConScape.MinusLog(),
-    theta=1.0, 
-)
-rsp_pmp = RandomisedShortestPath(; 
-    proximity_measure=PowerMeanProximity(), 
-    distance_transformation=ExpMinus(),
-    costfunction=ConScape.MinusLog(),
-    theta=1.0, 
-)
-
-# RSP
-@time res_sens_rsp_ec = solve(sensitivity_measures, rsp_ec, rast)
-@time res_sens_rsp_pmp = solve(sensitivity_measures, rsp_pmp, rast)
-
-using OldConScape
-affinities_sparse = OldConScape.graph_matrix_from_raster(parent(movementlikelihood))
-test_g = OldConScape.Grid(size(movementlikelihood)...;
-    affinities=affinities_sparse,
-    qualities=parent(quality),
-)
-test_grsp = OldConScape.GridRSP(test_g; θ=1.0)
-wrts = ["A", "C", "Q", "C&A=f(C)", "A&C=f(A)"]
-old_sens = map((ec=OldConScape.expected_cost, pmp=OldConScape.power_mean_proximity)) do distance_transformation
-    Dict(wrts .=> map(wrts) do wrt
-        old_sens_affinity = OldConScape.sensitivity(test_grsp;
-            connectivity_function=OldConScape.expected_cost,
-            distance_transformation=OldConScape.ExpMinus(),
-            α=0.1,
-            wrt,
-            landscape_measure=["sum","eigenanalysis"][1],
-            unitless=true,
-            diagvalue=nothing,
-            target_equal_source=true
-        )
-    end)
-end
-
-plot(res_sens_rsp_ec.sens_cost .- old_sens.ec["C"])
-heatmap(parent(res_sens_rsp_ec.sens_cost))
-heatmap(old_sens.ec["A"])
-heatmap(parent(res_sens_rsp_ec.sens_affinity))
-heatmap(old_sens.ec["C"])
-heatmap(parent(res_sens_rsp_ec.sens_cost))
-heatmap(old_sens.ec["C&A=f(C)"])
-heatmap(parent(res_sens_rsp_ec.sens_affinitytocost))
-heatmap(old_sens.ec["A&C=f(A)"])
-heatmap(parent(res_sens_rsp_ec.sens_costtoaffinity))
-
-# OldConScape
-affinities_sparse = OldConScape.graph_matrix_from_raster(parent(movementlikelihood))
-test_g = OldConScape.Grid(size(movementlikelihood)...;
-    affinities=affinities_sparse,
-    qualities=parent(quality),
-)
-test_grsp = OldConScape.GridRSP(test_g; θ=1.0)
-old_sens_cost = OldConScape.sensitivity(test_grsp;
-    connectivity_function=OldConScape.expected_cost,
-    distance_transformation=OldConScape.ExpMinus(),
-    α=0.005,
-    wrt="C",
-    landscape_measure="sum",
-    unitless=true, # Elasticities
-    diagvalue=nothing,
-    target_equal_source=true
-)
-heatmap(old_sens_cost)
-# SensitivityAnalysis
-rsp_ec = RandomisedShortestPath(; 
-    proximity_measure=ExpectedCost(), 
-    distance_transformation=ExpMinusAlpha(0.005),
-    costfunction=ConScape.MinusLog(),
-    theta=1.0, 
-)
-sens_cost_elast = SensitivityAnalysis(; 
-    type=Elasticity(), wrt=ConScape.Cost()
-)
-s = solve(sens_cost_elast, rsp_ec, rast, 1)
-heatmap(s)
-collect(old_sens_cost)
-s
-old_sens_cost' ≈ s
-sum(old_sens_cost, dims=2)
-filter(!isnan, vec(s))
-
-# LeastCost
-lc = LeastCost(; distance_transformation=ExpMinusAlpha(2.0),)
-# RandomWalk
-rw = RandomWalk(; distance_transformation=ExpMinusAlpha(1.0))
 
 betweenness_measures = (;
     betu=Betweenness(ConScape.Unweighted()),
@@ -328,59 +222,134 @@ other_measures = (;
     ch=FunctionalHabitat(),
 )
 
-@time res_bet_rsp_ec = solve(betweenness_measures, rsp_ec, rast)
-@time res_bet_rsp_pmp = solve(betweenness_measures, rsp_pmp, rast)
-@time res_oth_rsp_ec = solve(other_measures, rsp_ec, rast)
-@time res_oth_rsp_pmp = solve(other_measures, rsp_pmp, rast)
-@time res_ebet_rsp_ec = solve(edge_betweenness_measures, rsp_ec, rast)
-@time res_ebet_rsp_pmp = solve(edge_betweenness_measures, rsp_pmp, rast)
-
-res_bet_lc = solve(betweenness_measures, lc, rast)
-res_oth_lc = solve(other_measures, lc, rast)
-# res_ebet_lc = solve(edge_betweenness_measures, lc, rast)
-# res_sens_lc = solve(sensitivity_measures, lc, rast)
-
-@testset "mean_lc_kl_divergence" begin
-    @test_broken res_oth_lc.mkld[] ≈ 1.5660600315073947e6
+@testset "RSP measures" begin
+    # Movement modes
+    rsp_ec = RandomisedShortestPath(; 
+        proximity_measure=ExpectedCost(), 
+        distance_transformation=ExpMinus(),
+        theta=1.0, 
+    )
+    rsp_pmp = RandomisedShortestPath(; 
+        proximity_measure=PowerMeanProximity(), 
+        distance_transformation=ExpMinus(),
+        theta=1.0, 
+    )
+    @time res_bet_rsp_ec = solve(betweenness_measures, rsp_ec, rast)
+    @time res_bet_rsp_pmp = solve(betweenness_measures, rsp_pmp, rast)
+    @time res_oth_rsp_ec = solve(other_measures, rsp_ec, rast)
+    @time res_oth_rsp_pmp = solve(other_measures, rsp_pmp, rast)
+    @time res_ebet_rsp_ec = solve(edge_betweenness_measures, rsp_ec, rast)
+    @time res_ebet_rsp_pmp = solve(edge_betweenness_measures, rsp_pmp, rast)
 end
 
-# Random Walk
-res_bet_rw = solve(betweenness_measures, rw, rast)
-res_ebet_rw = solve(edge_betweenness_measures, rw, rast)
-res_oth_rw = solve(other_measures, rw, rast)
-res_sens_rw = solve(sensitivity_measures, rw, rast)
+@testset "LCP measures" begin
+    lc = LeastCostPath(; distance_transformation=ExpMinusAlpha(2.0),)
 
-using Plots
-plot(res_sens_rsp_ec; size=(1200, 900))#, layout=(4, 3))#, clims=(0, 2000))
-plot(res_sens_rsp_pmp; size=(1200, 900))#, layout=(4, 3))#, clims=(0, 2000))
-plot(res_bet_rsp_ec; size=(1200, 900))#, layout=(4, 3))#, clims=(0, 2000))
-plot(res_bet_rsp_pmp; size=(1200, 900))#, layout=(4, 3))#, clims=(0, 2000))
-plot(res_oth_rsp_pmp.ch; size=(1200, 900))#, layout=(4, 3))#, clims=(0, 2000))
-plot(res_oth_rsp_ec.ch; size=(1200, 900))#, layout=(4, 3))#, clims=(0, 2000))
+    res_bet_lc = solve(betweenness_measures, lc, rast)
+    res_oth_lc = solve(other_measures, lc, rast)
+    # res_ebet_lc = solve(edge_betweenness_measures, lc, rast)
+    # Not iplemented
+    # res_sens_lc = solve(sensitivity_measures, lc, rast)
 
-plot(res_bet_rw; size=(1200, 700))
-plot(res_oth_rw.ch; size=(1200, 700))
+    @testset "mean_lc_kl_divergence" begin
+        @test res_oth_lc.mkld[] ≈ 1.5660600315073947e6
+    end
 
-plot(res_bet_lc; size=(1200, 700))
-plot(res_oth_lc.ch; size=(1200, 700))
-plot(res_sens_rw; size=(1200, 700))
+    # TODO more tests
+end
 
-# @testset "eigmax, measure=$proximity_measure" for
-#     (proximity_measure, val) in ((ExpectedCost(), 5.576850282179157e6),
-#                                      (FreeEnergyDistance(), 3.2799955467465096e6),
-#                                      (SurvivalProbability(), 1.3475609129305437e7),
-#                                      (PowerMeanProximity(), 3.279995546746518e6))
-    proximity_measure, val = (ExpectedCost(), 5.576850282179157e6)
-    # proximity_measure, val = (SurvivalProbability(), 1.3475609129305437e7)
+@testset "RandomWalk measures" begin
+    rw = RandomWalk(; distance_transformation=ExpMinusAlpha(1.0))
 
-    rsp = RSP(; proximity_measure, theta=0.1, distance_transformation=ExpMinus())
-    vˡ, λ, vʳ = ConScape.compute(EigMax(), init(init(rsp, rast), 1))
+    res_bet_rw = solve(betweenness_measures, rw, rast)
+    res_oth_rw = solve(other_measures, rw, rast)
+    # Not iplemented
+    # res_ebet_rw = solve(edge_betweenness_measures, rw, rast)
+    # res_sens_rw = solve(sensitivity_measures, rw, rast)
+    # TODO tests
+end
 
-    # Compute the weighted proximity matrix to check results
-    M = solve(ConScape.LandscapeMatrix(), rsp, rast, 1)
-    λ
-    val
+@testset "RSP sensitivity measure" begin
+    sensitivity_measures = (;
+        sens_cost=SensitivityAnalysis(; wrt=StepCost()),
+        sens_affinity=SensitivityAnalysis(; wrt=StepLikelihood()),
+        sens_costtoaffinity=SensitivityAnalysis(; wrt=StepCostToLikelihood()),
+        sens_affinitytocost=SensitivityAnalysis(; wrt=StepLikelihoodToCost()),
+        sens_cost_elast=SensitivityAnalysis(; type=Elasticity(), wrt=StepCost()),
+        sens_affinity_elast=SensitivityAnalysis(; type=Elasticity(), wrt=StepLikelihood()),
+        sens_costtoaffinity_elast=SensitivityAnalysis(; type=Elasticity(), wrt=StepCostToLikelihood()),
+        sens_affinitytocost_elast=SensitivityAnalysis(; type=Elasticity(), wrt=StepLikelihoodToCost()),
+    )
 
-    @test_broken λ ≈ val
-    @test_broken M * vʳ ≈ vʳ * λ
-# end
+    # Movement modes
+    rsp_ec = RandomisedShortestPath(; 
+        proximity_measure=ExpectedCost(), 
+        distance_transformation=ExpMinus(),
+        theta=1.0, 
+    )
+    rsp_pmp = RandomisedShortestPath(; 
+        proximity_measure=PowerMeanProximity(), 
+        distance_transformation=ExpMinus(),
+        theta=1.0, 
+    )
+
+    @time res_sens_rsp_ec = solve(sensitivity_measures, rsp_ec, rast)
+    @time res_sens_rsp_pmp = solve(sensitivity_measures, rsp_pmp, rast)
+
+    affinities_sparse = OldConScape.graph_matrix_from_raster(parent(steplikelihood))
+    test_g = OldConScape.Grid(size(steplikelihood)...;
+        affinities=affinities_sparse,
+        qualities=parent(quality),
+    )
+    test_grsp = OldConScape.GridRSP(test_g; θ=1.0)
+    wrts = ["A", "C", "Q", "C&A=f(C)", "A&C=f(A)"]
+    old_sens = map((ec=OldConScape.expected_cost, pmp=OldConScape.power_mean_proximity)) do distance_transformation
+        Dict(wrts .=> map(wrts) do wrt
+            old_sens_affinity = OldConScape.sensitivity(test_grsp;
+                connectivity_function=OldConScape.expected_cost,
+                distance_transformation=OldConScape.ExpMinus(),
+                α=0.1,
+                wrt,
+                landscape_measure=["sum","eigenanalysis"][1],
+                unitless=true,
+                diagvalue=nothing,
+                target_equal_source=true
+            )
+        end)
+    end
+
+    # plot(res_sens_rsp_ec.sens_cost .- old_sens.ec["C"])
+    # heatmap(parent(res_sens_rsp_ec.sens_cost))
+    # heatmap(old_sens.ec["A"])
+    # heatmap(parent(res_sens_rsp_ec.sens_affinity))
+    # heatmap(old_sens.ec["C"])
+    # heatmap(parent(res_sens_rsp_ec.sens_cost))
+    # heatmap(old_sens.ec["C&A=f(C)"])
+    # heatmap(parent(res_sens_rsp_ec.sens_affinitytocost))
+    # heatmap(old_sens.ec["A&C=f(A)"])
+    # heatmap(parent(res_sens_rsp_ec.sens_costtoaffinity))
+
+    # OldConScape
+    affinities_sparse = OldConScape.graph_matrix_from_raster(parent(steplikelihood))
+    test_g = OldConScape.Grid(size(steplikelihood)...;
+        affinities=affinities_sparse,
+        qualities=parent(quality),
+    )
+    test_grsp = OldConScape.GridRSP(test_g; θ=1.0)
+    old_sens_cost = OldConScape.sensitivity(test_grsp;
+        connectivity_function=OldConScape.expected_cost,
+        distance_transformation=OldConScape.ExpMinus(),
+        α=0.005,
+        wrt="C",
+        landscape_measure="sum",
+        unitless=true, # Elasticities
+        diagvalue=nothing,
+        target_equal_source=true
+    )
+    # heatmap(old_sens_cost)
+    # SensitivityAnalysis
+    sens_cost_elast = SensitivityAnalysis(; 
+        type=Elasticity(), wrt=StepCost()
+    )
+    s = solve(sens_cost_elast, rsp_ec, rast, 1)
+end

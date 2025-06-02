@@ -7,10 +7,10 @@ _tempdir = mkdir(tempname())
 θ = 0.1
 landscape = "sno_2000"
 # The way the ascii is read in is reversed and rotated from what GDAL does
-movementlikelihood = reverse(rotr90(Raster(joinpath(datadir, "affinities_$landscape.asc"); missingval=NaN)); dims=X)
+steplikelihood = reverse(rotr90(Raster(joinpath(datadir, "affinities_$landscape.asc"); missingval=NaN)); dims=X)
 quality = reverse(rotr90(Raster(joinpath(datadir, "qualities_$landscape.asc"); missingval=NaN)); dims=X)
-quality[(movementlikelihood .> 0) .& isnan.(quality)] .= 1e-20
-rast = RasterStack((; movementlikelihood, quality))
+quality[(steplikelihood .> 0) .& isnan.(quality)] .= 1e-20
+rast = RasterStack((; steplikelihood, quality))
 
 measures = (;
     betm=ConScape.MovementFlow(),
@@ -39,8 +39,8 @@ solve(problem, rast; verbose=true)
     circle_st = ConScape._get_window_with_zeroed_buffer(circle_windowed_problem, rast, wi.ranges[6])
     square_st = ConScape._get_window_with_zeroed_buffer(square_windowed_problem, rast, wi.ranges[6])
     # Affinities never have rounded corners
-    @test circle_st.movementlikelihood[end] !== 0.0
-    @test square_st.movementlikelihood[end] !== 0.0
+    @test circle_st.steplikelihood[end] !== 0.0
+    @test square_st.steplikelihood[end] !== 0.0
     # Source qualities do for :circle 
     @test circle_st.sourcequality[end] === 0.0
     # But not for :square
@@ -78,7 +78,7 @@ end
     mask!(rast; with=rast)
     wi = init(windowed_problem, rast)
     rast_inner = ConScape._get_window_with_zeroed_buffer(wi; shape=:square)
-    @time wp_result = solve(wi)
+    @time wp_result = solve!(wi)
     @time p_result = solve(problem, rast_inner)
     @test maplayers(p_result, wp_result) do P, WP
         broadcast(P, WP) do p, wp
@@ -100,7 +100,7 @@ end
     windowed_problem = WindowedProblem(problem; kw...)
     @time windowed_init = init(windowed_problem, rast);
     @test windowed_init isa ConScape.WindowedInit
-    @time windowed_result = ConScape.solve(windowed_init);
+    @time windowed_result = solve!(windowed_init);
 
     batch_problem = BatchProblem(problem; datapath=tempname(), kw...)
     paths = solve(batch_problem, rast; verbose=true)
@@ -111,10 +111,9 @@ end
 
     batch_init_problem = BatchProblem(problem; datapath=tempname(), kw...)
     batch_init = init(batch_init_problem, rast; verbose=true)
-    paths = solve(batch_init_problem, rast)
-    Rasters.mosaic(sum, RasterStack.(paths))
+    paths = solve!(batch_init)
 
-    batch_init_result = mosaic(batch_init_problem, rast)
+    batch_init_result = mosaic(sum, RasterStack.(paths))
     @test batch_result isa RasterStack
 
 

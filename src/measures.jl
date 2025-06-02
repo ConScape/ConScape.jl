@@ -238,10 +238,6 @@ function Base.Symbol(m::SensitivityAnalysis)
     )
 end
 
-computelevel(::Measure) = TargetLevel()
-computelevel(::EigMax) = SubGraphLevel()
-# computelevel(::EdgeBetweenness) = SubGraphLevel()
-
 # Return type traits
 returntrait(::SpatialMeasure) = ReturnDenseSpatialSum()
 returntrait(::GraphMeasure) = ReturnAssignedSparse()

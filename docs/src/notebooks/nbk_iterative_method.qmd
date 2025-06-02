@@ -28,7 +28,7 @@ using CairoMakie
 ```{julia}
 datadir = realpath(joinpath(dirname(pathof(ConScape)), "..", "data"))
 paths = (quality=joinpath(datadir, "hab_qual_1000.asc"),
-         movementlikelihood=joinpath(datadir, "mov_prob_1000.asc"))
+         steplikelihood=joinpath(datadir, "mov_prob_1000.asc"))
 rast = RasterStack(paths; missingval=NaN)
 mask!(rast; with=rast)
 ```
