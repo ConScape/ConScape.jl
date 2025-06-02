@@ -2,6 +2,9 @@ name = "ConScape"
 uuid = "2ba2d6f2-f651-5162-bda8-601e45ce5244"
 version = "0.3.0"
 
+[sources]
+OldConScape = {url = "https://github.com/ConScape/ConScape.jl", rev = "old"}
+
 [deps]
 ArnoldiMethod = "ec485272-7323-5ecc-a04f-4719b315124d"
 CommonSolve = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
@@ -20,9 +23,6 @@ LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 
 [extensions]
 ConScapeLinearSolveExt = "LinearSolve"
-
-[sources]
-OldConScape = {url = "https://github.com/ConScape/ConScape.jl", rev = "old"}
 
 [compat]
 Aqua = "0.8"
@@ -49,6 +49,7 @@ julia = "1.10"
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
+OldConScape = "3ba2d6f2-f651-5162-bda8-601e45ce5244"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
