@@ -4,6 +4,7 @@ version = "0.3.0"
 
 [sources]
 OldConScape = {url = "https://github.com/ConScape/ConScape.jl", rev = "old"}
+Graphs = {url = "https://github.com/rafaqz/Graphs.jl", rev = "no_alloc_enumerate_paths"}
 
 [deps]
 ArnoldiMethod = "ec485272-7323-5ecc-a04f-4719b315124d"
