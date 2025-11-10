@@ -4,7 +4,7 @@ function get_or_compute!(ti::TargetInit, m::Measure)
     haskey(st, x) && return st[x]
     output = compute(m, ti)
     if returntrait(m) isa ReturnDenseSpatial
-        st[x] = ReadOnlyArray(output)
+        st[x] = readonlyarray(output)
     end
     return output
 end
@@ -14,13 +14,13 @@ end
     output = if x === :Z # "fundamental matrix"
         _fundamentalmatrix(ti)
     elseif x === :Zⁱ # elementwise inverse of Z
-        ReadOnlyArray(_inv!(ti.workspace, ti.Z))
+        readonlyarray(_inv!(ti.workspace, ti.Z))
     elseif x === :Zrows
         _fundamentalrowmatrix(ti)
     elseif x === :Y
         (; CW, Z, IW_factorization, workspace) = ti
         # Solve: (I - W) \ (C .* W) * Z ./ Z
-        ReadOnlyArray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
+        readonlyarray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
     elseif x === :Q
         _qualitymatrix(ti)
     elseif x === :K
@@ -65,7 +65,7 @@ end
     elseif x === :Y # Unadjusted expected cost
         (; CW, Z, IW_factorization, workspace) = ti
         # Solve: (I - W) \ (C .* W) * Z ./ Z
-        ReadOnlyArray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
+        readonlyarray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
     else
         error("Unknown property $x")
     end
@@ -82,7 +82,7 @@ end
     elseif x == :K # "proximity vector"
         (; shortest_paths, workspace) = ti
         # TODO this should error earlier
-        ReadOnlyArray(workspace .= distance_transformation(ti).(shortest_paths.dists))
+        readonlyarray(workspace .= distance_transformation(ti).(shortest_paths.dists))
     elseif x === :M # "landscape vector"
         _landscapematrix(ti)
     elseif x === :Q
@@ -109,26 +109,26 @@ function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
         distances
     end
     proximities = _maybe_set_diagonal!(ti, proximities)
-    return ReadOnlyArray(proximities)
+    return readonlyarray(proximities)
 end
 function _fundamentalmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     workspace1, workspace2 = workspaces(ti)
     n = nsources(connectedgraph(ti))
     b = _diag_vec!(workspace1, n, target(ti))
     b_copy = _diag_vec!(workspace2, n, target(ti))
-    return ReadOnlyArray(ldiv!(solver(ti), b, ti.IW_factorization, b_copy))
+    return readonlyarray(ldiv!(solver(ti), b, ti.IW_factorization, b_copy))
 end
 function _fundamentalrowmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     b = _diag_vec!(ti.workspace, nsources(connectedgraph(ti)), target(ti))
-    return ReadOnlyArray(ldiv!(ti, ti.IW_adj_factorization, b))
+    return readonlyarray(ldiv!(ti, ti.IW_adj_factorization, b))
 end
 function _landscapematrix(ti::TargetInit)
     (; qˢ, K, qᵗ, workspace) = ti
-    return ReadOnlyArray(workspace .= qˢ .* K .* qᵗ)
+    return readonlyarray(workspace .= qˢ .* K .* qᵗ)
 end
 function _qualitymatrix(ti::TargetInit)
     (; qˢ, qᵗ, workspace) = ti
-    return ReadOnlyArray(workspace .= qˢ .* qᵗ)
+    return readonlyarray(workspace .= qˢ .* qᵗ)
 end
 function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
     (; P, IP, IP_factorization) = ti
@@ -151,7 +151,7 @@ function _inv!(Zⁱ::AbstractArray, Z::AbstractArray)
     broadcast!(Zⁱ, Z) do x
         x = inv(x)
         isfinite(x) ? x : floatmax(eltype(Z))
-    end |> ReadOnlyArray
+    end |> readonlyarray
 end
 
 #------------------------------------------------------------------------------------------
@@ -287,7 +287,7 @@ function compute(::Distance, ti::TargetInit{<:Euclidean})
     return ti.workspace .= _hypot.(sourceids(ti), (target(ti).spatialidx,))
 end
 compute(::Distance, ti::TargetInit{<:LCP}) =
-    ReadOnlyArray(ti.shortest_paths.dists)
+    readonlyarray(ti.shortest_paths.dists)
 
 function compute(
     ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}

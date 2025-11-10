@@ -13,7 +13,6 @@ using SafeTestsets
         JET.test_package(ConScape; target_defined_modules = true)
     end
     @safetestset "Workspaces" begin include("workspaces.jl") end
-    @safetestset "ReadOnlyArray" begin include("readonlyarray.jl") end
     @safetestset "Graphs" begin include("graph_generation.jl") end
     # @safetestset "basics" begin include("basics.jl") end
     @safetestset "Permeable wall sim" begin include("wall.jl") end

@@ -43,13 +43,17 @@ end
 #     _maybe_raster(_fill_matrix(values, p), p)
 # end
 
+# Prevent rewrapping
+readonlyarray(A::AbstractArray) = ReadOnlyArray(A)
+readonlyarray(A::ReadOnlyArray) = A
+
 _maybe_set_diagonal!(ti::TargetInit, proximities) =
     _maybe_set_diagonal!(ti, proximities, diagvalue(ti))
 _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Nothing) = proximities
 function _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Number)
     proximities = ti.workspace .= proximities
     proximities[target(ti).node] = diagvalue
-    return ReadOnlyArray(proximities)
+    return readonlyarray(proximities)
 end
 # function _maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnodes::AbstractVector)
 # , diagvalue(ti), target(ti).node
