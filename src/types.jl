@@ -1,4 +1,23 @@
 
+"""
+    Solver
+
+Abstract supertype for ConScape solvers.
+
+These essentially determin how sparse systems of linear 
+equations are solved, indide `ldiv!` calls.
+
+[`VectorSolver`](@ref) and [`LinearSolver`](@ref) are the two implementations.
+"""
+abstract type Solver end
+
+"""
+    AbstractProblem
+
+Abstract supertype for ConScape problem specifications.
+"""
+abstract type AbstractProblem end
+
 # Input types
 
 abstract type InputType end
