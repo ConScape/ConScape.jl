@@ -41,12 +41,11 @@ export VectorSolver, LinearSolver
 
 export MinusLog, MinusLogAlpha, Inv, OddsFor, OddsAgainst, ExpMinus, ExpMinusAlpha
 
-export solve, solve!, init, assess, reassess
-
 export ConScapeProblem, WindowedProblem, BatchProblem
 
+export solve, solve!, init, assess, reassess
+
 include("types.jl")
-include("inputs.jl")
 
 include("utils/workspaces.jl")
 include("utils/readonlyarray.jl")
