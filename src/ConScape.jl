@@ -45,7 +45,7 @@ export solve, solve!, init, assess, reassess
 
 export ConScapeProblem, WindowedProblem, BatchProblem
 
-include("abstract_types.jl")
+include("types.jl")
 include("inputs.jl")
 
 include("utils/workspaces.jl")
