@@ -19,6 +19,7 @@ import CommonSolve: solve, solve!, init
 
 using WoodburyMatrices: Woodbury
 using SimpleWeightedGraphs: SimpleWeightedGraph, SimpleWeightedDiGraph
+using ReadOnlyArrays: ReadOnlyArray
 
 
 export RandomisedShortestPath, LeastCostPath, RandomWalk, Euclidean, RSP, LCP
@@ -45,10 +46,10 @@ export ConScapeProblem, WindowedProblem, BatchProblem
 
 export solve, solve!, init, assess, reassess
 
+
 include("types.jl")
 
 include("utils/workspaces.jl")
-include("utils/readonlyarray.jl")
 include("utils/bellman_ford.jl")
 
 include("transformations.jl")
