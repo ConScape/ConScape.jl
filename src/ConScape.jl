@@ -45,29 +45,13 @@ export solve, solve!, init, assess, reassess
 
 export ConScapeProblem, WindowedProblem, BatchProblem
 
-"""
-    Solver
-
-Abstract supertype for ConScape solvers.
-
-These essentially determin how sparse systems of linear 
-equations are solved, indide `ldiv!` calls.
-
-[`VectorSolver`](@ref) and [`LinearSolver`](@ref) are the two implementations.
-"""
-abstract type Solver end
-
-"""
-    AbstractProblem
-
-Abstract supertype for ConScape problem specifications.
-"""
-abstract type AbstractProblem end
-
+include("abstract_types.jl")
 include("inputs.jl")
+
 include("utils/workspaces.jl")
 include("utils/readonlyarray.jl")
 include("utils/bellman_ford.jl")
+
 include("transformations.jl")
 include("graphs.jl")
 include("measures.jl")
@@ -80,6 +64,7 @@ include("solvers.jl")
 include("compute.jl")
 include("windows.jl")
 include("assessment.jl")
+
 include("utils/coarse_graining.jl")
 include("utils/utils.jl")
 include("utils/simulations.jl")
