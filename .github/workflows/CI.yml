@@ -10,7 +10,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - 'lts'
+          # - 'lts' cant do lts testing with [sources] in Project.toml
           - '1'
           - 'pre'
         os:
