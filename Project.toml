@@ -48,7 +48,6 @@ julia = "1.10"
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
-JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 OldConScape = "3ba2d6f2-f651-5162-bda8-601e45ce5244"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
@@ -58,4 +57,4 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 OldConScape = {url = "https://github.com/ConScape/ConScape.jl", rev = "old"}
 
 [targets]
-test = ["Aqua", "ArchGDAL", "JET", "OldConScape", "Plots", "SafeTestsets", "Test"]
+test = ["Aqua", "ArchGDAL", "OldConScape", "Plots", "SafeTestsets", "Test"]
