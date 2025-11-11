@@ -1,0 +1,157 @@
+---
+title: "Numerical issues"
+bibliography: biblio.bib
+engine: julia
+---
+
+::: {.callout-tip}
+## Here you will learn about
+
+Numerical issues that may arise with large values of $\theta$ (i.e. towards the optimum end of the continuum), and a partial solution to it.
+
+:::
+
+::: {.callout-warning}
+
+This notebook assumes familiarity with the basics as covered in the notebook
+[Getting Started](/notebooks/nbk_getting_started.qmd)
+
+:::
+
+```{julia}
+using ConScape
+using Rasters
+using ArchGDAL
+using CairoMakie
+```
+
+```{julia}
+datadir = realpath(joinpath(dirname(pathof(ConScape)), "..", "data"))
+paths = (quality=joinpath(datadir, "hab_qual_1000.asc"),
+         steplikelihood=joinpath(datadir, "mov_prob_1000.asc"))
+rast = RasterStack(paths; missingval=NaN)
+mask!(rast; with=rast)
+```
+
+# Numerical issues in going from the randomized shortest path to the least-cost path
+
+The RSP framework can be seen as a generalization of the 'killed random walk'
+(vanmoorter2021defining) or 'spatial absorbing Markov chain' (SAMC) approach
+recently adopted for dispersal modeling with mortality
+(fletcher2019towards,marx2020samc). A SAMC corresponds to a random walk on a
+graph that is augmented with a 'cemetery' node. The cost matrix determines the
+probability of moving from $i$ to the cemetery instead of to $j$. The $\theta$
+parameter in the RSP weighs the cost. When $\theta = 0$, no mortality will occur
+and the distribution over paths will correspond to the random walk distribution.
+When $\theta = 1$, mortality will be $1-\exp(-\mathbf{C})$, which corresponds to
+the `spatial absorbing Markov chain' from \citet{fletcher2019towards}. As
+$\theta$ increases from zero, the overall mortality risk increases and the paths
+with the highest likelihood of survival from $s$ to $t$ are those with a lower
+cost. Hence, the expected cost conditional upon arrival will decrease as
+$\theta$ increases. With $\theta \rightarrow \infty$, the RSP expected cost will
+converge to the least-cost distance and the RSP distribution over paths will
+concentrate on the least-cost path. 
+
+However, as $\theta$ increases, the expected number of visits from $s$ to target
+$t$ before `dying' decreases (the fundamental matrix, $\mathbf{Z}$,
+Eq.~\eqref{eq:fundamental_matrix} in the main text), in particular on large
+landscapes, it may become extremely small. Hence, as mentioned in
+Section~\ref{sec:step2} in the main text, the computation of the fundamental
+matrix $\mathbf{Z}$ may suffer from numerical underflow, which results in the
+matrix containing 0 at some elements, which should not happen on a strongly
+connected graph. This just means that those elements are actually simply smaller
+than the smallest representable floating point value, so called `underflow'. The
+elements $z_{st}$ of the matrix $\mathbf{Z}$ can be interpreted in two ways;
+both as the expected number of visits to node $t$ when starting from node $s$,
+before getting killed by the killed random walk, and more technically as the sum
+of RSP likelihoods of regular paths that start from $s$ and end in $t$, the RSP
+likelihood of a path being defined as $\tw(\wp) = \prod_{l=1}^{L(\wp)}
+w_{\wp(l-1), \wp(l)}$, where $w_{ij} = \prw_{ij} \exp(-\theta c_{ij})$ and
+$L(\wp)$ is the length, i.e.\ the number of steps along path $\wp$~\citep[see,
+e.g.][for details]{kivimaki2020sensitivity}. Therefore, the elements $z_{st}$
+that result in zeros due to the underflow correspond to node-pairs $(s,t)$ for
+which a random walker moving according to the killed random walk probabilities
+is very unlikely to visit node $t$ at all; or, equivalently, such $(s,t)$ for
+which the RSP path likelihoods are extremely small.
+
+```{julia}
+rsp = RSP(; 
+    theta=1.0,
+    distance_transformation=x -> exp(- x/ 75),
+    proximity_measure=ExpectedCost(), 
+)
+```
+
+Despite the warning, the \texttt{GridRSP} will be constructed and the functions
+can be run. The distance functions, such as `expected_cost`, will return _Inf_
+for the elements $(s,t)$ of the distance matrices for which $z_{st} = 0$. As a
+result, applying the exponential transformation to those distances results in
+proximities of 0. The survival probability (and power mean proximity) from $s$
+to $t$ will also be 0, whenever $z_{st}=0$. Node-pairs $(s,t)$ for which the
+proximity is estimated as 0 due to the underflow issue do not contribute to the
+proximity-weighted betweenness measures, nor the amount of habitat connected to
+a node. This can be an acceptable loss when the underflow only affects a few
+nodes or a few node-pairs. But if many node-pairs are affected (i.e. many
+proximites are evaluated as 0), which is most often caused by $\theta$ being too
+large, then the betweenness and distance measures can become too localized, as
+all long-range distances become omitted.
+
+Possible workarounds for avoiding the underflow warning include decreasing
+$\theta$, checking for and decreasing excessively large edge costs $c_{ij}$, as
+well as checking for excessively small step probabilities $a_{ij}$ and
+increasing them. Another choice is to simply remove the nodes that seem to cause
+the underflow warning, these nodes are probably poorly connected to the
+landscape network. In all cases, care must be taken when facing the underflow
+warning, as it also increases the risk of numerical instability. It is also
+possible (although seemingly fairly rare) that the elements of $\mathbf{Z}$ are
+all nonzero, but still so small and close to the smallest representable value
+that there are numerical issues. Therefore, it is recommended that the user is
+aware of the warning, and able to find an explanation and a reliable solution
+for it.
+
+Moreover, an alternative algorithm (Alg_Single_Pass and Alg_ordered_update from
+Appendix) to compute distances is implemented in ConScape, which allows much
+larger values of $\theta$ for a considerably closer convergence to the
+least-cost distances. These algorithms do not use the fundamental matrix
+($\mathbf{Z}$) and are therefore computed directly from the `Grid` struct.
+ConScape uses Julia's 'multiple dispatch' to use these other algorithms, when
+RSP-based distance functions are called upon the `Grid` struct instead of the
+`GridRSP`. However, computation time for these algorithms is considerably longer
+as they require a loop over target nodes.
+
+```{julia}
+@time func_hab = solve(FunctionalHabitat(), rsp, rast)
+plot(func_hab)
+```
+
+Compare these 54 minutes with the $8.64$ seconds it takes using ConScape's
+default algorithm to compute the habitat functionality.
+
+However, we can also use an approximation using a `single pass', instead of
+aiming at convergence for the true RSP-based distance, see
+Appendix~\ref{appendix_singlePass} for full details and explanation:
+
+```{julia}
+rsp = RSP(; 
+    distance_transformation=x -> exp(-x/75), 
+    proximity_measure=ExpectedCost(),
+    approx=true,
+    theta=1.0, 
+)
+@time func_hab = solve(FunctionalHabitat(), rsp, rast);
+plot(func_hab)
+```
+
+This 'single pass' approximation will be fairly good in case of near optimal
+movements (i.e. large values of $\theta$), see Appendix: appendix_singlePass. 
+
+So, while ConScape allows close convergence to optimal movements using these additional algorithms, when the goal is to replicate least-cost distance
+computation, the RSP framework is not very efficient. Therefore, the ConScape
+library provides convenience functions to Julia's Dijkstra algorithm:
+`least_cost_distance`, see Notebook XXX for a demonstration. 
+
+## Summary
+
+We discussed numerical issues that may arise with large values of $\theta$,
+which prevent convergence of the RSP expected cost to the least-cost distance,
+together with possible solutions depending on the goal of the study.

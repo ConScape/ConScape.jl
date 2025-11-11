@@ -1,23 +1,23 @@
 
 struct AssessmentWarnings
-    source_qualities_nan_found::Bool
-    target_qualities_nan_found::Bool
+    sourcequality_nan_found::Bool
+    targetquality_nan_found::Bool
 end
 
 function Base.:(|)(aw1::AssessmentWarnings, aw2::AssessmentWarnings)
     AssessmentWarnings(
-        aw1.source_qualities_nan_found | aw2.source_qualities_nan_found,
-        aw1.target_qualities_nan_found | aw2.target_qualities_nan_found,    
+        aw1.sourcequality_nan_found | aw2.sourcequality_nan_found,
+        aw1.targetquality_nan_found | aw2.targetquality_nan_found,    
     )
 end
 function Base.:(&)(aw1::AssessmentWarnings, aw2::AssessmentWarnings)
     AssessmentWarnings(
-        aw1.source_qualities_nan_found & aw2.source_qualities_nan_found,
-        aw1.target_qualities_nan_found & aw2.target_qualities_nan_found,    
+        aw1.sourcequality_nan_found & aw2.sourcequality_nan_found,
+        aw1.targetquality_nan_found & aw2.targetquality_nan_found,    
     )
 end
-Base.any(aw::AssessmentWarnings) = aw.source_qualities_nan_found | aw.target_qualities_nan_found
-Base.all(aw::AssessmentWarnings) = aw.source_qualities_nan_found & aw.target_qualities_nan_found
+Base.any(aw::AssessmentWarnings) = aw.sourcequality_nan_found | aw.targetquality_nan_found
+Base.all(aw::AssessmentWarnings) = aw.sourcequality_nan_found & aw.targetquality_nan_found
 
 """
     ProblemAssessment
@@ -26,6 +26,23 @@ Abstract supertype for problem assessments.
 
 These calculate the computation size of an 
 `AbstractWindowedProblem` for a specific `RasterStack`.
+
+As large assessments are expensive to compute, it is 
+recommended to write them to disk using e.g. JSON3.jl:
+
+```julia
+using JSON3, ConScape
+... # problem and rast definition
+assessment = assess(problem, rast)
+JSON3.write("assessment.json", assessment)
+```
+
+And later read them again, here for when the assessment
+was for a nested windowed problem:
+```
+using JSON3, ConScape
+assessment = JSON3.read("assessment.json", NestedAssessment)
+````
 """
 abstract type ProblemAssessment end
 
@@ -35,7 +52,7 @@ Base.size(a::ProblemAssessment) = a.size
     WindowAssessment <: ProblemAssessment
 
 Assessment of an AbstractWindowedProblem that holds
-a `Problem`.
+a `ConScapeProblem`.
 
 # Fields
 - `size::Tuple{Int,Int}`: the size of the input and output RasterStack
@@ -80,8 +97,7 @@ that holds another `AbstractWindowedProblem`.
 end
 
 function Base.show(io::IO, mime::MIME"text/plain", a::ProblemAssessment)
-    summary(io, a)
-    println(io)
+    println(io, typeof(a))
     println(io, "Shape: $(a.shape)")
     println(io, "Number of jobs: $(a.njobs)")
     # Use SparseArrays nice matrix printing for the mask
@@ -104,7 +120,7 @@ This can be used to indicate memory and time reequiremtents on a cluster.
 """
 function assess end
 
-function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack; 
+function assess(p::AbstractWindowedProblem{<:ConScapeProblem}, rast::AbstractRasterStack; 
     inner_target_bools=nothing,
     target_ranges=_target_ranges(p, rast),
     kw...
@@ -113,16 +129,16 @@ function assess(p::AbstractWindowedProblem{<:Problem}, rast::AbstractRasterStack
     window_ranges = ConScape.window_ranges(p, rast)
 
     # Convert everything to Bool at the batch level so window assessments are fast
-    inner_targets = view(rast.target_qualities, target_ranges...)
+    inner_targets = view(_get_targetquality(rast), target_ranges...)
     warnings = AssessmentWarnings(
-        any(isnan, rast.source_qualities),
+        any(isnan, _get_sourcequality(rast)),
         any(isnan, inner_targets),
     )
     inner_target_bools = isnothing(inner_target_bools) ? _isvalid.(inner_targets) : inner_target_bools
-    source_qualities = _isvalid.(rast.source_qualities)
-    target_qualities = falses(size(rast))
-    target_qualities[target_ranges...] .= inner_target_bools
-    bool_rast = RasterStack((; source_qualities, target_qualities), dims(rast))
+    sourcequality = _isvalid.(_get_sourcequality(rast))
+    targetquality = falses(size(rast))
+    targetquality[target_ranges...] .= inner_target_bools
+    bool_rast = RasterStack((; sourcequality, targetquality), dims(rast))
 
     # Calculate window sizes and allocations
     sparse_sizes = vec(_estimate_sparse_sizes(p, bool_rast; window_ranges))
@@ -167,10 +183,13 @@ function assess(
             )
         end
         # We only need qualities for the assessment
-        window_rast = rast[(:source_qualities, :target_qualities)][rs...]
+        window_rast = RasterStack((
+            sourcequality=_get_sourcequality(rast), 
+            targetquality=_get_targetquality(rast),
+        ))[rs...]
         target_ranges = _target_ranges(p, window_rast)
         # Convert targets to bool as early as possible
-        inner_targets = view(window_rast.target_qualities, target_ranges...)
+        inner_targets = view(_get_targetquality(window_rast), target_ranges...)
         inner_target_bools = _isvalid.(inner_targets)
         assessments[i] = if count(inner_target_bools) > 0
             assess(p.problem, window_rast; inner_target_bools, target_ranges, nthreads, kw...)
@@ -191,9 +210,9 @@ end
 """
     reassess(p::BatchProblem, a::NestedAssessment)
 
-Re-asses an existing nested assesment of a [`BatchProblem`](@ref).
+Re-asses an existing nested assessment of a [`BatchProblem`](@ref).
 
-The returned `NestedAssessment` will exclude any batches that 
+The returned `NestedAssessment` will have removed batches that 
 already have a data folder (assumed to be successfully completed).
 """
 function reassess(p::BatchProblem, a::NestedAssessment)
@@ -232,9 +251,9 @@ solve(p::BatchProblem, rast::RasterStack, a::ProblemAssessment, i::Int; kw...) =
    
 init(p::BatchProblem{<:WindowedProblem}, rast::RasterStack, a::NestedAssessment, i::Int...; kw...) =
     init(p, rast, i...; _assessment_keywords(p, rast, a)..., kw...)
-init(p::BatchProblem{<:Problem}, rast::RasterStack, a::WindowAssessment, i::Int...; kw...) =
+init(p::BatchProblem{<:ConScapeProblem}, rast::RasterStack, a::WindowAssessment, i::Int...; kw...) =
     init(p, rast, i...; batch_indices=a.indices)
-init(p::WindowedProblem{<:Problem}, rast::RasterStack, a::WindowAssessment; kw...) =
+init(p::WindowedProblem{<:ConScapeProblem}, rast::RasterStack, a::WindowAssessment; kw...) =
     init(p, rast; sparse_sizes=a.sparse_sizes, indices=a.indices, kw...)
 
 # Keywords to pass from an Assessment to `init` or `solve`
@@ -252,3 +271,5 @@ function _assessment_keywords(p::BatchProblem, rast, a::NestedAssessment)
     end
     return (; batch_indices=a.indices, window_indices, sparse_sizes)
 end
+
+batch_paths(p::BatchProblem, a::NestedAssessment) = batch_paths(p, size(a))[a.indices]

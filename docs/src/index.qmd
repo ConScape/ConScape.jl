@@ -1,0 +1,91 @@
+# ConScape.jl
+
+ConScape (i.e. "connected landscapes") is a software library implemented in the
+high-performance open-source Julia language to compute landscape ecological
+metrics — originally developed in metapopulation ecology (such as
+‘metapopulation capacity’ and ‘probability of connectivity’) — for large
+landscapes. 
+
+In addition to traditional distance metrics used in ecology (i.e. Euclidean and
+least-cost distance), ConScape implements the randomized shortest paths
+framework to represent connectivity along the continuum from optimal to random
+movements.
+
+Built by a team of ecologists, network scientists and software developers,
+ConScape is able to efficiently compute landscape metrics for high-resolution
+landscape representations to leverage the availability of large data for
+sustainable land use and biodiversity conservation. As a Julia implementation,
+ConScape combines computational efficiency with a transparent code base, which
+facilitates continued innovation through contributions from the rapidly growing
+community of landscape and connectivity modellers using Julia.
+
+::: {.callout-important}
+# ConScape citation
+::: {.panel-tabset}
+## APA style
+Van Moorter, B., Kivimäki, I., Noack, A., Devooght, R., Panzacchi, M., Hall, K. R., Leleux, P. & Saerens, M. (2023). Accelerating advances in landscape connectivity modelling with the ConScape library. *Methods in Ecology and Evolution*, 14(1), 133–145.
+
+## bibtex
+```
+@article{vanmoorter2023accelerating,
+  author = {Van Moorter, Bram and Kivimäki, Ilkka and Noack, Andreas and Devooght, Robin and Panzacchi, Manuela and Hall, Kimberly R. and Leleux, Pierre and Saerens, Marco},title = {Accelerating advances in landscape connectivity modelling with the ConScape library},
+  journal = {Methods in Ecology and Evolution},
+  volume = {14},
+  number = {1},
+  pages = {133-145},
+  doi = {https://doi.org/10.1111/2041-210X.13850},
+  url = {https://besjournals.onlinelibrary.wiley.com/doi/abs/10.1111/2041-210X.13850},
+  eprint = {https://besjournals.onlinelibrary.wiley.com/doi/pdf/10.1111/2041-210X.13850},
+  year = {2023}
+}
+```
+:::
+:::
+
+# ConScape's origin story
+
+ConScape was developed to integrate habitat suitability with habitat
+permeability, as measured by respectively resource and step selection functions,
+for wild reindeer in Norway. To this end we rediscovered the Conefor approach,
+which we extended with the randomized shortest paths (RSP) framework instead of
+the least-cost path one. This RSP framework is itself an extension of the pure
+random walk, as in [Circuitscape](https://circuitscape.org/). The name ConScape
+itself refers not only to 'Connected Landscapes', but also to **Con**efor +
+Circuit**scape** as a testimony to this legacy.  
+
+ConScape has a similar focus as Conefor in that it aims at assessing the
+landscape network as a whole, i.e. it connects all landscape units (e.g. pixels)
+to each other (in other words, all-to-all connectivity). However, ConScape can
+use Randomised Shortest Path, Random walk, or least cost movement modes to
+compute the connectivity, rather than just least cost. Circuitscape, on the
+other hand, is a pioneering connectivity tool to move beyond an exclusive focus
+on the least-cost path connecting two points to considering all paths following
+a random walk process (based on the movement of electricity on an electrical
+network). However, Circuitscape's main use case is not focussed on an all-to-all
+connectivity assessment, but instead aims at identifying corridors between a
+limited number of areas. 
+
+# How the documentation is organized
+
+We are developing the documentation for ConScape following the [four types of
+documentation system](https://documentation.divio.com/), note that this is very
+much under development and not all types are equally present. However, an
+overview of these four types may be helpful for you to know where to look for
+certain things:
+
+* [Tutorials](/notebooks/index.qmd) take you by the hand through a series of
+  steps to run your first analysis using ConScape. Start here if you’re new to
+  ConScape or connectivity analysis, for instance with the 
+  [getting started notebook](/notebooks/nbk_getting_started.qmd). 
+  Also look at the [Quick Start](quick_start.qmd).
+* 'How-to guides' are recipes. They guide you through the steps involved in
+  addressing key problems and use-cases. They are more advanced than tutorials and
+  assume some knowledge of how ConScape works. These can be found under specific
+  [Frequently Asked Questions](faqV2.qmd).
+* 'Topic guides' discuss key topics and concepts in ConScape and connectivity
+  modeling in general at a fairly high level and provide useful background
+  information and explanation. These can be found under
+  [Background](background.qmd) or specific [Frequently Asked Questions](faqV2.qmd)
+* 'Reference guides' contain technical reference for APIs and other aspects of
+  ConScape's machinery. They describe how it works and how to use it but assume
+  that you have a basic understanding of key concepts.

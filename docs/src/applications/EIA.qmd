@@ -1,0 +1,25 @@
+---
+title: "Environmental Impact Assessment"
+---
+
+::: {.callout-note}
+
+Assessment of impact of anthropogenic infrastructures for wild reindeer habitat
+loss and fragmentation.
+
+:::
+
+- [Dorber et al.  2023](https://link.springer.com/article/10.1007/s13280-022-01824-x) 
+    presents a first application of functional habitat to the assessment of the impact of
+    hydropower on wild reindeer in Norway. 
+- [Reindeer maps Norway](https://sites.google.com/view/reindeermapsnorway/) 
+    for an application of ConScape for reindeer habitat assessments, including
+    interactive web maps in the [Google Earth Engine](https://earthengine.google.com/)
+- [Wild reindeer maps](https://bramvanmoorter.users.earthengine.app/view/renewablereindeergis):
+    where you can explore maps produced using analytical approaches to illustrate
+    how reindeer view the landscape in terms of suitable resources, functional
+    areas, corridors, barriers, and human footprint,
+- [Comparison with expert-based maps](https://bramvanmoorter.users.earthengine.app/view/qualitynorm): 
+    where you can compare maps produced using analytical approaches (using also ConScape) to
+    maps produced through expert assessment for the Norwegian Wild Reindeer Quality
+    Norm assessment - Delnorm 3.

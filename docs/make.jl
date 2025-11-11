@@ -1,21 +1,10 @@
 using Documenter
-using ConScape
+using DocumenterQuarto
+using DocumenterQuarto.Quarto
 
-ENV["COLUMNS"] = 120
-ENV["LINES"] = 30
+Quarto.render(joinpath(@__DIR__, "src"))
 
-DocMeta.setdocmeta!(ConScape, :DocTestSetup, :(using ConScape); recursive=true)
-
-makedocs(
-    sitename = "ConScape",
-    format = Documenter.HTML(),
-    modules = [ConScape],
-)
-
-# Documenter can also automatically deploy documentation to gh-pages.
-# See "Hosting Documentation" and deploydocs() in the Documenter manual
-# for more information.
-deploydocs(
-    repo = "github.com/ConScape/ConScape.jl.git",
-    devbranch = "main",
+deploydocs(;
+    repo="github.com/ConScape/ConScape.jl",
+    push_preview=true,
 )

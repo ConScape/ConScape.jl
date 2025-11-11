@@ -1,0 +1,12 @@
+{
+  "hash": "cccf98b156b32d5fdb8e76505099b511",
+  "result": {
+    "engine": "jupyter",
+    "markdown": "---\nnumber-depth: 2\n---\n\n# Reference\n\n_Docstrings for ConScape._\n\n```{julia}\n#| echo: false\n#| output: false\nusing DocumenterQuarto\nusing ConScape\n```\n\n```{julia}\n#| echo: false\n#| output: asis\nDocumenterQuarto.autodoc(ConScape)\n```\n\n",
+    "supporting": [
+      "index_files"
+    ],
+    "filters": [],
+    "includes": {}
+  }
+}

@@ -1,0 +1,17 @@
+---
+title: "What value to choose for theta?"
+author: "Bram van Moorter"
+date: "2022-12-05"
+categories: [settings, topic guide]
+---
+
+In other words: "how random are paths between source and target?"
+
+A difficult question... 
+
+First, testing different values of $\theta$ will allow
+you to assess the sensitivity of your results to this crucial parameter.
+
+Several efforts exist to estimate $\theta$ from movement data, for instance: 
+[Kivimäki et al. 2020](https://academic.oup.com/comnet/article-abstract/8/4/cnaa024/5989563), 
+and [Panzacchi et al. 2015](https://besjournals.onlinelibrary.wiley.com/doi/10.1111/1365-2656.12386).

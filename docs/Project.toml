@@ -1,5 +1,8 @@
 [deps]
+ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+ConScape = "2ba2d6f2-f651-5162-bda8-601e45ce5244"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-
-[compat]
-Documenter = "1"
+DocumenterQuarto = "4710194d-e776-4893-9690-8d956a29c365"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+Rasters = "a3a2b9e3-a471-40c9-b274-f788e487c689"

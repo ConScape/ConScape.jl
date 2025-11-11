@@ -1,0 +1,31 @@
+---
+title: "Notebooks"
+bibliography: biblio.bib
+engine: julia
+---
+
+Here I will present an annotated index of the different notebooks through a
+short summary.
+
+The first Notebook on how [getting started](/notebooks/nbk_getting_started.qmd)
+with ConScape is a prerequisite for all subsequent Notebooks.
+
+From here we recommend you look at the Notebook on
+[performance](/notebooks/nbk_landmarks.qmd) as this introduces the concept of
+'landmarks', which are used throughout the other Notebooks to improve
+performance.
+
+The next Notebook on different [ecological
+distance](/notebooks/nbk_distance_metrics.qmd) metrics builds upon the ideas
+presented in [@vanmoorter2021defining].
+
+The next Notebook details different ways to measure [functional
+habitat](/notebooks/nbk_functionality_variants.qmd).
+
+Finally, the Notebook on [dispersal mortality](/notebooks/nbk_cost.qmd) uses the
+ConScape library for applications similar to those presented in
+[@fletcher2019towards] and [@vanmoorter2021defining], where the probability and
+cost of movement are potentially independent processes. 
+
+[numerical issues](/notebooks/nbk_iterative_method.qmd)
+

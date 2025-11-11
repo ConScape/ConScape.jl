@@ -1,0 +1,35 @@
+---
+title: "Installation"
+---
+
+## Julia
+
+ConScape is a library for the [Julia programming language](https://julialang.org/).
+
+\note{For a [comparison between Julia and R](https://datascience-enthusiast.com/R/R_Julia_cheat_sheet.html) 
+for basic matrix and vector notations.}
+
+### Installation
+
+Julia can be installed [here](https://julialang.org/installation/).
+
+::: {.callout-warning}
+ConScape requires a Julia version **≥ 1.9**
+:::
+
+### Running
+
+VS Code is widely used, especially in the Julia community.
+It is easy to set up and use as shown [here](https://www.youtube.com/watch?v=oi5dZxPGNlk).
+
+## Installing ConScape
+
+To install ConScape from Julia's repl type `]` for pkg mode and:
+
+```julia-repl
+add ConScape
+```
+
+Now you are ready to start with the first
+[notebook](/notebooks/nbk_getting_started.qmd) presenting a basic workflow for
+connectivity analysis using ConScape.

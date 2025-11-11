@@ -1,0 +1,15 @@
+---
+title: "Background"
+---
+
+## Our publications:
+
+[Panzacchi et al. 2015](https://besjournals.onlinelibrary.wiley.com/doi/10.1111/1365-2656.12386) shows the first application of the randomized shortest paths framework in combination with step selection functions.
+
+[Van Moorter et al. 2021](https://onlinelibrary.wiley.com/doi/full/10.1111/ecog.05351) presents a framework to scale up step selection functions to assess effective connectivity using the randomized shortest paths framework. This paper presents an extensive discussion of the RSP in an ecological context.
+
+[Van Moorter et al. 2023](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.13850) is the core publication of the ConScape library, and should be cited for the library.
+
+[Van Moorter et al. 2023](https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecy.4105) is the main publication describing the concept of functional habitat, i.e. habitat that is simultaneously suitable and well-connected to other suitable habitat. It is the computation of this quantity that motivated the development of the ConScape library.
+
+[Dorber et al. 2023](https://link.springer.com/article/10.1007/s13280-022-01824-x) presents a first application of functional habitat to the assessment of the impact of hydropower on wild reindeer in Norway. 

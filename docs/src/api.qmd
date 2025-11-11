@@ -1,0 +1,240 @@
+---
+title: "API"
+engine: julia
+excute:
+  echo: false
+---
+
+ConScape.jl extends the CommonSolve.jl library so that
+`solve` and `init` are generic methods to initilise and 
+solve ConScape.jl [`Problem`](@ref)s.
+
+As the scale of Jobs can be very large, ConScape adds methods
+to assess the work required to run a problem, before it is actually run.
+
+We suggest writing these to disk as json files, using JSON3.jl
+
+
+```{julia}
+#| output: false
+using DocumenterQuarto
+using ConScape
+using DocumenterQuarto: @doc
+```
+
+```{julia}
+# This style is ugly bug what can we do
+# Preferably we could transform julia @docs blocks to markdown
+@doc assess
+```
+```{julia}
+@doc reassess
+```
+
+# Objects
+
+## Movement Modes
+
+`
+```{julia}
+@doc MovementMode
+```
+```{julia}
+@doc RandomisedShortestPath
+```
+```{julia}
+@doc RandomWalk
+```
+```{julia}
+@doc LeastCost
+```
+
+## Measures
+
+Abstract type hierarchy:
+
+```{julia}
+@doc ExpectedCost
+```
+
+### Distances and proximities
+
+```{julia}
+@doc ProximityMeasure
+```
+```{julia}
+@doc PowerMeanProximity
+```
+```{julia}
+@doc SurvivalProbability
+```
+```{julia}
+@doc DistanceMeasure
+```
+```{julia}
+@doc ExpectedCost
+```
+```{julia}
+@doc FreeEnergyDistance
+```
+```{julia}
+@doc HittingTime
+```
+```{julia}
+@doc FreeEnergyDistance
+```
+
+### Path distributions measures
+
+```{julia}
+@doc PathDistributionMeasure
+```
+
+### Spatial measures
+
+```{julia}
+@doc SpatialMeasure
+```
+```{julia}
+@doc Betweenness
+```
+```{julia}
+@doc FunctionalHabitat
+```
+```{julia}
+@doc Criticality
+```
+```{julia}
+@doc Sensitivity
+```
+
+```{julia}
+@doc EdgeBetweenness
+```
+```{julia}
+@doc Eigmax
+```
+
+# Betweenness weighting
+
+Betweenness and EdgeBetweenness measure have
+weighting parameters that modify their behavior.
+
+```{julia}
+@doc BetweennessWeighting
+```
+```{julia}
+@doc Unweighted
+```
+```{julia}
+@doc QualityWeighted
+```
+```{julia}
+@doc ProximityWeighted
+```
+```{julia}
+@doc QualityAndProximityWeighted
+```
+```{julia}
+@doc CustomWeighted
+```
+
+# Sensitivity parameters
+
+Context: this is often referred to as "with regards to".
+
+```{julia}
+@doc SensitivityContext
+```
+```{julia}
+@doc Permeability
+```
+```{julia}
+@doc CostAndAffinitySensitivityContext
+```
+```{julia}
+@doc Affinity
+```
+```{julia}
+@doc Cost
+```
+```{julia}
+@doc Quality
+```
+```{julia}
+@doc CostToAffinity
+```
+```{julia}
+@doc AffinityToCost
+```
+
+Sensitivity summary mode:
+
+```{julia}
+@doc SensitivitySummary
+```
+```{julia}
+@doc LandscapeSum
+```
+```{julia}
+@doc LandscapeEigen
+```
+
+Sensitivity change mode:
+
+```{julia}
+@doc SensitivityChange
+```
+```{julia}
+@doc UnitChange
+```
+```{julia}
+@doc ProportionalChange
+```
+
+## Solvers
+
+```{julia}
+@doc Solver
+```
+```{julia}
+@doc VectorSolver
+```
+```{julia}
+@doc LinearSolver
+```
+
+## Problems
+
+```{julia}
+@doc AbstractProblem
+```
+```{julia}
+@doc Problem
+```
+```{julia}
+@doc WindowedProblem
+```
+```{julia}
+@doc BatchProblem
+```
+
+## Init internals
+
+These objects are returned from `init` at various levels
+
+```{julia}
+@doc Initialisation
+```
+```{julia}
+@doc MultiGridInit
+```
+```{julia}
+@doc GridInit
+```
+```{julia}
+@doc TargetInit
+```
+```{julia}
+@doc Grid
+```

@@ -1,117 +1,257 @@
+"""
+    Measure
+
+Abstract supertype for all ConScape.jl measures.
+"""
 abstract type Measure end
 
-"""
-    SourceTargetMeasure 
-
-Abstract supertype for source-target measures.
-
-These characterize distance, proximity or path distribution between source and target pixels.
-
-These produce a dense fundamental matrix, but may return a summary of it such as the mean.
-"""
-abstract type SourceTargetMeasure <: Measure end
-
-abstract type PathDistributionMeasure <: SourceTargetMeasure end
-
-abstract type ProximityMeasure <: SourceTargetMeasure end
-abstract type DistanceMeasure <: SourceTargetMeasure end
-
-struct ExpectedCost <: DistanceMeasure end
-struct FreeEnergyDistance <: DistanceMeasure end
-struct PowerMeanProximity <: ProximityMeasure end
-# TODO: look at theta use for SurvivalProbability, it should be 1
-struct SurvivalProbability <: ProximityMeasure end
-struct KullbackLeiblerDivergence <: PathDistributionMeasure end
-struct HittingTime <: DistanceMeasure end
+const MeasureTuple = Tuple{<:Measure,Vararg{Measure}} where N
+const MeasureNamedTuple = NamedTuple{K,<:MeasureTuple} where K
+const MeasureTupleOrNamedTuple = Union{MeasureTuple,MeasureNamedTuple}
 
 """
-    GraphMeasure 
+    GraphMeasure <: Measure
 
-Abstract supertype for graph measures.
+Measure in graph space, that return a sparse array from `solve`.
 """
 abstract type GraphMeasure <: Measure end
+"""
+    SpatialMeasure <: Measure
 
-abstract type SpatialMeasure <: GraphMeasure end
-abstract type PerturbationMeasure <: SpatialMeasure end
+Measure in physical space, that return a dense raster matrix from `solve`.
+"""
+abstract type SpatialMeasure <: Measure end
+"""
+    PathDistributionMeasure <: Measure
+
+Measures of path distribution, that return a scalar from `solve`.
+"""
+abstract type PathDistributionMeasure <: Measure end
+
+"""
+    ProximityMeasure <: GraphMeasure
+
+Abstract supertype for measures that can be used
+as proximities (TODO: explain what proximities are)
+
+They return a sparse array from `solve`.
+"""
+abstract type ProximityMeasure <: GraphMeasure end
+
+"""
+    DistanceMeasure <: ProximityMeasure
+
+Abstract supertype for measures that can be used as proximities,
+but first need conversion with a `distance_transformation`.
+
+They return a sparse array from `solve`.
+"""
+abstract type DistanceMeasure <: ProximityMeasure end
+
+# Distances and proximities
+
+struct Distance <: DistanceMeasure end
+struct ExpectedCost <: DistanceMeasure end
+struct FreeEnergyDistance <: DistanceMeasure end
+struct HittingTime <: DistanceMeasure end
+# Not conditional upon arrival
+struct PowerMeanProximity <: ProximityMeasure end
+struct SurvivalProbability <: ProximityMeasure end
+
+struct KullbackLeiblerDivergence <: PathDistributionMeasure end
 
 # Betweenness
-
-"""
-    BetweennessMeasure 
-
-Measures of node and edge betweenness.
-"""
-abstract type BetweennessMeasure{W} <: SpatialMeasure end
 
 abstract type BetweennessWeighting end
 
 struct Unweighted <: BetweennessWeighting end
+
+"""
+    QualityWeighted <: BetweennessWeighting
+
+    QualityWeighted()
+
+Compute betweenness of nodes or edges weighted by source and target qualities.
+"""
 struct QualityWeighted <: BetweennessWeighting end
+"""
+    ProximityWeighted <: BetweennessWeighting
+
+    ProximityWeighted()
+
+Compute betweenness of nodes or edges weighted by the 
+proxmimity between source qualities s and target qualities t.
+"""
 struct ProximityWeighted <: BetweennessWeighting end
+"""
+    QualityAndProximityWeighted <: BetweennessWeighting
+
+    QualityAndProximityWeighted()
+
+Compute betweenness of nodes or edges weighted by source qualities s 
+and target qualities t, and the proximity between s and t.
+"""
 struct QualityAndProximityWeighted <: BetweennessWeighting end
+"""
+    CustomWeighted <: BetweennessWeighting
 
-@kwdef struct Betweenness{W} <: BetweennessMeasure{W}
+    CustomWeighted(weight)
+
+Holds and arbitrary array of custom weights. 
+
+Used internally.
+"""
+struct CustomWeighted{W} <: BetweennessWeighting 
+    weight::W
+end
+
+const WEIGHTING_ARGUMENT = """
+- `weighting`: a [`BetweennessWeighting`](@ref): `Unweighted()`, `QualityWeighted()` 
+    `ProximityWeighted()` or `QualityAndProximityWeighted()`
+"""
+
+"""
+    Betweenness <: SpatialMeasure
+    
+    Betweenness(weighting)
+
+Compute betweenness of all edges weighted by qualities of 
+source s and target t and the proximity between s and t,
+as defined by the [`MovementMode`](@ref)).
+
+## Arguments
+
+$WEIGHTING_ARGUMENT
+
+The value returned from `solve` is a spatial `Raster` or `Matrix`.
+"""
+struct Betweenness{W} <: SpatialMeasure
     weighting::W
 end
-@kwdef struct EdgeBetweenness{W} <: BetweennessMeasure{W}
+Betweenness{W}() where W = Betweenness(W())
+Betweenness(; weighting) = Betweenness(weighting)
+
+const MovementFlow = Betweenness{QualityAndProximityWeighted}
+
+"""
+    EdgeBetweenness <: GraphMeasure
+
+    EdgeBetweenness(weighting)
+
+Compute betweenness of all edges weighted by qualities of 
+source s and target t and the proximity between s and t. 
+
+$WEIGHTING_ARGUMENT
+
+Returns a sparse matrix where element (i, j) is the betweenness of edge (i, j).
+"""
+@kwdef struct EdgeBetweenness{W} <: GraphMeasure
     weighting::W
 end
 
-weighting(gm::BetweennessMeasure) = gm.weighting
+weighting(gm::Betweenness) = gm.weighting
+weighting(gm::EdgeBetweenness) = gm.weighting
 
 # Sensitivity
 
-abstract type SensitivityContext end # "With regards to"
+abstract type TopologicalMetric end
+struct Cumulative <: TopologicalMetric end
+struct Eigen <: TopologicalMetric end
 
-struct Affinity <: SensitivityContext end
-struct Cost <: SensitivityContext end
-struct Quality <: SensitivityContext end
-abstract type CostAndAffinitySensitivityContext end
-struct CostAndAffinity <: CostAndAffinitySensitivityContext end
-struct AffinityAndCost <: CostAndAffinitySensitivityContext end
+abstract type SensitivityType end
+struct Sensitivity <: SensitivityType end
+struct Elasticity <: SensitivityType end
 
-abstract type LandscapeMeasure end
+"""
+    SensitivityAnalysis <: SpatialMeasure
 
-struct LandscapeSum <: LandscapeMeasure end
-struct LandscapeEigen <: LandscapeMeasure end
+    SensitivityAnalysis(; wrt, metric, sentitivitytype)
 
-@kwdef struct Sensitivity{W<:SensitivityContext,LM<:LandscapeMeasure} <: PerturbationMeasure
-    with_regards_to::W
-    landscape_measure::LM = LandscapeSum()
-    unitless::Bool = false
+Compute sensitivity of all nodes. 
+
+## Keywords
+
+- `wrt`: Five types of node sensitivity are implemented: `Affinity()`, `Cost()`, 
+    `Quality()`, `CostAndAffinity()` and `AffinityAndCost()`.
+- `metric`: Two [`TopologicalMetric`](@ref)s are implemented to summarize the landscape matrix 
+    either through summation ([`Cumulative()`](@ref)) or through eigen analysis [`LandscapeEigen()`](@ref). 
+    The default is `Eigen()`.
+- `type`: The results can be provided either as sensitivity w.r.t. `Sensitivity()`
+    or w.r.t. `Elasticity()`, the latter are also known as elasticities. The default is `Sensitivity()`
+
+The value returned from `solve` is a spatial `Raster` or `Matrix`.
+"""
+@kwdef struct SensitivityAnalysis{WRT<:InputType,TM<:TopologicalMetric,ST<:SensitivityType} <: SpatialMeasure
+    wrt::WRT
+    metric::TM = Cumulative()
+    type::ST = Sensitivity()
 end
 
-wrt(gm::Sensitivity) = gm.with_regards_to
-unitless(gm::Sensitivity) = gm.unitless
-landscape_measure(gm::Sensitivity) = gm.landscape_measure
+wrt(gm::SensitivityAnalysis) = gm.wrt
+metric(gm::SensitivityAnalysis) = gm.metric
+sensitivitytype(gm::SensitivityAnalysis) = gm.type
 
 # Others
 
-struct ConnectedHabitat <: SpatialMeasure end
+"""
+    FunctionalHabitat <: SpatialMeasure
 
-@kwdef struct Criticality{AV,QT,QS} <: PerturbationMeasure
+    FunctionalHabitat()
+
+Compute connected habitat of all sources weighted by qualities of 
+source s and target t and the proximity between s and t, 
+as defined by the [`MovementMode`](@ref)).
+
+The value returned from `solve` is a spatial `Raster` or `Matrix`.
+"""
+struct FunctionalHabitat <: SpatialMeasure end
+
+struct LandscapeMatrix <: GraphMeasure end
+
+@kwdef struct Criticality{AV,QT,QS} <: SpatialMeasure
     avalue::AV = floatmin()
     qˢvalue::QS = 0.0
     qᵗvalue::QT = 0.0
 end
 
-@kwdef struct EigMax{T} <: GraphMeasure
+"""
+    EigMax <: Measure
+
+    Eigmax(tol)
+
+Compute the largest eigenvalue triple (left vector, value, and right vector) 
+of the quality-scaled proximities with respect to the distance/proximity measure 
+in the [`MovementMode`](@ref).
+"""
+@kwdef struct EigMax{T} <: Measure
     tol::T = 1e-14
 end
 
-# Return type traits
-returntrait(::ConnectedHabitat) = SumDenseSpatial()
-returntrait(::Betweenness) = SumDenseSpatial()
-returntrait(::EdgeBetweenness) = AssignSparse()
-returntrait(::DistanceMeasure) = AssignSparse()
-returntrait(::ProximityMeasure) = AssignSparse()
-returntrait(::KullbackLeiblerDivergence) = SumScalar()
+Base.Symbol(m::Measure) = nameof(typeof(m))
+Base.Symbol(m::Union{Betweenness,EdgeBetweenness}) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))
+function Base.Symbol(m::SensitivityAnalysis) 
+    Symbol(
+        nameof(typeof(m)), :_, 
+        nameof(typeof(wrt(m))), :_, 
+        nameof(typeof(metric(m))), :_, 
+        nameof(typeof(sensitivitytype(m)))
+    )
+end
 
-# Workspace allocation traits
-needs_workspaces(::Measure) = 1
-needs_workspaces(::BetweennessMeasure) = 2
-needs_workspaces(::EdgeBetweenness{QualityAndProximityWeighted}) = 3
-needs_workspaces(::EdgeBetweenness{QualityWeighted}) = 4
+# Return type traits
+returntrait(::SpatialMeasure) = ReturnDenseSpatialSum()
+returntrait(::GraphMeasure) = ReturnAssignedSparse()
+returntrait(::PathDistributionMeasure) = ReturnScalarSum()
+returntrait(::EdgeBetweenness) = ReturnCustom()
+returntrait(::SensitivityAnalysis) = ReturnCustom()
+returntrait(::EigMax) = ReturnCustom()
+
+# Workspace allocation traits TODO make these accurate
+needs_workspaces(::Measure) = 2
+needs_workspaces(::Betweenness) = 2
+needs_workspaces(::EdgeBetweenness) = 4
+needs_workspaces(::SensitivityAnalysis{<:Quality}) = 2
+needs_workspaces(::SensitivityAnalysis{<:Permeability}) = 6
 # Count how many workspaces are needed for a problem
 nworkspaces(p::AbstractProblem) =
     isempty(measures(p)) ? 0 : mapreduce(needs_workspaces, +, measures(p))

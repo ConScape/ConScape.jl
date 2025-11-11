@@ -1,0 +1,128 @@
+---
+title: "Dispersal mortality"
+bibliography: biblio.bib
+engine: julia
+---
+
+::: {.callout-tip}
+## Here you will learn
+
+In this notebook, we demonstrate the possibility to use independent movement
+probablities and costs, similar to [@fletcher2019towards] and [@marx2020samc].
+
+:::
+
+## Preamble
+
+See notebook [Getting Started](/notebooks/nbk_getting_started.qmd) for a 'basic
+workflow' to learn about the fundamentals on data import and the creation of a
+ConScape `Grid`:
+
+```{julia}
+using ConScape
+using Rasters
+using ArchGDAL
+using Statistics
+using CairoMakie
+```
+
+```{julia}
+#| echo: false
+#| eval: true
+
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+We use the data provided in [@marx2020samc]:
+
+```{julia}
+steplikelihood = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
+quality = Raster(joinpath(datadir, "prob_panther_cropped.asc"); missingval=NaN)
+```
+
+Note, we did not have quality data for each pixel, for this demonstration we
+simply assumed that the movementl likelihood adequately represents quality (see Notebook
+[Getting Started](/notebooks/nbk_getting_started.qmd) for a better example with
+independent quality data).
+
+We remove negative values:
+```{julia}
+steplikelihood = max.(0, steplikelihood)
+quality = max.(0, quality);
+```
+
+## Cost data
+
+In addition to the data on the habitat quality and the likelihood of movement,
+we also have independent data on the cost of movement ([@marx2020samc]):
+
+```{julia}
+mortalityrisk = Raster(joinpath(datadir, "mort_panther_cropped.asc"); missingval=NaN)
+mortalityrisk = max.(0, mortalityrisk);
+```
+
+As discussed in vanmoorter2021defining, to use the mortality risk as a cost in
+the RSP framework, we need to define the cost as the negative logarithm of the
+survival probability between adjacent pixels: 
+
+```{julia}
+cost = -log.(1 .- mortalityrisk);
+```
+
+We can then create a `RasterStack` from the three input `Raster`s:
+
+```{julia}
+rast = RasterStack((; quality, steplikelihood, cost))
+mask!(rast; with=rast)
+```
+
+## Computing the survival probability
+
+Use the Randomised Shortest Path movement mode:
+
+```{julia}
+theta = 1.0
+rsp = RSP(; theta, distance_transformation=MinusLog());
+```
+
+Note that to compute the survival probability from $s$ to $t$ corresponding to
+the mortality cost associated to edges $(i,j)$, we need to set $\theta=1.0$
+([@vanmoorter2021defining]).
+
+The survival probability from all source pixels to a target pixel (e.g. 15000) is:
+
+```{julia}
+target_only = zeros(dims(rast))
+I = CartesianIndex(36, 87)
+target_only[I] = 1
+```
+
+```{julia}
+#| fig-cap: Survival probability to a target.
+#|   - "b"
+#| layout-ncol: 2
+#| 
+targetinit = init(rsp, rast, 1, I)
+sp = solve(SurvivalProbability(), targetinit)
+replace!(sp, 1.0 => NaN)
+display(plot(target_only; axis=(; title="Target")))
+display(plot(sp; axis=(; title="Survival probability")))
+```
+
+Finally, we can use these survival probabilities to compute for each pixel the
+amount of habitat it is functionally connected to:
+
+```{julia}
+#| fig-cap: Amount of connected habitat based on survival connectivity.
+rsp = RSP(; proximity_measure=SurvivalProbability(), theta, distance_transformation=MinusLog()) 
+ch = solve(FunctionalHabitat(), rsp, rast)
+plot(ch; axis=(; title="Functional habitat based on survival probability"))
+```
+
+## Summary
+
+The ConScape library allows users to define the cost of movement between
+adjacent pixels both as a transformation from the likelihood of movement, but
+also from independent cost data. This application is very useful to model
+dispersal with mortality ([@fletcher2019towards]), but could also be applied in
+combination with 'energy landscapes' discussed in: [@vanmoorter2021defining]. 
