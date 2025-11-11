@@ -106,7 +106,7 @@ end
     paths = solve(batch_problem, rast; verbose=true)
     Rasters.mosaic(sum, RasterStack.(paths))
 
-    batch_result = mosaic(batch_problem, rast)
+    batch_result = mosaic(batch_problem; to=rast)
     @test batch_result isa RasterStack
 
     batch_init_problem = BatchProblem(problem; datapath=tempname(), kw...)
@@ -130,7 +130,7 @@ end
     for job in 1:assessment.njobs
         solve(batch_jobs_problem, rast, assessment, job)
     end
-    batch_jobs_result = mosaic(batch_jobs_problem, rast)
+    batch_jobs_result = mosaic(batch_jobs_problem; to=rast)
 
     batch_jobs_init_problem = BatchProblem(problem; datapath=tempname(), kw...)
     assessment = ConScape.assess(batch_jobs_init_problem, rast)
@@ -138,7 +138,7 @@ end
         batch_jobs_init = init(batch_jobs_init_problem, rast, assessment; verbose=true)
         solve(batch_jobs_init, job; verbose=true)
     end
-    batch_jobs_init_result = mosaic(batch_jobs_init_problem, rast)
+    batch_jobs_init_result = mosaic(sum, batch_jobs_init_problem, rast)
 
     @testset "reassessment" begin
         # There should be no jobs left
@@ -172,7 +172,7 @@ end
     paths = solve(nested_problem, rast)
     @test keys(paths[1]) == (:betm, :ch)
     @test paths[1].betm isa String
-    nested_result = mosaic(nested_problem, rast)
+    nested_result = mosaic(sum, nested_problem; to=rast)
     @test nested_result isa RasterStack
 
     nested_jobs_problem = ConScape.BatchProblem(windowed_problem; 
@@ -186,7 +186,7 @@ end
     for job in 1:assessment.njobs
         solve(nested_jobs_problem, rast, job)
     end
-    nested_jobs_result = mosaic(nested_jobs_problem, rast)
+    nested_jobs_result = mosaic(sum, nested_jobs_problem; to=rast)
 
     @testset "nested reassessment" begin
         # There should be no jobs left
