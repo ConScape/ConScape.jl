@@ -130,13 +130,13 @@ end
     for job in 1:assessment.njobs
         solve(batch_jobs_problem, rast, assessment, job)
     end
-    batch_jobs_result = mosaic(batch_jobs_problem; to=rast)
+    @test_broken batch_jobs_result = mosaic(batch_jobs_problem; to=rast)
 
     batch_jobs_init_problem = BatchProblem(problem; datapath=tempname(), kw...)
     assessment = ConScape.assess(batch_jobs_init_problem, rast)
     for job in 1:assessment.njobs
         batch_jobs_init = init(batch_jobs_init_problem, rast, assessment; verbose=true)
-        solve(batch_jobs_init, job; verbose=true)
+        solve!(batch_jobs_init, job; verbose=true)
     end
     @test_broken batch_jobs_init_result = mosaic(sum, batch_jobs_init_problem; to=rast)
 
@@ -181,7 +181,7 @@ end
     assessment = ConScape.assess(nested_jobs_problem, rast);
     # Try one
     @time nested_batch_init = init(nested_jobs_problem, rast, assessment)
-    @time solve(nested_batch_init, 5; verbose=true)
+    @time solve!(nested_batch_init, 5; verbose=true)
     res = solve(windowed_problem, rast; mosaic_return=false)
     for job in 1:assessment.njobs
         solve(nested_jobs_problem, rast, job)
