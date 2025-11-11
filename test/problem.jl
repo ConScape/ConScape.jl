@@ -266,6 +266,7 @@ end
 end
 
 @testset "RandomWalk measures" begin
+    # TODO: test this with alpha other than 1.0
     rw = RandomWalk(; distance_transformation=ExpMinusAlpha(1.0))
 
     res_bet_rw = solve(betweenness_measures, rw, rast)
