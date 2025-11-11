@@ -1,5 +1,4 @@
-nothing
-using ConScape, Test, SparseArrays, LinearAlgebra
+using ConScape, Test, SparseArrays, LinearAlgebra, Statistics
 # using LinearSolve
 using Rasters, ArchGDAL
 using OldConScape
@@ -242,15 +241,22 @@ other_measures = (;
     @time res_ebet_rsp_pmp = solve(edge_betweenness_measures, rsp_pmp, rast)
 end
 
-@testset "LCP measures" begin
+@testset "LeastCostPath measures" begin
     lc = LeastCostPath(; distance_transformation=ExpMinusAlpha(2.0),)
 
-    # FIXME: somtimes broken? cant reproduce, cant use @test_broken. 
-    # res_bet_lc = solve(betweenness_measures, lc, rast)
+    res_bet_lc = solve(betweenness_measures, lc, rast)
     res_oth_lc = solve(other_measures, lc, rast)
-    # res_ebet_lc = solve(edge_betweenness_measures, lc, rast)
     # Not iplemented
+    # res_ebet_lc = solve(edge_betweenness_measures, lc, rast)
     # res_sens_lc = solve(sensitivity_measures, lc, rast)
+
+    @testset "RandomisedShortestPath and LeastCostPath are correlated with high theta" begin
+        rsp_lc = RSP(; distance_transformation=ExpMinusAlpha(2.0), theta=10.0)
+        res_bet_rsp_lc = solve(betweenness_measures, rsp_lc, rast)
+        @test cor(collect(skipmissing(res_bet_lc.betq)), collect(skipmissing(res_bet_rsp_lc.betq))) > 0.97
+        @test cor(collect(skipmissing(res_bet_lc.betm)), collect(skipmissing(res_bet_rsp_lc.betm))) > 0.97
+        # K amd u too broken (by fp over/under-flow ?) to compare
+    end
 
     @testset "mean_lc_kl_divergence" begin
         @test res_oth_lc.mkld[] ≈ 1.5660600315073947e6
@@ -267,7 +273,18 @@ end
     # Not iplemented
     # res_ebet_rw = solve(edge_betweenness_measures, rw, rast)
     # res_sens_rw = solve(sensitivity_measures, rw, rast)
-    # TODO tests
+
+    @testset "RandomisedShortestPath and RandomWalk are correlated with low theta" begin
+        rsp_rw = RSP(; distance_transformation=ExpMinusAlpha(1.0), theta=0.000000000001)
+        res_bet_rsp_rw = solve(betweenness_measures, rsp_rw, rast)
+        @test cor(collect(skipmissing(res_bet_rw.betu)), collect(skipmissing(res_bet_rsp_rw.betu))) > 0.99
+        @test cor(collect(skipmissing(res_bet_rw.betq)), collect(skipmissing(res_bet_rsp_rw.betq))) > 0.99
+        @test cor(collect(skipmissing(res_bet_rw.betk)), collect(skipmissing(res_bet_rsp_rw.betk))) > 0.97
+        # M is less correlated for some reason ?
+        @test cor(collect(skipmissing(res_bet_rw.betm)), collect(skipmissing(res_bet_rsp_rw.betm))) > 0.93
+    end
+
+    # TODO more tests
 end
 
 @testset "RSP sensitivity measure" begin
