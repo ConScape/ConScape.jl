@@ -12,5 +12,6 @@ using SafeTestsets
     # @safetestset "basics" begin include("basics.jl") end
     @safetestset "Permeable wall sim" begin include("wall.jl") end
     @safetestset "Problems" begin include("problem.jl") end
+    @safetestset "Sensitivity" begin include("sensitivity.jl") end
     @safetestset "WindowedProblems and BatchProblems" begin include("windowed.jl") end
 end
