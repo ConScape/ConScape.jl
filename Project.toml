@@ -14,6 +14,7 @@ ReadOnlyArrays = "988b38a3-91fc-5605-94a2-ee2116b3bd83"
 SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
 SortTileRecursiveTree = "746ee33f-1797-42c2-866d-db2fce69d14d"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 WoodburyMatrices = "efce3f68-66dc-5838-9240-27a6d6f5f9b6"
 
 [weakdeps]
@@ -40,6 +41,7 @@ SafeTestsets = "0.1"
 SimpleWeightedGraphs = "1.1"
 SortTileRecursiveTree = "0.1"
 SparseArrays = "1"
+Statistics = "1"
 Test = "1"
 WoodburyMatrices = "1.0.0"
 julia = "1.10"
@@ -56,4 +58,4 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 OldConScape = {url = "https://github.com/ConScape/ConScape.jl", rev = "old"}
 
 [targets]
-test = ["Aqua", "ArchGDAL", "OldConScape", "Plots", "SafeTestsets", "Test"]
+test = ["Aqua", "ArchGDAL", "OldConScape", "Plots", "SafeTestsets", "Statistics", "Test"]
