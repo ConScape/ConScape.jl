@@ -1,157 +1,22 @@
-function get_or_compute!(ti::TargetInit, m::Measure)
+@inline function get_or_compute!(ti::TargetInit, m::Measure)
     st = storage(ti)
     x = Symbol(m)
     haskey(st, x) && return st[x]
-    output = compute(m, ti)
+    val = compute(m, ti)
     if returntrait(m) isa ReturnDenseSpatial
-        st[x] = readonlyarray(output)
+        st[x] = readonlyarray(val) 
+        return readonlyarray(val)
+    else
+        return val
     end
-    return output
 end
-@inline function get_or_compute!(ti::TargetInit{<:RSP}, x::Symbol)::Vector{Float64}
+@inline function get_or_compute!(ti::TargetInit, x::Symbol)
     st = storage(ti)
     haskey(st, x) && return st[x]
-    output = if x === :Z # "fundamental matrix"
-        _fundamentalmatrix(ti)
-    elseif x === :Zⁱ # elementwise inverse of Z
-        readonlyarray(_inv!(ti.workspace, ti.Z))
-    elseif x === :Zrows
-        _fundamentalrowmatrix(ti)
-    elseif x === :Y
-        (; CW, Z, IW_factorization, workspace) = ti
-        # Solve: (I - W) \ (C .* W) * Z ./ Z
-        readonlyarray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
-    elseif x === :Q
-        _qualitymatrix(ti)
-    elseif x === :K
-        _proximitymatrix(ti)
-    elseif x === :M
-        _landscapematrix(ti)
-    else
-        error("Unknown property $x")
-    end
-    st[x] = output
-    return output
-end
-@inline function get_or_compute!(ti::TargetInit{<:RandomWalk}, x::Symbol)
-    st = storage(ti)
-    haskey(st, x) && return st[x]
-    # Either retrieve from storage, or calculate and store
-    output = if x === :Z
-        _fundamentalmatrix(ti)
-    elseif x === :Zⁱ
-        _inv!(ti.workspace, ti.Z)
-    elseif x === :Zrows
-        _fundamentalrowmatrix(ti)
-    elseif x === :IW_factorization
-        _woodburysubtochasticmatrix(ti)
-    elseif x === :IW_adj_factorization
-        ti.IW_factorization'
-    elseif x === :W
-        # TODO less allocation
-        W = copy(ti.P);
-        t = target(ti).node
-        W[t, :] .= 0; # set target node as killing (t row set to 0)
-        W
-    elseif x === :CW
-        (; W) = ti
-        CW = stepcost(ti)::AbstractMatrix .* W
-    elseif x === :K
-        _proximitymatrix(ti)
-    elseif x === :M
-        _landscapematrix(ti)
-    elseif x === :Q
-        _qualitymatrix(ti)
-    elseif x === :Y # Unadjusted expected cost
-        (; CW, Z, IW_factorization, workspace) = ti
-        # Solve: (I - W) \ (C .* W) * Z ./ Z
-        readonlyarray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
-    else
-        error("Unknown property $x")
-    end
-    st[x] = output
-    return output
-end
-@inline function get_or_compute!(ti::TargetInit{<:LCP}, x::Symbol)
-    st = storage(ti)
-    haskey(st, x) && return st[x]
-    # Either retrieve from storage, or calculate and store
-    output = if x == :shortest_paths
-        # TODO: this is very slow, use Eikonal.jl instead
-        return Graphs.dijkstra_shortest_paths(ti.cost_weighted_digraph, target(ti).node)::Graphs.DijkstraState{Float64,Int}
-    elseif x == :K # "proximity vector"
-        (; shortest_paths, workspace) = ti
-        # TODO this should error earlier
-        readonlyarray(workspace .= distance_transformation(ti).(shortest_paths.dists))
-    elseif x === :M # "landscape vector"
-        _landscapematrix(ti)
-    elseif x === :Q
-        _qualitymatrix(ti)
-    else
-        error("Unknown property $x")
-    end
-    st[x] = output
-    return output
-end
 
-# Variable generation for TargetInit
-function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
-    pm = proximity_measure(ti)
-    distances = get_or_compute!(ti, pm)
-    proximities = if pm isa DistanceMeasure
-        dt = distance_transformation(ti)
-        if !isnothing(dt)
-            ti.workspace .= dt.(distances)
-        else
-            distances
-        end
-    else
-        distances
-    end
-    proximities = _maybe_set_diagonal!(ti, proximities)
-    return readonlyarray(proximities)
-end
-function _fundamentalmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
-    workspace1, workspace2 = workspaces(ti)
-    n = nsources(connectedgraph(ti))
-    b = _diag_vec!(workspace1, n, target(ti))
-    b_copy = _diag_vec!(workspace2, n, target(ti))
-    return readonlyarray(ldiv!(solver(ti), b, ti.IW_factorization, b_copy))
-end
-function _fundamentalrowmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
-    b = _diag_vec!(ti.workspace, nsources(connectedgraph(ti)), target(ti))
-    return readonlyarray(ldiv!(ti, ti.IW_adj_factorization, b))
-end
-function _landscapematrix(ti::TargetInit)
-    (; qˢ, K, qᵗ, workspace) = ti
-    return readonlyarray(workspace .= qˢ .* K .* qᵗ)
-end
-function _qualitymatrix(ti::TargetInit)
-    (; qˢ, qᵗ, workspace) = ti
-    return readonlyarray(workspace .= qˢ .* qᵗ)
-end
-function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
-    (; P, IP, IP_factorization) = ti
-    t = target(ti).node
-    n = LinearAlgebra.checksquare(IP)
-    # Prepare a Woodbury matrix to cheaply zero out row t, without factorization
-    U = fill!(reshape(ti.workspace, (n, 1)), 0.0)
-    V = fill!(reshape(ti.workspace, (1, n)), 0.0)
-    U[t] = 1 # Identity
-    V .= .- (IP[t:t, :])       # So that IP[t, :] + UCV[t, :] .== 0
-    V[t] = -P[t, t] # So that IP[t, t] + UCV[t, t] = 1
-    C = 1 # Identity
-    # @assert IP + U * C * V .- (I - W)
-    return Woodbury(IP_factorization, U, C, V)
-end
-
-# Custom `inv` broadcast that avoids Inf
-_inv(Z::AbstractArray) = _inv!(similar(Z), Z)
-function _inv!(Zⁱ::AbstractArray, Z::AbstractArray)
-    broadcast!(Zⁱ, Z) do x
-        x = inv(x)
-        isfinite(x) ? x : floatmax(eltype(Z))
-    end |> readonlyarray
+    val = target_precalculation!(ti, x)
+    st[x] = val
+    return val
 end
 
 #------------------------------------------------------------------------------------------
@@ -162,10 +27,15 @@ function compute(m::Measure, cgi::ConnectedGraphInit)
     output = allocate_output(ConnectedGraphLevel(), m, problem(cgi), gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
     for target in targetids(cgi)
         ti = TargetInit(cgi, target)
-        x = compute(m, ti)
-        update_output!(output, m, ti, x)
+        compute!(output, m, ti)
     end
     return finalize_output!(output, m, cgi)
+end
+
+
+function compute!(output, m, ti)
+    x = compute(m, ti)
+    return update_output!(output, m, ti, x)
 end
 
 # Allocate sqauare matrix of target * target size
@@ -253,9 +123,9 @@ function compute(
     node = target(ti).node
     weight = _weight(m, ti)
     XZⁱ = workspace .= weight .* Zⁱ
-    x = sum(weight)
     XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
-    XᵀZ .-= x .* Zⁱ[node] .* Zrows
+    XᵀZ .-= sum(weight) .* Zⁱ[node] .* Zrows
+
     return (; Z, XᵀZ)
 end
 

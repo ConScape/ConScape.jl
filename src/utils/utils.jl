@@ -64,7 +64,7 @@ end
 
 # Fill a vector with zeros, and one for the target node
 # If it was part of a square matrix this would be the diagonal
-function _diag_vec!(workspace, n::Int, target::TargetID)
+function _diag_vec!(workspace, target::TargetID)
     fill!(workspace, 0.0)
     workspace[target.node] = 1.0
     return workspace
