@@ -1,25 +1,26 @@
 module ConScape
 
 using LinearAlgebra
-using Rasters
 using SparseArrays
 
 import ArnoldiMethod
 import ConstructionBase
 import Graphs
+import Rasters
 
 import GeometryOps as GO
 import GeometryOps.GeoInterface as GI
 import SortTileRecursiveTree as STR
 
-using Rasters.DimensionalData
-using Rasters.Extents
+import Rasters.Extents
+import Rasters.DimensionalData
 
 import CommonSolve: solve, solve!, init
 
 using WoodburyMatrices: Woodbury
 using SimpleWeightedGraphs: SimpleWeightedGraph, SimpleWeightedDiGraph
 using ReadOnlyArrays: ReadOnlyArray
+using Rasters: AbstractRaster, Raster, AbstractRasterStack, RasterStack, rebuild, dims, mosaic
 
 
 export RandomisedShortestPath, LeastCostPath, RandomWalk, Euclidean, RSP, LCP

@@ -59,8 +59,6 @@ using ConScape, Test, SparseArrays
             0.19721532522049376]
     end
 
-    results = solve(problem, g)
-
     @testset "Test mean_kl_divergence" begin
         @test results.kld[1] ≈ 2.4405084252728125e13
     end

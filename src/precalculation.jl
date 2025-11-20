@@ -1,5 +1,5 @@
 #################################################################################3
-# Graph level variable precalculation
+# Connected graph level variable precalculation
 
 # TODO: Move these to a precalculation.jl file with the computation precalculations
 function connectedgraph_precalculation(problem::ConScapeProblem{<:RSP}, graph::ConnectedGraph)
@@ -8,7 +8,8 @@ function connectedgraph_precalculation(problem::ConScapeProblem{<:RSP}, graph::C
     W = _substochasticmatrix(movement(problem), P, stepcost(graph)::AbstractMatrix)
     IW = I - W
     IW_factorization = init(solver(problem), IW)
-    Aⁱ = mapnz(inv, steplikelihood(graph)::AbstractMatrix)
+    A = steplikelihood(graph)::AbstractMatrix
+    Aⁱ = mapnz(inv, A)
     if solver(problem) isa VectorSolver
         IW_adj = IW'
         # Use adjoint factorization of A rather than recalculating for A'
@@ -19,9 +20,15 @@ function connectedgraph_precalculation(problem::ConScapeProblem{<:RSP}, graph::C
         IW_adj = sparse(IW')
         IW_adj_factorization = init(solver(problem), IW_adj)
     end
-    CW = stepcost(graph) .* W
+    C = stepcost(graph)
+    CW = C .* W
 
-    return (; P, W, IW, IW_adj, CW, IW_factorization, IW_adj_factorization, Aⁱ, A_rowsums)
+    # For completeness we also move these to precalculations
+    θ = theta(problem)
+    qᵗ = targetquality(graph)
+    qˢ = sourcequality(graph)
+
+    return (; P, W, IW, IW_adj, C, CW, IW_factorization, IW_adj_factorization, A, Aⁱ, A_rowsums, θ, qᵗ, qˢ)
 end
 function connectedgraph_precalculation(p::ConScapeProblem{<:LCP}, graph::ConnectedGraph)
     _check_inputs(p, graph)
@@ -88,21 +95,22 @@ end
 
 
 #################################################################################3
-# Graph level variable precalculation
+# Target level variable precalculation
 
-@inline function target_precalculation!(ti::TargetInit{<:RSP}, x::Symbol)::Vector{Float64}
+@inline function target_precalculation!(ti::TargetInit{<:RSP}, x::Symbol)::ReadOnlyArray
     st = storage(ti)
+    # Either retrieve from storage
     haskey(st, x) && return st[x]
-    output = if x === :Z # "fundamental matrix"
+
+    # Or compute and store
+    st[x] = output = if x === :Z
         _fundamentalmatrix(ti)
-    elseif x === :Zⁱ # elementwise inverse of Z
-        readonlyarray(_inv!(ti.workspace, ti.Z))
+    elseif x === :Zⁱ
+        _inversefundamentalmatrix(ti)
     elseif x === :Zrows
         _fundamentalrowmatrix(ti)
     elseif x === :Y
-        (; CW, Z, IW_factorization, workspace) = ti
-        # Solve: (I - W) \ (C .* W) * Z ./ Z
-        readonlyarray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
+        _costdistancematrix(ti)
     elseif x === :Q
         _qualitymatrix(ti)
     elseif x === :K
@@ -112,46 +120,48 @@ end
     else
         error("Unknown property $x")
     end
-    st[x] = output
+
     return output
 end
 @inline function target_precalculation!(ti::TargetInit{<:RandomWalk}, x::Symbol)
     st = storage(ti)
+
+    # Either retrieve from storage
     haskey(st, x) && return st[x]
-    # Either retrieve from storage, or calculate and store
-    output = if x === :Z
+
+    # Or compute and store
+    st[x] = output = if x === :Z
         _fundamentalmatrix(ti)
     elseif x === :Zⁱ
-        _inv!(ti.workspace, ti.Z)
+        _inversefundamentalmatrix(ti)
     elseif x === :Zrows
         _fundamentalrowmatrix(ti)
     elseif x === :IW_factorization
+        # For RandomWalk these have to be updated per-target
+        # using Woodbury matrices, rather than being defined
+        # only at the ConnectedGraph level.
         _woodburysubtochasticmatrix(ti)
     elseif x === :IW_adj_factorization
         ti.IW_factorization'
     elseif x === :W
-        # TODO less allocation
+        # TODO do with less allcations at the target level
         W = copy(ti.P)
-        t = target(ti).node
-        W[t, :] .= 0 # set target node as killing (t row set to 0)
+        W[target(ti).node, :] .= 0 # set target node as killing (t row set to 0)
         W
     elseif x === :CW
-        (; W) = ti
-        CW = stepcost(ti)::AbstractMatrix .* W
+        stepcost(ti) .* ti.W
     elseif x === :K
         _proximitymatrix(ti)
     elseif x === :M
         _landscapematrix(ti)
     elseif x === :Q
         _qualitymatrix(ti)
-    elseif x === :Y # Unadjusted expected cost
-        (; CW, Z, IW_factorization, workspace) = ti
-        # Solve: (I - W) \ (C .* W) * Z ./ Z
-        readonlyarray(ldiv!(ti, IW_factorization, mul!(workspace, CW, Z)))
+    elseif x === :Y
+        _costdistancematrix(ti)
     else
         error("Unknown property $x")
     end
-    st[x] = output
+
     return output
 end
 @inline function target_precalculation!(ti::TargetInit{<:LCP}, x::Symbol)
@@ -200,6 +210,9 @@ function _fundamentalmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     Z = ldiv!(solver(ti), b, ti.IW_factorization, b_copy)
     return readonlyarray(Z)
 end
+function _inversefundamentalmatrix(ti)
+    readonlyarray(_inv!(ti.workspace, ti.Z))
+end
 function _fundamentalrowmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; Z) = ti
     if size(Z, 1) != length(targetids(ti))
@@ -213,6 +226,17 @@ function _landscapematrix(ti::TargetInit)
     (; qˢ, K, qᵗ, workspace) = ti
     return readonlyarray(workspace .= qˢ .* K .* qᵗ)
 end
+function _costdistancematrix(ti)
+    (; CW, Z, IW_factorization) = ti
+    # Solve: (I - W) \ (C .* W) * Z ./ Z
+    # Manual matmul is *much* faster with sparse/dense.
+    # Otherwise this is 99% of the run time.
+    RHS = fill!(workspace(ti), 0.0)
+    foreachnz(CW) do i, j, n
+        RHS[i] += CW.nzval[n] * Z[j] 
+    end
+    readonlyarray(ldiv!(ti, IW_factorization, RHS))
+end
 function _qualitymatrix(ti::TargetInit)
     (; qˢ, qᵗ, workspace) = ti
     return readonlyarray(workspace .= qˢ .* qᵗ)
@@ -221,24 +245,25 @@ function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
     (; P, IP, IP_factorization) = ti
     t = target(ti).node
     n = LinearAlgebra.checksquare(IP)
+
     # Prepare a Woodbury matrix to cheaply zero out row t, without factorization
     U = fill!(reshape(ti.workspace, (n, 1)), 0.0)
     V = fill!(reshape(ti.workspace, (1, n)), 0.0)
-    U[t] = 1 # Identity
-    V .= .- (IP[t:t, :])       # So that IP[t, :] + UCV[t, :] .== 0
-    V[t] = -P[t, t] # So that IP[t, t] + UCV[t, t] = 1
+    U[t] = 1             # Identity
+    V .= .- (IP[t:t, :]) # So that IP[t, :] + UCV[t, :] .== 0
+    V[t] = -P[t, t]      # So that IP[t, t] + UCV[t, t] = 1
     C = 1 # Identity
+
     # @assert IP + U * C * V .- (I - W)
     return Woodbury(IP_factorization, U, C, V)
 end
 
 # Custom `inv` broadcast that avoids Inf
 _inv(Z::AbstractArray) = _inv!(similar(Z), Z)
-function _inv!(Zⁱ::AbstractArray, Z::AbstractArray)
-    broadcast!(Zⁱ, Z) do x
-        x = inv(x)
-        isfinite(x) ? x : floatmax(eltype(Z))
-    end |> readonlyarray
+_inv!(Zⁱ::AbstractArray, Z::AbstractArray) = broadcast!(_inv, Zⁱ, Z)
+function _inv(x::T) where T<:Number 
+    i = inv(x)
+    return isfinite(i) ? i : floatmax(T)
 end
 
 

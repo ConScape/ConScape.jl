@@ -120,3 +120,35 @@ function foreachnz(f, S)
     end
     return nothing
 end
+
+# Return a RasterStack if all outputs are Raster
+_maybe_rasterstack(ggi) = _maybe_rasterstack(measures(ggi), outputs(ggi), ggi)
+function _maybe_rasterstack(measures, outputs, ggi)
+    out = _maybe_raster(measures, outputs, ggi)
+    if all(map(o -> o isa Raster, out))
+        return RasterStack(out)
+    else
+        return out
+    end
+end
+
+# Return a Raster where possible
+function _maybe_raster(
+    measures::Union{MeasureTuple,MeasureNamedTuple}, 
+    outputs::Union{Tuple,NamedTuple}, 
+    g::Initialisation
+)
+    map(measures, outputs) do measure, output
+        _maybe_raster(returntrait(measure), output, dims(g); name=Symbol(measure))
+    end
+end
+_maybe_raster(rt, x::Pair, g::Initialisation; kw...) = _maybe_raster(rt, x[2], g; kw...)
+_maybe_raster(rt, x::Pair, g::Union{Tuple,Nothing}; kw...) = _maybe_raster(rt, x[2], g; kw...)
+_maybe_raster(rt, rast::Raster, g::Initialisation; kw...) = rast
+_maybe_raster(rt, mat::AbstractMatrix, g::Initialisation; kw...) =
+    _maybe_raster(rt, mat, dims(g); kw...)
+_maybe_raster(rt::ReturnDenseSpatial, mat::Matrix{T}, dims::Tuple; kw...) where T =
+    Raster(mat, dims; missingval=T(NaN), kw...)
+_maybe_raster(rt::ReturnDenseSpatial, vec::Vector{T}, dims::Tuple; kw...) where T<:Number =
+    Raster(vec, dims; missingval=T(NaN), kw...)
+_maybe_raster(rt, x, y; kw...) = x

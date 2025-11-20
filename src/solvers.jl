@@ -20,7 +20,7 @@ function LinearAlgebra.ldiv!(p::Initialisation, init, B)
     put!(workspaces(p), B_copy)
     return X
 end
-LinearAlgebra.ldiv!(s::VectorSolver, B, F, B_copy) = ldiv!(B, F, B_copy)
+LinearAlgebra.ldiv!(s::VectorSolver, B::AbstractArray, F, B_copy::AbstractArray) = ldiv!(B, F, B_copy)
 
 """
    LinearSolver(args...; kw...)

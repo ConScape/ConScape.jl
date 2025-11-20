@@ -1,5 +1,48 @@
 # This file is a work in progress...
+"""
+    AbstractWindowedProblem
+
+Abstract supertype for [`WindowedProblem`](@ref) and [`BatchProblem`](@ref).
+"""
 abstract type AbstractWindowedProblem{P<:AbstractProblem} <: AbstractProblem end
+
+const WINDOW_LAYOUT = """
+## Visualising Window Layout
+
+Due to some windows being all zeros or missing values, 
+the windows that actually run may be something like this:
+                                                          
+```
+┏━━━━━━━━━━━━┳━━━┳━━━━━━━━━━━━┓┄┄┄┄┄┄┄┄┏━━━━━━━━━━━━━┓
+┃            ┃░░░┃            ┃        ┃             ┃
+┃            ┃░░░┃            ┃        ┃             ┃
+┃            ┃░░░┃            ┃        ┃             ┃
+┃       1    ┃░░░┃    5       ┃        ┃        13   ┃
+┃            ┃░░░┃            ┃        ┃             ┃
+┃            ┃░░░┃        ┏━━━╋━━━━━━━━╋━━━┳━━━━━━━━━┫
+┃            ┃░░░┃        ┃░░░┃        ┃▓▓▓┃░░░░░░░░░┃
+┗━━━━━━━━━━━━┻━━━┻━━━━━━━━╋━━━┛        ┣━━━╋━━━━━━━━━┃
+┆                         ┃            ┃░░░┃         ┃
+┆                         ┃       10   ┃░░░┃    14   ┃
+┆                         ┃            ┃░░░┃         ┃
+┆            ┏━━━━━━━━━━━━╋━━━┓        ┣━━━╋━━━━━━━━━┃
+┆            ┃            ┃░░░┃        ┃▓▓▓┃░░░░░░░░░┃
+┆            ┃            ┗━━━╋━━━━━━━━╋━━━┻━━━━━━━━━┫
+┆            ┃                ┃        ┃             ┃
+┆            ┃        7       ┃        ┃        15   ┃
+┆            ┃                ┃        ┃             ┃
+┏━━━━━━━━━━━━╋━━━┓            ┃        ┃             ┃
+┃            ┃░░░┃            ┃        ┃             ┃
+┃            ┗━━━╋━━━━━━━━━━━━┛        ┗━━━━━━━━━━━━━┛
+┃       4        ┃                                   ┆
+┃                ┃                                   ┆
+┗━━━━━━━━━━━━━━━━┛┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘
+```
+
+Overlapping `buffer` areas are represented with ░ and ▓.
+Bottom and right windows may be smaller than the others,
+as pictured.
+"""
 
 buffer(p::AbstractWindowedProblem) = p.buffer
 buffer(p::AbstractProblem) = 0
@@ -33,6 +76,9 @@ to be run over windowed grids.
 - `gc`: Whether to run the garbage collector between windows. This may be important in
     restricted memory environments, such as a small node on a SLURM cluster. 
     `true` by default. It may improve performance to set to `false`.
+
+$WINDOW_LAYOUT
+
 """
 @kwdef struct WindowedProblem{P} <: AbstractWindowedProblem{P}
     problem::P
@@ -269,6 +315,7 @@ rast = get_my_rasterstack()
 # Setting `to` to the original raster ensures the output matches it spatially.
 mosaic(batch_problem; to=rast, filename="dest_filename.tif")
 ```
+$WINDOW_LAYOUT
 """
 @kwdef struct BatchProblem{P} <: AbstractWindowedProblem{P}
     problem::P

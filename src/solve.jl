@@ -54,14 +54,19 @@ function _solve_all_subgraphs!(ggi; kw...)
 end
 
 function _solve_all_targets!(cgi; kw...)
+    # In case some measures need intermediate storage 
+    # oar precalculations for all targets
+    intermediates = map(measures(cgi)) do measure
+        allocate_intermediate(measure, cgi)
+    end
     # Solve each target separately
     for target_id in targetids(cgi)
         # Precalculate for this target and graph measures
-        targetinit = init(cgi, target_id)
+        targetinit = init(cgi, target_id; intermediates)
         solve!(targetinit)
     end
     # Finalize output, where not all computations are target-by-target
-    finalize_output!(cgi)
+    finalize_output!(cgi, intermediates)
     return _maybe_rasterstack(cgi)
 end
 
@@ -74,11 +79,10 @@ function _solve_single_target!(ti, outputlevel)
         outputs(ti)
     end
     # Store outputs
-    results = map(measures(ti), outputs1) do measure, output
+    results = map(measures(ti), outputs1, intermediates(ti)) do measure, output, intermediate
+        ti_m = TargetInit(connectedgraphinit(ti), target(ti), intermediate)
         # Dont compute the same measure multiple times
-        v = get_or_compute!(ti, measure)
-        # Write values to output object
-        update_output!(output, measure, ti, v)
+        compute_and_update_output!(output, ti_m, measure)
     end
     # When just running one target we return Raster/RasterStack
     if outputlevel isa TargetLevel

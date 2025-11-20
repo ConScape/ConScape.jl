@@ -15,130 +15,191 @@ end
     haskey(st, x) && return st[x]
 
     val = target_precalculation!(ti, x)
-    st[x] = val
+    st[x] = readonlyarray(val)
     return val
+end
+
+
+@inline function compute_and_update_output!(output::Pair, ti::TargetInit, m::Measure)
+    st = storage(ti)
+    x = Symbol(m)
+
+    if haskey(st, x)
+        update_output!(output, m, t, st[x])
+    else
+        val = compute!(output, m, ti)
+        # Store simple array outputs
+        if val isa Array
+            st[x] = readonlyarray(val)
+        end
+    end
+
+    return output
+end
+
+# Most measures dont need to deal with `update_output` and just use `compute`
+function compute!(output, m::Measure, ti)
+    val = compute(m, ti)
+    update_output!(output, m, ti, val)
+
+    return output
 end
 
 #------------------------------------------------------------------------------------------
 # ConnectedGraph level measures
 
 # Compute Target level measures for a connected subgraph
-function compute(m::Measure, cgi::ConnectedGraphInit)
-    output = allocate_output(ConnectedGraphLevel(), m, problem(cgi), gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
-    for target in targetids(cgi)
-        ti = TargetInit(cgi, target)
-        compute!(output, m, ti)
-    end
-    return finalize_output!(output, m, cgi)
-end
-
-
-function compute!(output, m, ti)
-    x = compute(m, ti)
-    return update_output!(output, m, ti, x)
-end
+# function compute(m::Measure, cgi::ConnectedGraphInit)
+#     output = allocate_output(ConnectedGraphLevel(), m, problem(cgi), gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
+#     for target in targetids(cgi)
+#         ti = TargetInit(cgi, target)
+#         compute!(output, m, ti)
+#     end
+#     return finalize_output!(output, m, cgi)
+# end
 
 # Allocate sqauare matrix of target * target size
-allocate_output(l::GridGraphLevel, m::EigMax, ::ConScapeProblem, ::GridGraph, connectedgraphs::Vector) = 
+allocate_output(l::GridGraphLevel, ::ReturnCustom, m::EigMax, ::ConScapeProblem, ::GridGraph, connectedgraphs::Vector) = 
     l => Vector{Tuple{Vector{Float64},Array{Float64,0},Vector{Float64}}}(undef, length(connectedgraphs))
-function allocate_output(l::Level, m::EigMax, ::ConScapeProblem, ::GridGraph, cg::ConnectedGraph, precalculation)
+function allocate_output(l::Level, ::ReturnCustom, m::EigMax, ::ConScapeProblem, ::GridGraph, cg::ConnectedGraph, precalculation)
     n = length(sourceids(cg))
     vʳ = fill(NaN, n)
     λ = fill(0.0)
     vˡ = zeros(n)
     return l => (vʳ, λ, vˡ)
 end
-function compute(::EigMax, ti::TargetInit)
-    return nothing
-    # (; M) = ti
-    # K = compute(proximity_measure(ti), ti) # TODO set diag etc
-    # # square submatrix defined by extracting the rows corresponding to landmarks
-    # M₀₀ = view(ti.workspace, 1:length(targetids(ti)))
-    # for t in targetids(ti)
-    #     M₀₀[t.connectedgraphidx] = M[t.node]
-    # end
-    # return M₀₀
+
+function allocate_intermediate(::EigMax, cgi::ConnectedGraphInit)
+    m = length(targetnodes(cgi))
+    targetnodes = map(x -> x.node, targetids(cgi))
+    nontargetnodes = setdiff(1:n, targetnodes)
+    Mtarget = zeros(m, m)
+    Mnontarget = zeros(length(nontargetnodes), m)
+    return (; Mtarget, Mnontarget, targetnodes, nontargetnodes)
 end
 
-update_output!(output::Tuple, ::ConnectedGraphLevel, ::EigMax, ti::TargetInit, v) = nothing
+function compute!(output::Pair, ::EigMax, ti::TargetInit)
+    (; Mtarget, Mnontarget, M) = ti
+
+    # We need targets and non-targets in separate matrices.
+    # This is still a lot of allocations, but the least possible for EigMax
+    M₀₀[target(ti).node, :] .= view(M, targetnodes)
+    Mnontarget[target(ti).node, :] .= view(M, nontargetnodes)
+
+    return output
+end
 
 # We do most of eigmax in finalize_output
 function finalize_output!((vˡ, λ, vʳ), ::Level, ::EigMax, cgi::ConnectedGraphInit)
+    (; Mtarget, Mnontarget, targetnodes, nontargetnodes) = ti
+
     tol = 1e-14 # TODO as a keyword somewhere
-    targetnodes = map(x -> x.node, targetids(cgi))
-    # square submatrix defined by extracting the rows corresponding to landmarks
-    K = compute(proximity_measure(cgi), cgi) # TODO set diag etc
-    M = K .*= sourcequality(cgi) .* targetquality(cgi)'
-    M₀₀ = M[targetnodes, :]
 
     # size of the full problem
     n = nsources(connectedgraph(cgi))
 
-    # node ids for the non-landmarks
-    p₁ = setdiff(1:n, targetnodes)
-
-    # use an Arnoldi based eigensolver to compute the largest (absolute) eigenvalue and right vector (of submatrix)
-    Fps = ArnoldiMethod.partialschur(M₀₀; nev=1, tol)
+    # use an Arnoldi based eigensolver to compute the largest 
+    # (absolute) eigenvalue and right vector (of submatrix)
+    Fps = ArnoldiMethod.partialschur(Mtarget; nev=1, tol)
     λ₀, vʳ₀ = ArnoldiMethod.partialeigen(Fps[1])
 
-    # construct full right vector
-    vʳ[targetnodes] = vʳ₀
-    vʳ[p₁] = M[p₁,:] * vʳ₀ / λ₀[1]
-
     # compute left vector (of submatrix) by shift-invert
-    Flu = lu(M₀₀ - λ₀[1] * I)
-    vˡ₀ = ldiv!(Flu', rand(length(targetids(cgi))))
+    Flu = lu(Mtarget - λ₀[1] * I)
+    # TODO: explain rand here in a comment
+    vˡ₀ = ldiv!(Flu', rand(length(targetnodes)))
     rmul!(vˡ₀, inv(vˡ₀[1]))
 
-    # construct full left vector
-    vˡ[targetnodes] = vˡ₀
+    # assign to the full right vector
+    vʳ[targetnodes] = vʳ₀
+    vʳ[nontargetnodes] = Mnontarget * vʳ₀ / λ₀[1]
+
+    # assign to the full left vector
+    vˡ[targetnodes] .= vˡ₀
     λ[] = λ₀[1]
 
-    return vˡ, λ₀[1], vʳ
+    return vˡ, λ[], vʳ
 end
-
-finalize_output!(cgi) = 
-    finalize_output!(outputs(cgi), measures(cgi), cgi)
-function finalize_output!(outputs::NamedTuple, measures::NamedTuple, cgi)
-    return map(outputs, measures) do output, measure
-        finalize_output!(output, measure, cgi)
-    end
-end
-# Trivial default finish
-finalize_output!((level, output)::Pair, m::Measure, sgi::ConnectedGraphInit) = finalize_output!(output, level, m, sgi)
-finalize_output!(output, level::Level, ::Measure, ::ConnectedGraphInit) = output
 
 # EdgeBetweenness
 
-allocate_output(l::GridGraphLevel, ::EdgeBetweenness, ::ConScapeProblem, ::GridGraph, connectedgraphs::Vector) = 
+allocate_output(l::GridGraphLevel, ::ReturnCustom, ::EdgeBetweenness, ::ConScapeProblem, ::GridGraph, connectedgraphs::Vector) = 
     l => Vector{SparseMatrixCSC{Float64,Int}}(undef, length(connectedgraphs))
-allocate_output(l::ConnectedGraphLevel, ::EdgeBetweenness, ::ConScapeProblem, ::GridGraph, ::ConnectedGraph, precalculation) = 
+allocate_output(l::ConnectedGraphLevel, ::ReturnCustom, ::EdgeBetweenness, ::ConScapeProblem, ::GridGraph, ::ConnectedGraph, precalculation) = 
     l => mapnz(_ -> 0.0, precalculation.W)
 
-# RandomShortestPath / RandomWalk
-function compute(
-    m::EdgeBetweenness, ti::TargetInit{<:Union{RSP,RandomWalk}}
-)
-    (; Z, Zⁱ, Zrows, IW_adj_factorization, workspace) = ti
-    node = target(ti).node
-    weight = _weight(m, ti)
-    XZⁱ = workspace .= weight .* Zⁱ
-    XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
-    XᵀZ .-= sum(weight) .* Zⁱ[node] .* Zrows
+function allocate_intermediate(m::EdgeBetweenness, cgi::ConnectedGraphInit)
+    (; W) = cgi
 
-    return (; Z, XᵀZ)
+    store[] = (; 
+        W,
+        M=zeros(size(W)),
+        K=zeros(size(W)),
+        Z=zeros(size(W)),
+        Zⁱ=zeros(size(W)),
+        Zrows=zeros(size(W)),
+        XZⁱ=zeros(size(W)),
+        XᵀZ=zeros(size(W)),
+        XᵀZminusdiag=zeros(size(W)),
+    )
+
+    Zmatrix = zeros(size(W))
+    XᵀZmatrix = zeros(size(W))
+    XdiagZⁱ = zeros(length(targetids(cgi)))
+
+    return (; Zmatrix, XdiagZⁱ, XᵀZmatrix)
 end
 
-function update_output!(output::SparseMatrixCSC, ::ConnectedGraphLevel, ::EdgeBetweenness, ti::TargetInit, v::NamedTuple)
-    (; Z, XᵀZ) = v
-    (; W) = ti
-    foreachnz(W) do i, j, n
-        @inbounds output.nzval[n] += W.nzval[n] * Z[j] * XᵀZ[i]
-    end
+# RandomShortestPath / RandomWalk
+function compute!(
+    output::Pair, m::EdgeBetweenness, ti::TargetInit{<:Union{RSP,RandomWalk}}
+)
+    (; IW_adj_factorization, Z, Zⁱ) = ti
+    (; Zmatrix, XdiagZⁱ, XᵀZmatrix) = intermediates(ti)
+    node = target(ti).node
+
+    Zmatrix[:, node] .= Z
+    weights = _weight(m, ti)
+    XdiagZⁱ[node] = sum(weights) * Zⁱ[node]
+    XZⁱ = workspace(ti) .= weights .* Zⁱ
+    XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
+    store[].XᵀZ[:, node] .= XᵀZ
+    XᵀZmatrix[:, node] .+= XᵀZ
+
+    store[].M[:, node] .= weights
+    store[].Z[:, node] .= Z
+    store[].Zⁱ[:, node] .= Zⁱ
+    store[].XZⁱ[:, node] .= XZⁱ
+
+    # We only update output in finalize_output!
     return output
 end
 
-function transfer_output!(dest::SparseMatrixCSC, source::SparseMatrixCSC, m::EdgeBetweenness, cgi::ConnectedGraphInit)
+function finalize_output!(
+    output::SparseMatrixCSC, ::Level, ::EdgeBetweenness, cgi::ConnectedGraphInit, intermediates
+)
+    (; W) = cgi
+    (; Zmatrix, XdiagZⁱ, XᵀZmatrix) = intermediates
+
+    for target in targetids(cgi)
+        ti = TargetInit(cgi, target)
+        (; Zrows) = ti
+        node = target.node
+        store[].Zrows[:, node] .= Zrows
+
+        XᵀZmatrix[node, :] .-= XdiagZⁱ .* Zrows
+    end
+
+    foreachnz(W) do i, j, n
+        @inbounds output.nzval[n] = 
+            W.nzval[n] * only(view(Zmatrix, j, :)' * view(XᵀZmatrix, i, :))
+    end
+    store[] = merge(store[], intermediates, (; Z=Zmatrix, bet_edge_k=output, XᵀZmatrix))
+    return output
+end
+
+function transfer_output!(
+    dest::SparseMatrixCSC, source::SparseMatrixCSC, m::EdgeBetweenness, cgi::ConnectedGraphInit
+    )
     dest[LinearIndices(size(cgi))[sourceids(cgi)], map(t -> t.gridgraphidx, targetids(cgi))] .= source
 end
 
@@ -286,7 +347,7 @@ end
 function compute(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; Z, Zⁱ, IW_adj_factorization, workspace) = ti
     weight = _weight(m, ti)
-    isnothing(weight) && error()
+    isnothing(weight) && error("Betweenness weight is `nothing`")
     XZⁱt = workspace .= weight .* Zⁱ
     # Find the scaling factor: if any of XZⁱ is above 1.0 there is a risk of Inf overflow
     λ = max(1.0, maximum(XZⁱt))

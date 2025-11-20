@@ -4,6 +4,21 @@
 Abstract supertype for movement modes.
 
 These define the path distribution of all possible paths between source and targets.
+
+```
+                                  MovementMode
+                                       │
+                 ┌─────────────────────┴─────────────────────┐
+                 │                                           │
+          ArrivingMovement                            AbsorbingMovement
+(Assumes immortality, arrival is guaranteed) (Allows for mortality, arrival not guaranteed)
+                 │                                           │
+                 │                                  (not yet implemented)
+     ┌───────────┼───────────┬──────────────┐                │
+     │           │           │              │                │
+LeastCostPath   RSP   RandomWalk        Euclidean   AbsorbingRandomWalk
+ (θ → ∞)       (θ)       (θ → 0)
+```
 """
 abstract type MovementMode end
 
