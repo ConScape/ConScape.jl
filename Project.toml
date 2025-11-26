@@ -58,4 +58,4 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 OldConScape = {url = "https://github.com/ConScape/ConScape.jl", rev = "old"}
 
 [targets]
-test = ["Aqua", "ArchGDAL", "OldConScape", "Plots", "SafeTestsets", "Test"]
+test = ["Aqua", "ArchGDAL", "OldConScape", "Plots", "SafeTestsets", "Statistics", "Test"]
