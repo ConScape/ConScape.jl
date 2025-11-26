@@ -2,7 +2,6 @@ using ConScape, Test, SparseArrays, LinearAlgebra, Statistics
 using Rasters, ArchGDAL
 using OldConScape
 
-<<<<<<< HEAD
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 landscape = "sno_2000"
 
