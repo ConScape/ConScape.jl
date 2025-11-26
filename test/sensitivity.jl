@@ -2,6 +2,7 @@ using ConScape, Test, SparseArrays, LinearAlgebra, Statistics
 using Rasters, ArchGDAL
 using OldConScape
 
+<<<<<<< HEAD
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 landscape = "sno_2000"
 
@@ -45,18 +46,6 @@ isnanorapprox(x, y; atol=0.0) = (isnan(x) && isnan(y)) || isapprox(x, y; atol)
             solve(sensitivity_measures, rsp, rast)
         end
     end;
-
-    # Create the same landscape in Julia
-    # g = OldConScape.perm_wall_sim(30, 60, corridorwidths=(3,2),
-    # # Qualities decrease by row
-    #     qualities=copy(reshape(collect(1800:-1:1), 60, 30)')
-    # )
-    #
-    # test_g = OldConScape.Grid(
-    #     size(g)...,
-    #     affinities=g.affinities,
-    #     source_qualities=g.source_qualities,
-    #     target_qualities=OldConScape.coarse_graining(g, 3))
 
     # OldConScape sensitivity
     @time old_sens = let

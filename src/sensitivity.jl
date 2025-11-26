@@ -1,5 +1,3 @@
-const store = Ref{Any}((;))
-
 ######################################################################################
 # Sensitivity
 # TODO: finish and test this fragment
