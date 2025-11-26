@@ -62,6 +62,7 @@ include("solve.jl")
 include("return.jl")
 include("solvers.jl")
 include("compute.jl")
+include("sensitivity.jl")
 include("windows.jl")
 include("assessment.jl")
 
