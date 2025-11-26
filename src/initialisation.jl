@@ -1,20 +1,20 @@
 """
     Initialisation
-    
+
 Supertype for the initialisateion / solve sequence in Conscape.jl.
 
 Initialisation is deeply nested in ConScape for two specific reasons.
 
-1. A landscape can be made up of multiple disconnected subgraphs, but we 
+1. A landscape can be made up of multiple disconnected subgraphs, but we
   need outputs that are the composite of all of them, e.g. a spatial map.
 2. Within each connected graph the memory efficient approach to computing measure
   is to calculate one single target at at time, rather than using large matrix solves.
 
 We attempt to allocate as much memory as possible for the whold grid, and
-at each lower level 
+at each lower level
 
-A further subtlety is that [`Level`](@ref) markers control what level of output is 
-allocated. In complete `solve!` runs this is usually [`GridGraphLevel`](@ref). Nut when a 
+A further subtlety is that [`Level`](@ref) markers control what level of output is
+allocated. In complete `solve!` runs this is usually [`GridGraphLevel`](@ref). Nut when a
 user explicitly solves a conected subgraph or single target, [`ConnectedGraphLevel`](@ref)
 or [`TargetLevel`](@ref) will be used so that the output is not expanded to the full
 grid size when not needed.
@@ -41,7 +41,7 @@ grid size when not needed.
     │   • Identifies disconnected subgraphs ("islands") to iterate over during solve.
     │
     │   Output:
-    │   • Stitches together results from all `ConnectedGraphInit` subgraphs 
+    │   • Stitches together results from all `ConnectedGraphInit` subgraphs
     │     into the final, complete outputs.
     │
     └─ For each "island" it initialises a `ConnectedGraphInit` and runs `solve!` for it.
@@ -82,7 +82,7 @@ grid size when not needed.
     │
     │   Output:
     │   • Computes the final numerical result for each requested measure.
-    │   • If one measure's output is an intermediate step for another 
+    │   • If one measure's output is an intermediate step for another
     │     the cached result is reused, avoiding redundant calculations.
 
 """
@@ -117,9 +117,9 @@ them into connected subgraphs.
 
 Also allocates and holds workspaces and outputs,
 as `GridGraphInit` is the level at which
-whole spatial problems are solved. 
+whole spatial problems are solved.
 
-`solve` on `GridGraphInit` iterates over 
+`solve` on `GridGraphInit` iterates over
 connected subgraphs, generating a `ConnectedGraphInit` for each
 and solving it into the same output object.
 
@@ -154,13 +154,13 @@ struct GridGraphInit{P<:ConScapeProblem,G<:GridGraph,CG<:ConnectedGraph,W<:Abstr
 end
 GridGraphInit(problem::ConScapeProblem, rast::RasterStack; kw...) =
     GridGraphInit(problem, GridGraph(problem, rast); kw...)
-function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph; 
-    workspaces=nothing, 
-    verbose=false, 
-    outputlevel=GridGraphLevel(), 
+function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph;
+    workspaces=nothing,
+    verbose=false,
+    outputlevel=GridGraphLevel(),
 )
     _check_inputs(problem, gridgraph)
-    connectedgraphs = split_connected_graphs(gridgraph; 
+    connectedgraphs = split_connected_graphs(gridgraph;
         costfunction=costfunction(problem),
         likelihoodfunction=likelihoodfunction(problem),
     )
@@ -207,7 +207,7 @@ _check_inputs(::Euclidean, g) = nothing
 """
     ConnectedGraphInit
 
-Precalculated variables and outputs buckets used 
+Precalculated variables and outputs buckets used
 in `solve` and `compute` methods.
 
 As we often iterate over single targets it is necessary to precalculate
@@ -254,7 +254,7 @@ struct ConnectedGraphInit{
     precalculation::Pr
     connectedgraphid::Int
     # Internal constructor enforces:
-    # 1. workspace length matches number of sources 
+    # 1. workspace length matches number of sources
     # 2. storage Dict is empty
     # 3. workspaces are freed for use
     function ConnectedGraphInit(
@@ -275,22 +275,38 @@ struct ConnectedGraphInit{
         )
     end
 end
-function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int; 
+function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int;
     outputlevel=ConnectedGraphLevel(),
     workspaces=workspaces(ggi),
-    storage=storage(ggi), 
+    storage=storage(ggi),
     kw...
 )
     connectedgraph = connectedgraphs(ggi)[connectedgraphid]
     _check_inputs(ggi, connectedgraph)
     workspaces = _allocate_workspaces!(workspaces, problem(ggi), connectedgraph)
-    if isnothing(storage) 
+    if isnothing(storage)
         storage = connectedgraph_storage(movement(ggi), workspaces)
     end
-    precalculation = connectedgraph_precalculation(problem(ggi), connectedgraph)
+    sparse_precalc = sparse_precalculation(problem(ggi), connectedgraph)
     outputs = allocate_output(
-        outputlevel, problem(ggi), gridgraph(ggi), connectedgraph, precalculation
+        outputlevel, problem(ggi), gridgraph(ggi), connectedgraph, sparse_precalc
     )
+
+    # Partially initialise so we can use this in dense precalculation
+    connectedgraphinit = ConnectedGraphInit(
+        problem(ggi),
+        gridgraph(ggi),
+        connectedgraph,
+        outputs,
+        workspaces,
+        storage,
+        sparse_precalc,
+        connectedgraphid,
+    )
+
+    # Precalculate dense matrices where needed
+    dense_precalc = dense_precalculation(connectedgraphinit)
+    precalculation = merge(sparse_precalc, dense_precalc)
 
     return ConnectedGraphInit(
         problem(ggi),
@@ -300,7 +316,7 @@ function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int;
         workspaces,
         storage,
         precalculation,
-        connectedgraphid
+        connectedgraphid,
     )
 end
 
@@ -323,10 +339,10 @@ sourceids(sgi::ConnectedGraphInit) = sourceids(connectedgraph(sgi))
 targetids(sgi::ConnectedGraphInit) = targetids(connectedgraph(sgi))
 connectedgraph_size(sgi::ConnectedGraphInit) = connectedgraph_size(connectedgraph(sgi))
 
-connectedgraph_storage(::MovementMode, ::Workspaces{W}) where W<:AbstractArray{T} where T = 
+connectedgraph_storage(::MovementMode, ::Workspaces{W}) where W<:AbstractArray{T} where T =
     Dict{Symbol,ReadOnlyArray{T,1,W}}()
-# Need to store the Woodbury matrix 
-connectedgraph_storage(::RandomWalk, ::Workspaces{W}) where W<:AbstractArray{T} where T = 
+# Need to store the Woodbury matrix
+connectedgraph_storage(::RandomWalk, ::Workspaces{W}) where W<:AbstractArray{T} where T =
     Dict{Symbol,Any}()
 
 @inline Base.getproperty(cgi::ConnectedGraphInit, x::Symbol) = getproperty(precalculation(cgi), x)
@@ -337,7 +353,7 @@ connectedgraph_storage(::RandomWalk, ::Workspaces{W}) where W<:AbstractArray{T} 
 
 Abstract type for precalculated variables at the level of single targets.
 
-Dense vector variables like `Z` (fundamental matrix) are generated 
+Dense vector variables like `Z` (fundamental matrix) are generated
 on demand in `getproperty` (e.g. `tp.Z`) and stored for subsequent requests.
 
 These variables use preallocated [`Workspaces`](@ref) to avoid allocations.
@@ -368,7 +384,7 @@ To construct a `TargetInit` :
 probleminit = init(problem, rast)
 connectedgraph = 1
 connectedgraphinit = init(probleminit, connectedgraph)
-target_idx = 7 
+target_idx = 7
 ti = init(connectedgraphinit, target_idx)
 ````
 
@@ -401,10 +417,10 @@ function TargetInit(
     cgi::CGI, target::TargetID, intermediates::I
 ) where {CGI<:ConnectedGraphInit{MM},I} where MM
     @assert (
-        length(workspaces(cgi)) == 
-        nsources(connectedgraph(cgi)) == 
+        length(workspaces(cgi)) ==
+        nsources(connectedgraph(cgi)) ==
         connectedgraph_size(cgi)[1]
-    ) 
+    )
     free!(workspaces(cgi))
     empty!(storage(cgi))
     TargetInit{MM,CGI,I}(cgi, target, intermediates)
@@ -424,11 +440,17 @@ end
 
 # Reuse this DimensionalData method
 # TODO: reolve/combine with setmeasures
-function Rasters.rebuild(ti::TargetInit; 
-    connectedgraphinit::CGI=connectedgraphinit(ti),
-    target::TargetID=target(ti),
-    intermediates::I=intermediates(ti),
-    ) where {CGI<:ConnectedGraphInit{MM},I} where {MM}
+function Rasters.rebuild(ti::TargetInit;
+    connectedgraphinit=connectedgraphinit(ti),
+    target=target(ti),
+    intermediates=intermediates(ti),
+)
+    _rebuild(ti, connectedgraphinit, target, intermediates)
+end
+
+@noinline function _rebuild(
+    ti::TargetInit, connectedgraphinit::CGI, target::TargetID, intermediates::I,
+) where {CGI<:ConnectedGraphInit{MM},I} where {MM}
     TargetInit{MM,CGI,I}(connectedgraphinit, target, intermediates)
 end
 
@@ -454,7 +476,7 @@ precalculation(ti::TargetInit) = precalculation(connectedgraphinit(ti))
 workspace(ti::Initialisation) = take!(workspaces(ti))
 
 # All TargetInit allow retreiving proberties with `getproperty`
-# from the parent `ConnectedGraphInit` or calculated and stored in 
+# from the parent `ConnectedGraphInit` or calculated and stored in
 # the `TargetInit`
 @inline function Base.getproperty(ti::TargetInit, x::Symbol)
     # Handle all standard properties
@@ -473,30 +495,30 @@ workspace(ti::Initialisation) = take!(workspaces(ti))
     return get_or_compute!(ti, x)
 end
 # TODO: complete this for all movement modes
-# @inline Base.propertynames(ti::TargetInit) = 
+# @inline Base.propertynames(ti::TargetInit) =
 #     (:workspace, :propertynames(intermediates(ti))..., propertynames(connectedgraphinit(ti))...)
 
 # `CommonSolve.init`
 
-init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation, args...; kw...) = 
+init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation, args...; kw...) =
     init(init(m, i), args...; kw...)
-init(movement::MovementMode, x::Union{RasterStack,GridGraph}, args...; kw...) = 
+init(movement::MovementMode, x::Union{RasterStack,GridGraph}, args...; kw...) =
     init(ConScapeProblem(; movement, kw...), x, args...)
-init(measure::Union{Measure,MeasureTuple,MeasureNamedTuple}, 
-    movement::MovementMode, 
-    x::Union{RasterStack,GridGraph}, 
-    args...; 
+init(measure::Union{Measure,MeasureTuple,MeasureNamedTuple},
+    movement::MovementMode,
+    x::Union{RasterStack,GridGraph},
+    args...;
     kw...
 ) = init(ConScapeProblem(measure; movement, kw...), x, args...)
-init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}; kw...) = 
+init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}; kw...) =
     GridGraphInit(problem, x; kw...)
-init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}, connectedgraph::Int; outputlevel=ConnectedGraphLevel(), kw...) = 
+init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}, connectedgraph::Int; outputlevel=ConnectedGraphLevel(), kw...) =
     init(GridGraphInit(problem, x; outputlevel, kw...), connectedgraph; outputlevel)
 # We don't want to allocate outputs if we work at the target level
-init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
+init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) =
     init(GridGraphInit(problem, x; outputs=nothing, kw...), connectedgraph, target; outputlevel=TargetLevel())
 init(ggi::GridGraphInit, connectedgraph::Int; kw...) = ConnectedGraphInit(ggi, connectedgraph; kw...)
-init(ggi::GridGraphInit, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) = 
+init(ggi::GridGraphInit, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) =
     init(ConnectedGraphInit(ggi, connectedgraph; kw...), target)
     init(gi::ConnectedGraphInit, target::Union{Int,CartesianIndex,TargetID}; kw...) = TargetInit(gi, target; kw...)
 init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::ConScapeProblem, args...; kw...) =
@@ -505,7 +527,7 @@ init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation; output
     setmeasures(i, m; outputlevel)
 
 setmeasures(p::ConScapeProblem, m::Measure) = setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
-setmeasures(p::ConScapeProblem, measures::Union{MeasureTuple,MeasureNamedTuple}) = 
+setmeasures(p::ConScapeProblem, measures::Union{MeasureTuple,MeasureNamedTuple}) =
     ConstructionBase.setproperties(p, (; measures))
 function setmeasures(i::Union{GridGraphInit,ConnectedGraphInit}, m; outputlevel)
     problem = setmeasures(ConScape.problem(i), m)

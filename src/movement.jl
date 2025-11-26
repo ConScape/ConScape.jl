@@ -12,9 +12,9 @@ These define the path distribution of all possible paths between source and targ
                  │                                           │
           ArrivingMovement                            AbsorbingMovement
 (Assumes immortality, arrival is guaranteed) (Allows for mortality, arrival not guaranteed)
-                 │                                           │
-                 │                                  (not yet implemented)
-     ┌───────────┼───────────┬──────────────┐                │
+                 ┼──────────────────────────┐                │
+                 │                          │        (not yet implemented)
+     ┌───────────┼───────────┐              │                │
      │           │           │              │                │
 LeastCostPath   RSP   RandomWalk        Euclidean   AbsorbingRandomWalk
  (θ → ∞)       (θ)       (θ → 0)

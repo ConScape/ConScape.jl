@@ -1,8 +1,28 @@
 #################################################################################3
 # Connected graph level variable precalculation
 
+# needs_full_ traits indicates that the full matrix is needed in the 
+# `finalize_output!` stage. Before then it will not be correct.
+# TODO: should it error to use these outside of finalize_output! ?
+needs_full_fundamentalmatrix(::Measure, ::MovementMode) = false
+needs_full_fundamentalmatrix(::EdgeBetweenness, ::RSP) = true
+needs_full_fundamentalmatrix(::SensitivityAnalysis, ::RSP) = true
+
+needs_full_fundamentalrowmatrix(::Measure, ::MovementMode) = false
+needs_full_fundamentalrowmatrix(::EdgeBetweenness, ::RSP) = true
+needs_full_fundamentalrowmatrix(::SensitivityAnalysis, ::RSP) = true
+
+needs_full_costdistancematrix(::Measure, ::MovementMode) = false
+needs_full_costdistancematrix(::SensitivityAnalysis, rsp::RSP) = 
+    proximity_measure(rsp) isa ExpectedCost
+
+anymeasure(f, measures::NamedTuple, mov::MovementMode) = 
+    anymeasure(f, values(measures), mov)
+anymeasure(f, measures::Tuple{Vararg{Measure}}, mov::MovementMode) = 
+    any(map(m -> f(m, mov), measures)) 
+
 # TODO: Move these to a precalculation.jl file with the computation precalculations
-function connectedgraph_precalculation(problem::ConScapeProblem{<:RSP}, graph::ConnectedGraph)
+function sparse_precalculation(problem::ConScapeProblem{<:RSP}, graph::ConnectedGraph)
     _check_inputs(problem, graph)
     P, A_rowsums = _transitionprobability(steplikelihood(graph)::AbstractMatrix)
     W = _substochasticmatrix(movement(problem), P, stepcost(graph)::AbstractMatrix)
@@ -30,7 +50,7 @@ function connectedgraph_precalculation(problem::ConScapeProblem{<:RSP}, graph::C
 
     return (; P, W, IW, IW_adj, C, CW, IW_factorization, IW_adj_factorization, A, Aⁱ, A_rowsums, θ, qᵗ, qˢ)
 end
-function connectedgraph_precalculation(p::ConScapeProblem{<:LCP}, graph::ConnectedGraph)
+function sparse_precalculation(p::ConScapeProblem{<:LCP}, graph::ConnectedGraph)
     _check_inputs(p, graph)
     P, L_rowsums = _transitionprobability(steplikelihood(graph)::AbstractMatrix)
     # TODO: use a raster based shortest path algorithm from Geomorphometry.jl
@@ -40,9 +60,14 @@ function connectedgraph_precalculation(p::ConScapeProblem{<:LCP}, graph::Connect
     dsp1 = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, 1)
     parents = dsp1.parents
     path_allocs = Vector{eltype(parents)}[Vector{eltype(parents)}() for _ in 1:length(parents)]
-    (; P, L_rowsums, cost_weighted_digraph, path_allocs)
+
+    # For completeness we also move these to precalculations
+    qᵗ = targetquality(graph)
+    qˢ = sourcequality(graph)
+
+    (; P, L_rowsums, cost_weighted_digraph, path_allocs, qᵗ, qˢ)
 end
-function connectedgraph_precalculation(problem::ConScapeProblem{<:RandomWalk}, graph::ConnectedGraph)
+function sparse_precalculation(problem::ConScapeProblem{<:RandomWalk}, graph::ConnectedGraph)
     _check_inputs(problem, graph)
     P, L_rowsums = _transitionprobability(steplikelihood(graph)::AbstractMatrix)
     Lⁱ = mapnz(inv, steplikelihood(graph)::AbstractMatrix)
@@ -50,9 +75,54 @@ function connectedgraph_precalculation(problem::ConScapeProblem{<:RandomWalk}, g
     PC_rowsums = sum(PC; dims=2)
     IP = I - P
     IP_factorization = init(solver(problem), IP)
-    return (; Lⁱ, L_rowsums, P, PC, PC_rowsums, IP, IP_factorization)
+
+    # For completeness we also move these to precalculations
+    qᵗ = targetquality(graph)
+    qˢ = sourcequality(graph)
+
+    return (; Lⁱ, L_rowsums, P, PC, PC_rowsums, IP, IP_factorization, qᵗ, qˢ)
 end
-function connectedgraph_precalculation(::ConScapeProblem{<:Euclidean}, ::ConnectedGraph)
+function sparse_precalculation(::ConScapeProblem{<:Euclidean}, ::ConnectedGraph)
+    (;)
+end
+
+# As much as possible, we avoid dense matrix precalculation as
+# they are gigabyte each for a 600 * 600 matrix with all targets used.
+# And 8 GB for 1000 * 1000 !
+# But when its unnavoidable, this is where it happens.
+# TODO: preallocate these from the WindowProblem level
+function dense_precalculation(cgi::ConnectedGraphInit{<:RSP})
+    # Generate a full size Z and Zrows where needed, 
+    # by looping over targetids and triggering `compute` calling `ti.Z` and/or `ti.Zrows`.
+    mov = movement(cgi)
+    mes = measures(cgi)
+
+    function needs_full(args...)
+        needs_full_fundamentalmatrix(args...) || 
+        needs_full_fundamentalrowmatrix(args...) ||
+        needs_full_costdistancematrix(args...)
+    end
+
+    if anymeasure(needs_full, mes, movement(cgi))
+        Z_full = if anymeasure(needs_full_fundamentalmatrix, mes, mov)
+            Matrix{Float64}(undef, connectedgraph_size(cgi))
+        end
+        Zrows_full = if anymeasure(needs_full_fundamentalrowmatrix, mes, mov)
+            Matrix{Float64}(undef, connectedgraph_size(cgi))
+        end
+        Y_full = if anymeasure(needs_full_costdistancematrix, mes, mov)
+            Matrix{Float64}(undef, connectedgraph_size(cgi))
+        end
+        merge(
+            isnothing(Z_full) ? (;) : (; Z_full), 
+            isnothing(Zrows_full) ? (;) : (; Zrows_full),
+            isnothing(Y_full) ? (;) : (; Y_full),
+        )
+    else
+        (;)
+    end
+end
+function dense_precalculation(::ConnectedGraphInit)
     (;)
 end
 
@@ -172,9 +242,9 @@ end
         # TODO: this is very slow, use Eikonal.jl instead
         return Graphs.dijkstra_shortest_paths(ti.cost_weighted_digraph, target(ti).node)::Graphs.DijkstraState{Float64,Int}
     elseif x == :K # "proximity vector"
-        (; shortest_paths, workspace) = ti
+        (; shortest_paths) = ti
         # TODO this should error earlier
-        readonlyarray(workspace .= distance_transformation(ti).(shortest_paths.dists))
+        readonlyarray(workspace(ti) .= distance_transformation(ti).(shortest_paths.dists))
     elseif x === :M # "landscape vector"
         _landscapematrix(ti)
     elseif x === :Q
@@ -193,7 +263,7 @@ function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     proximities = if pm isa DistanceMeasure
         dt = distance_transformation(ti)
         if !isnothing(dt)
-            ti.workspace .= dt.(distances)
+            workspace(ti) .= dt.(distances)
         else
             distances
         end
@@ -204,27 +274,30 @@ function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     return readonlyarray(proximities)
 end
 function _fundamentalmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
-    workspace1, workspace2 = workspaces(ti)
-    b = _diag_vec!(workspace1, target(ti))
-    b_copy = _diag_vec!(workspace2, target(ti))
+    b = _diag_vec!(workspace(ti), target(ti))
+    b_copy = _diag_vec!(workspace(ti), target(ti))
     Z = ldiv!(solver(ti), b, ti.IW_factorization, b_copy)
+    if hasproperty(precalculation(ti), :Z_full)
+        precalculation(ti).Z_full[:, target(ti).node] .= Z
+    end
     return readonlyarray(Z)
 end
 function _inversefundamentalmatrix(ti)
-    readonlyarray(_inv!(ti.workspace, ti.Z))
+    readonlyarray(_inv!(workspace(ti), ti.Z))
 end
 function _fundamentalrowmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
-    (; Z) = ti
-    if size(Z, 1) != length(targetids(ti))
-        b = _diag_vec!(ti.workspace, target(ti))
-        return readonlyarray(ldiv!(ti, ti.IW_adj_factorization, b))
+    Zrows = if connectedgraph_size(ti)[1] != connectedgraph_size(ti)[2]
+        b = _diag_vec!(workspace(ti), target(ti))
+        Zrows = ldiv!(ti, ti.IW_adj_factorization, b)
+        readonlyarray(Zrows)
     else
-        return readonlyarray(Z)
+        ti.Z
     end
-end
-function _landscapematrix(ti::TargetInit)
-    (; qˢ, K, qᵗ, workspace) = ti
-    return readonlyarray(workspace .= qˢ .* K .* qᵗ)
+    if hasproperty(precalculation(ti), :Zrows_full)
+        precalculation(ti).Zrows_full[:, target(ti).node] .= Zrows
+    end
+
+    return Zrows
 end
 function _costdistancematrix(ti)
     (; CW, Z, IW_factorization) = ti
@@ -235,11 +308,19 @@ function _costdistancematrix(ti)
     foreachnz(CW) do i, j, n
         RHS[i] += CW.nzval[n] * Z[j] 
     end
-    readonlyarray(ldiv!(ti, IW_factorization, RHS))
+    Y = ldiv!(ti, IW_factorization, RHS)
+    if hasproperty(precalculation(ti), :Y_full)
+        precalculation(ti).Y_full[:, target(ti).node] .= Y
+    end
+    return readonlyarray(Y)
+end
+function _landscapematrix(ti::TargetInit)
+    (; qˢ, K, qᵗ) = ti
+    return readonlyarray(workspace(ti) .= qˢ .* K .* qᵗ)
 end
 function _qualitymatrix(ti::TargetInit)
-    (; qˢ, qᵗ, workspace) = ti
-    return readonlyarray(workspace .= qˢ .* qᵗ)
+    (; qˢ, qᵗ) = ti
+    return readonlyarray(workspace(ti) .= qˢ .* qᵗ)
 end
 function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
     (; P, IP, IP_factorization) = ti
@@ -247,8 +328,8 @@ function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
     n = LinearAlgebra.checksquare(IP)
 
     # Prepare a Woodbury matrix to cheaply zero out row t, without factorization
-    U = fill!(reshape(ti.workspace, (n, 1)), 0.0)
-    V = fill!(reshape(ti.workspace, (1, n)), 0.0)
+    U = fill!(reshape(workspace(ti), (n, 1)), 0.0)
+    V = fill!(reshape(workspace(ti), (1, n)), 0.0)
     U[t] = 1             # Identity
     V .= .- (IP[t:t, :]) # So that IP[t, :] + UCV[t, :] .== 0
     V[t] = -P[t, t]      # So that IP[t, t] + UCV[t, t] = 1

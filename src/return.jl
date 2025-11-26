@@ -88,7 +88,7 @@ allocate_output(l::Level, problem::ConScapeProblem, args...) =
     allocate_output(l, measures(problem), problem, args...)
 allocate_output(l::Level, measures::Union{Tuple,NamedTuple}, args...) = 
     map(m -> allocate_output(l, m, args...), measures)
-allocate_output(l::Level, m::Measure, args...) = 
+allocate_output(l::Level, m::Measure, args...)::Pair = 
     allocate_output(l, returntrait(m), m, args...)
 
 allocate_output(l::Level, rt::ReturnTrait, m::Measure, ggi::GridGraphInit)::Pair = 
@@ -103,8 +103,6 @@ function allocate_output(
 )
     GridGraphLevel() => zeros(Float64, length(connectedgraphs))
 end
-allocate_output(l::Level, m::Measure, args...)::Pair = 
-    allocate_output(l, returntrait(m), m, args...)
 # We need to zero out all connected subgraphs
 function allocate_output(
     l::GridGraphLevel,
@@ -229,7 +227,7 @@ end
 # Trivial default, just returns the output object as-is
 finalize_output!((level, output)::Pair, m::Measure, sgi::ConnectedGraphInit, intermediates) = 
     finalize_output!(output, level, m, sgi, intermediates)
-finalize_output!(output, level::Level, m::Betweenness, cgi::ConnectedGraphInit, intermediates) = nothing
+finalize_output!(output, level::Level, m::Measure, cgi::ConnectedGraphInit, intermediates) = nothing
 
 
 """

@@ -112,11 +112,14 @@ _get_cost(rast::RasterStack) = _keys_or_nothing(rast, (:cost, :stepcost))
 # This is painfully slow without this optimization
 function foreachnz(f, S) 
     count = 1
-    for col in 1:size(S, 2), k in SparseArrays.getcolptr(S)[col]:(SparseArrays.getcolptr(S)[col + 1] - 1)
-        @inbounds i = SparseArrays.rowvals(S)[k]
-        j = col
-        f(i, j, count)
-        count += 1
+    colptr = SparseArrays.getcolptr(S)
+    rowvals = SparseArrays.rowvals(S)
+    for col in 1:size(S, 2)
+        for k in colptr[col]:(colptr[col + 1] - 1)
+            @inbounds i = rowvals[k]
+            f(i, col, count)
+            count += 1
+        end
     end
     return nothing
 end

@@ -246,7 +246,8 @@ returntrait(::EdgeBetweenness) = ReturnCustom()
 returntrait(::SensitivityAnalysis) = ReturnCustom()
 returntrait(::EigMax) = ReturnCustom()
 
-# Workspace allocation traits TODO make these accurate
+# Workspace allocation traits 
+# TODO: make these accurate
 needs_workspaces(::Measure) = 2
 needs_workspaces(::Betweenness) = 2
 needs_workspaces(::EdgeBetweenness) = 4

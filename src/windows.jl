@@ -528,7 +528,7 @@ function _get_window_with_zeroed_buffer(
     end
 
     targetquality = rebuild(tq; data=tq_sparse)
-    sourcequality = modify(Array, _get_sourcequality(window)::Raster)
+    sourcequality = Rasters.modify(Array, _get_sourcequality(window)::Raster)
     
     # Handle :circle shaped buffers
     if shape == :circle

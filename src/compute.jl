@@ -15,7 +15,10 @@ end
     haskey(st, x) && return st[x]
 
     val = target_precalculation!(ti, x)
-    st[x] = readonlyarray(val)
+    # TODO: storing other types
+    if val isa Vector
+        st[x] = readonlyarray(val)
+    end
     return val
 end
 
@@ -70,21 +73,23 @@ function allocate_output(l::Level, ::ReturnCustom, m::EigMax, ::ConScapeProblem,
 end
 
 function allocate_intermediate(::EigMax, cgi::ConnectedGraphInit)
-    m = length(targetnodes(cgi))
+    m = length(targetids(cgi))
     targetnodes = map(x -> x.node, targetids(cgi))
-    nontargetnodes = setdiff(1:n, targetnodes)
+    nontargetnodes = setdiff(1:m, targetnodes)
     Mtarget = zeros(m, m)
     Mnontarget = zeros(length(nontargetnodes), m)
     return (; Mtarget, Mnontarget, targetnodes, nontargetnodes)
 end
 
 function compute!(output::Pair, ::EigMax, ti::TargetInit)
-    (; Mtarget, Mnontarget, M) = ti
+    (; Mtarget, Mnontarget, M, targetnodes) = ti
 
     # We need targets and non-targets in separate matrices.
     # This is still a lot of allocations, but the least possible for EigMax
-    M₀₀[target(ti).node, :] .= view(M, targetnodes)
-    Mnontarget[target(ti).node, :] .= view(M, nontargetnodes)
+    Mtarget[target(ti).node, :] .= view(M, targetnodes)
+    if size(Mnontarget, 1) > 0
+        Mnontarget[target(ti).node, :] .= view(M, nontargetnodes)
+    end
 
     return output
 end
@@ -115,6 +120,7 @@ function finalize_output!((vˡ, λ, vʳ), ::Level, ::EigMax, cgi::ConnectedGraph
 
     # assign to the full left vector
     vˡ[targetnodes] .= vˡ₀
+    @show λ₀
     λ[] = λ₀[1]
 
     return vˡ, λ[], vʳ
@@ -130,45 +136,25 @@ allocate_output(l::ConnectedGraphLevel, ::ReturnCustom, ::EdgeBetweenness, ::Con
 function allocate_intermediate(m::EdgeBetweenness, cgi::ConnectedGraphInit)
     (; W) = cgi
 
-    store[] = (; 
-        W,
-        M=zeros(size(W)),
-        K=zeros(size(W)),
-        Z=zeros(size(W)),
-        Zⁱ=zeros(size(W)),
-        Zrows=zeros(size(W)),
-        XZⁱ=zeros(size(W)),
-        XᵀZ=zeros(size(W)),
-        XᵀZminusdiag=zeros(size(W)),
-    )
-
-    Zmatrix = zeros(size(W))
-    XᵀZmatrix = zeros(size(W))
+    XᵀZ_full = zeros(connectedgraph_size(cgi))
     XdiagZⁱ = zeros(length(targetids(cgi)))
 
-    return (; Zmatrix, XdiagZⁱ, XᵀZmatrix)
+    return (; XdiagZⁱ, XᵀZ_full)
 end
 
 # RandomShortestPath / RandomWalk
 function compute!(
     output::Pair, m::EdgeBetweenness, ti::TargetInit{<:Union{RSP,RandomWalk}}
 )
+    (; XdiagZⁱ, XᵀZ_full) = intermediates(ti)
     (; IW_adj_factorization, Z, Zⁱ) = ti
-    (; Zmatrix, XdiagZⁱ, XᵀZmatrix) = intermediates(ti)
     node = target(ti).node
 
-    Zmatrix[:, node] .= Z
     weights = _weight(m, ti)
     XdiagZⁱ[node] = sum(weights) * Zⁱ[node]
     XZⁱ = workspace(ti) .= weights .* Zⁱ
     XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
-    store[].XᵀZ[:, node] .= XᵀZ
-    XᵀZmatrix[:, node] .+= XᵀZ
-
-    store[].M[:, node] .= weights
-    store[].Z[:, node] .= Z
-    store[].Zⁱ[:, node] .= Zⁱ
-    store[].XZⁱ[:, node] .= XZⁱ
+    view(XᵀZ_full, :, node) .+= XᵀZ
 
     # We only update output in finalize_output!
     return output
@@ -177,29 +163,28 @@ end
 function finalize_output!(
     output::SparseMatrixCSC, ::Level, ::EdgeBetweenness, cgi::ConnectedGraphInit, intermediates
 )
-    (; W) = cgi
-    (; Zmatrix, XdiagZⁱ, XᵀZmatrix) = intermediates
+    (; W, Z_full) = cgi # This Z is the full graph size
+    (; XdiagZⁱ, XᵀZ_full) = intermediates
 
     for target in targetids(cgi)
         ti = TargetInit(cgi, target)
-        (; Zrows) = ti
         node = target.node
-        store[].Zrows[:, node] .= Zrows
+        (; Zrows) = ti
 
-        XᵀZmatrix[node, :] .-= XdiagZⁱ .* Zrows
+        XᵀZ_full[node, :] .-= XdiagZⁱ .* Zrows
     end
 
     foreachnz(W) do i, j, n
         @inbounds output.nzval[n] = 
-            W.nzval[n] * only(view(Zmatrix, j, :)' * view(XᵀZmatrix, i, :))
+            # TODO: is j in the right place?
+            W.nzval[n] * only(view(Z_full, j, :)' * view(XᵀZ_full, i, :))
     end
-    store[] = merge(store[], intermediates, (; Z=Zmatrix, bet_edge_k=output, XᵀZmatrix))
     return output
 end
 
 function transfer_output!(
     dest::SparseMatrixCSC, source::SparseMatrixCSC, m::EdgeBetweenness, cgi::ConnectedGraphInit
-    )
+)
     dest[LinearIndices(size(cgi))[sourceids(cgi)], map(t -> t.gridgraphidx, targetids(cgi))] .= source
 end
 
@@ -236,7 +221,7 @@ end
 # RSP
 function compute(::ExpectedCost, ti::TargetInit{<:RSP})
     (; Y, Zⁱ) = ti
-    C̄ = ti.workspace .= Y .* Zⁱ
+    C̄ = workspace(ti) .= Y .* Zⁱ
     # Subtract the cost at the target from all sources
     C̄ .-= C̄[target(ti).node]
     return C̄

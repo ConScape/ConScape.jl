@@ -59,6 +59,8 @@ using ConScape, Test, SparseArrays
             0.19721532522049376]
     end
 
+    results = solve(problem, g)
+
     @testset "Test mean_kl_divergence" begin
         @test results.kld[1] ≈ 2.4405084252728125e13
     end
@@ -121,7 +123,7 @@ using ConScape, Test, SparseArrays
         M = g.sourcequality[ConScape.sourceids(g)] .* Matrix(K) .* g.targetquality[ConScape.sourceids(g)]'
 
         @test_broken λ[] ≈ val
-        @test_broken M * vʳ ≈ vʳ * λ[]
+        @test M * vʳ ≈ vʳ * λ[]
     end
 
     @testset "Coarse graining: merging pixels to landmarks" begin

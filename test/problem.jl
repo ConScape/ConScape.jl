@@ -1,5 +1,4 @@
-nothing
-using ConScape, Test, SparseArrays, LinearAlgebra
+using ConScape, Test, SparseArrays, LinearAlgebra, Statistics
 # using LinearSolve
 using Rasters, ArchGDAL
 using OldConScape
@@ -61,12 +60,12 @@ solver = VectorSolver()
     @test qt == ConScape.targetquality(connectedgraphinit)
     @test all(test_g.target_qualities .=== ConScape.targetquality(gridgraphinit))
     @test all(test_g.source_qualities .=== ConScape.sourcequality(gridgraphinit))
-    @test test_g.costmatrix == connectedgraph1.stepcost == targetinit1.C
-    @test test_g.costmatrix .* test_grsp.W == connectedgraphinit.precalculation.CW == targetinit1.CW
-    @test test_g.affinities == connectedgraph1.steplikelihood
-    @test test_grsp.Pref == connectedgraphinit.precalculation.P == targetinit1.P
-    @test test_grsp.W == connectedgraphinit.precalculation.W == targetinit1.W
-    @test LinearAlgebra.I - test_grsp.W == connectedgraphinit.precalculation.IW == targetinit1.IW
+    @test test_g.costmatrix == ConScape.stepcost(connectedgraph1) == targetinit1.C
+    @test test_g.costmatrix .* test_grsp.W == ConScape.precalculation(connectedgraphinit).CW == targetinit1.CW
+    @test test_g.affinities == ConScape.steplikelihood(connectedgraph1)
+    @test test_grsp.Pref == ConScape.precalculation(connectedgraphinit).P == targetinit1.P
+    @test test_grsp.W == ConScape.precalculation(connectedgraphinit).W == targetinit1.W
+    @test LinearAlgebra.I - test_grsp.W == ConScape.precalculation(connectedgraphinit).IW == targetinit1.IW
     @test test_g.id_to_grid_coordinate_list == ConScape.sourceids(connectedgraphinit) == ConScape.sourceids(targetinit1)
     @test (test_g.nrows, test_g.ncols) == size(gridgraphinit)
     @test all(test_g.source_qualities .=== ConScape.sourcequality(gridgraphinit))
@@ -117,6 +116,7 @@ solvers = (
     # LinearSolver(), # TODO: really slow currently
 )
 
+solver = VectorSolver()
 for solver in solvers @testset "RSP measures with $solver" begin
     affinities_sparse = OldConScape.graph_matrix_from_raster(parent(steplikelihood))
     test_g = OldConScape.Grid(size(steplikelihood)...;
@@ -242,15 +242,22 @@ other_measures = (;
     @time res_ebet_rsp_pmp = solve(edge_betweenness_measures, rsp_pmp, rast)
 end
 
-@testset "LCP measures" begin
+@testset "LeastCostPath measures" begin
     lc = LeastCostPath(; distance_transformation=ExpMinusAlpha(2.0),)
 
-    # FIXME: somtimes broken? cant reproduce, cant use @test_broken. 
-    # res_bet_lc = solve(betweenness_measures, lc, rast)
+    res_bet_lc = solve(betweenness_measures, lc, rast)
     res_oth_lc = solve(other_measures, lc, rast)
-    # res_ebet_lc = solve(edge_betweenness_measures, lc, rast)
     # Not iplemented
+    # res_ebet_lc = solve(edge_betweenness_measures, lc, rast)
     # res_sens_lc = solve(sensitivity_measures, lc, rast)
+
+    @testset "LeastCostPath is correlated with RandomisedShortestPath at high theta" begin
+        rsp_lc = RSP(; distance_transformation=ExpMinusAlpha(2.0), theta=10.0)
+        res_bet_rsp_lc = solve(betweenness_measures, rsp_lc, rast)
+        @test cor(collect(skipmissing(res_bet_lc.betq)), collect(skipmissing(res_bet_rsp_lc.betq))) > 0.97
+        @test cor(collect(skipmissing(res_bet_lc.betm)), collect(skipmissing(res_bet_rsp_lc.betm))) > 0.97
+        # K amd u too broken (by fp over/under-flow ?) to compare
+    end
 
     @testset "mean_lc_kl_divergence" begin
         @test res_oth_lc.mkld[] ≈ 1.5660600315073947e6
@@ -260,6 +267,7 @@ end
 end
 
 @testset "RandomWalk measures" begin
+    # TODO: test this with alpha other than 1.0
     rw = RandomWalk(; distance_transformation=ExpMinusAlpha(1.0))
 
     res_bet_rw = solve(betweenness_measures, rw, rast)
@@ -267,5 +275,16 @@ end
     # Not iplemented
     # res_ebet_rw = solve(edge_betweenness_measures, rw, rast)
     # res_sens_rw = solve(sensitivity_measures, rw, rast)
-    # TODO tests
+
+    @testset "RandomWalk is correlated with RandomisedShortestPath at low theta" begin
+        rsp_rw = RSP(; distance_transformation=ExpMinusAlpha(1.0), theta=0.000000000001)
+        res_bet_rsp_rw = solve(betweenness_measures, rsp_rw, rast)
+        @test cor(collect(skipmissing(res_bet_rw.betu)), collect(skipmissing(res_bet_rsp_rw.betu))) > 0.99
+        @test cor(collect(skipmissing(res_bet_rw.betq)), collect(skipmissing(res_bet_rsp_rw.betq))) > 0.99
+        @test cor(collect(skipmissing(res_bet_rw.betk)), collect(skipmissing(res_bet_rsp_rw.betk))) > 0.97
+        # M is less correlated for some reason ?
+        @test cor(collect(skipmissing(res_bet_rw.betm)), collect(skipmissing(res_bet_rsp_rw.betm))) > 0.93
+    end
+
+    # TODO more tests
 end
