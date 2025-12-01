@@ -73,6 +73,7 @@ function allocate_output(l::Level, ::ReturnCustom, m::EigMax, ::ConScapeProblem,
 end
 
 function allocate_intermediate(::EigMax, cgi::ConnectedGraphInit)
+    (; C, W, Z_full) = cgi
     m = length(targetids(cgi))
     targetnodes = map(x -> x.node, targetids(cgi))
     nontargetnodes = setdiff(1:m, targetnodes)
@@ -81,22 +82,22 @@ function allocate_intermediate(::EigMax, cgi::ConnectedGraphInit)
     return (; Mtarget, Mnontarget, targetnodes, nontargetnodes)
 end
 
-function compute!(output::Pair, ::EigMax, ti::TargetInit)
-    (; Mtarget, Mnontarget, M, targetnodes) = ti
+function compute(::EigMax, ti::TargetInit{<:Union{RSP,RandomWalk}})
+    (; K, M, Mtarget, Mnontarget, targetnodes, nontargetnodes, Z_full) = ti
+    idx = targetconnectedgraphidx(ti)
 
-    # We need targets and non-targets in separate matrices.
-    # This is still a lot of allocations, but the least possible for EigMax
-    Mtarget[target(ti).node, :] .= view(M, targetnodes)
+    Mtarget[:, idx] .= view(M, targetnodes)
+
     if size(Mnontarget, 1) > 0
-        Mnontarget[target(ti).node, :] .= view(M, nontargetnodes)
+        Mnontarget[:, idx] .= view(M, nontargetnodes)
     end
-
-    return output
 end
 
+update_output!(::Pair, ::EigMax, ::TargetInit, v) = nothing
+
 # We do most of eigmax in finalize_output
-function finalize_output!((vˡ, λ, vʳ), ::Level, ::EigMax, cgi::ConnectedGraphInit)
-    (; Mtarget, Mnontarget, targetnodes, nontargetnodes) = ti
+function finalize_output!((vˡ, λ, vʳ), ::Level, em::EigMax, cgi::ConnectedGraphInit, intermediates)
+    (; Mtarget, Mnontarget, targetnodes, nontargetnodes) = intermediates
 
     tol = 1e-14 # TODO as a keyword somewhere
 
@@ -108,19 +109,24 @@ function finalize_output!((vˡ, λ, vʳ), ::Level, ::EigMax, cgi::ConnectedGraph
     Fps = ArnoldiMethod.partialschur(Mtarget; nev=1, tol)
     λ₀, vʳ₀ = ArnoldiMethod.partialeigen(Fps[1])
 
-    # compute left vector (of submatrix) by shift-invert
-    Flu = lu(Mtarget - λ₀[1] * I)
-    # TODO: explain rand here in a comment
-    vˡ₀ = ldiv!(Flu', rand(length(targetnodes)))
-    rmul!(vˡ₀, inv(vˡ₀[1]))
+    # Computing the left and right vectors is optional
+    if em.right isa Right
+        # assign to the full right vector
+        vʳ[targetnodes] .= vʳ₀
+        vʳ[nontargetnodes] .= Mnontarget * vʳ₀ ./ λ₀[1]
+    end
 
-    # assign to the full right vector
-    vʳ[targetnodes] = vʳ₀
-    vʳ[nontargetnodes] = Mnontarget * vʳ₀ / λ₀[1]
+    if em.left isa Left
+        # compute left vector (of submatrix) by shift-invert
+        Flu = lu(Mtarget - λ₀[1] * I)
+        # TODO: explain rand here in a comment
+        vˡ₀ = ldiv!(Flu', rand(length(targetnodes)))
+        rmul!(vˡ₀, inv(vˡ₀[1]))
+        # assign to the full left vector
+        vˡ[targetnodes] .= vˡ₀
+    end
 
-    # assign to the full left vector
-    vˡ[targetnodes] .= vˡ₀
-    @show λ₀
+    # Assign to the output Ref for λ  
     λ[] = λ₀[1]
 
     return vˡ, λ[], vʳ
@@ -148,7 +154,7 @@ function compute!(
 )
     (; XdiagZⁱ, XᵀZ_full) = intermediates(ti)
     (; IW_adj_factorization, Z, Zⁱ) = ti
-    node = target(ti).node
+    node = targetnode(ti)
 
     weights = _weight(m, ti)
     XdiagZⁱ[node] = sum(weights) * Zⁱ[node]
@@ -200,7 +206,7 @@ end
 function compute(::Distance, ti::TargetInit{<:Euclidean})
     _hypot(a::CartesianIndex, b::CartesianIndex) = _hypot(Tuple(a), Tuple(b))
     _hypot((a1, a2)::Tuple, (b1, b2)::Tuple) = hypot((b1 - a1), (b2 - a2))
-    return ti.workspace .= _hypot.(sourceids(ti), (target(ti).spatialidx,))
+    return ti.workspace .= _hypot.(sourceids(ti), (targetspatialidx(ti),))
 end
 compute(::Distance, ti::TargetInit{<:LCP}) =
     readonlyarray(ti.shortest_paths.dists)
@@ -209,7 +215,7 @@ function compute(
     ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}
 )
     (; IW_factorization) = ti
-    node = target(ti).node
+    node = targetnode(ti)
     PC_rowsums = ti.workspace
     # Set target rowsum of PC to zero
     PC_rowsums .= ti.PC_rowsums
@@ -223,7 +229,7 @@ function compute(::ExpectedCost, ti::TargetInit{<:RSP})
     (; Y, Zⁱ) = ti
     C̄ = workspace(ti) .= Y .* Zⁱ
     # Subtract the cost at the target from all sources
-    C̄ .-= C̄[target(ti).node]
+    C̄ .-= C̄[targetnode(ti)]
     return C̄
 end
 function compute(::FreeEnergyDistance, ti::TargetInit{<:RSP})
@@ -238,7 +244,7 @@ function compute(::PowerMeanProximity, ti::TargetInit{<:RSP})
 end
 function compute(::SurvivalProbability, ti::TargetInit{<:RSP})
     (; Z, workspace) = ti
-    return workspace .= Z ./ Z[target(ti).node]
+    return workspace .= Z ./ Z[targetnode(ti)]
 end
 
 
@@ -247,15 +253,16 @@ end
 
 function compute(::KullbackLeiblerDivergence, ti::TargetInit{<:LCP})
     (; cost_weighted_digraph, P, qˢ, qᵗ) = ti
+    node = targetnode(ti)
     output = ti.workspace
     from = Vector{Int}(undef, length(output))
     to = Vector{Int}(undef, length(output))
 
     n = length(from)
-    dsp = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, target(ti).node)
+    dsp = Graphs.dijkstra_shortest_paths(cost_weighted_digraph, node)
     parents = dsp.parents
     # TODO explain why this is needed
-    parents[target(ti).node] = target(ti).node
+    parents[node] = node
 
     # Initialise arrays
     fill!(output, 0.0)
@@ -311,7 +318,7 @@ compute(::LandscapeMatrix, ti::TargetInit{<:Union{RSP,RandomWalk,LCP}}) = ti.M
 # LeastCostPath
 function compute(m::Betweenness, ti::TargetInit{<:LCP})
     (; shortest_paths, path_allocs, workspace) = ti
-    node = target(ti).node
+    node = targetnode(ti)
     shortest_paths_enumerated = Graphs.enumerate_paths!(path_allocs, shortest_paths, 1:length(path_allocs))
     # Set the target path to only contain itself
     targetpath = resize!(shortest_paths_enumerated[node], 1)
@@ -332,12 +339,13 @@ end
 function compute(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
     (; Z, Zⁱ, IW_adj_factorization, workspace) = ti
     weight = _weight(m, ti)
+    node = targetnode(ti)
     isnothing(weight) && error("Betweenness weight is `nothing`")
     XZⁱt = workspace .= weight .* Zⁱ
     # Find the scaling factor: if any of XZⁱ is above 1.0 there is a risk of Inf overflow
     λ = max(1.0, maximum(XZⁱt))
     # TODO: explain what this subtraction does
-    XZⁱt[target(ti).node] -= Zⁱ[target(ti).node] * sum(weight)
+    XZⁱt[node] -= Zⁱ[node] * sum(weight)
     # Scale MZⁱ with λ
     XZⁱtλ = XZⁱt .*= inv(λ)
     # Solve (I - W)' \ MZⁱλ, then multiply by Z and λ scaling
