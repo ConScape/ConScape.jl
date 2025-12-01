@@ -23,13 +23,13 @@ abstract type AbstractProblem end
 abstract type InputType end
 abstract type Permeability <: InputType end
 
-abstract type Quality <: InputType end
-struct SourceQuality <: Quality end
-struct TargetQuality <: Quality end
+abstract type AbstractgQuality <: InputType end
+struct Quality <: AbstractgQuality end
+struct SourceQuality <: AbstractgQuality end
+struct TargetQuality <: AbstractgQuality end
 
 struct StepLikelihood <: Permeability end
 struct StepCost <: Permeability end
-
 
 # For sensitivity analysis
 abstract type StepCostAndLikelihood <: Permeability end

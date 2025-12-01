@@ -52,7 +52,7 @@ _maybe_set_diagonal!(ti::TargetInit, proximities) =
 _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Nothing) = proximities
 function _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Number)
     proximities = ti.workspace .= proximities
-    proximities[target(ti).node] = diagvalue
+    proximities[targetnode(ti)] = diagvalue
     return readonlyarray(proximities)
 end
 # function _maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnodes::AbstractVector)

@@ -33,7 +33,7 @@ export QualityWeighted, QualityAndProximityWeighted, ProximityWeighted, Unweight
 
 export Sensitivity, Elasticity
 
-export Cumulative, Eigen
+export Summation, EigenAnalysis
 
 export Quality, SourceQuality, TargetQuality, StepCost, StepLikelihood, StepCostToLikelihood, StepLikelihoodToCost
 

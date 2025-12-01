@@ -155,8 +155,8 @@ weighting(gm::EdgeBetweenness) = gm.weighting
 # Sensitivity
 
 abstract type TopologicalMetric end
-struct Cumulative <: TopologicalMetric end
-struct Eigen <: TopologicalMetric end
+struct Summation <: TopologicalMetric end
+struct EigenAnalisis <: TopologicalMetric end
 
 abstract type SensitivityType end
 struct Sensitivity <: SensitivityType end
@@ -174,7 +174,7 @@ Compute sensitivity of all nodes.
 - `wrt`: Five types of node sensitivity are implemented: `Affinity()`, `Cost()`, 
     `Quality()`, `CostAndAffinity()` and `AffinityAndCost()`.
 - `metric`: Two [`TopologicalMetric`](@ref)s are implemented to summarize the landscape matrix 
-    either through summation ([`Cumulative()`](@ref)) or through eigen analysis [`LandscapeEigen()`](@ref). 
+    either through summation ([`Summation()`](@ref)) or through eigen analysis [`LandscapeEigen()`](@ref). 
     The default is `Eigen()`.
 - `type`: The results can be provided either as sensitivity w.r.t. `Sensitivity()`
     or w.r.t. `Elasticity()`, the latter are also known as elasticities. The default is `Sensitivity()`
@@ -183,7 +183,7 @@ The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
 @kwdef struct SensitivityAnalysis{WRT<:InputType,TM<:TopologicalMetric,ST<:SensitivityType} <: SpatialMeasure
     wrt::WRT
-    metric::TM = Cumulative()
+    metric::TM = Summation()
     type::ST = Sensitivity()
 end
 
@@ -215,17 +215,44 @@ struct LandscapeMatrix <: GraphMeasure end
 end
 
 """
+    EigenSide
+
+Abstract supertype for sides of [`EigMax`](@ref).
+
+These let us skip computation with `NoLeft` or `NoRight`.
+
+Both are computed by default, e.g. `Left()` and `Right` are used.
+"""
+abstract type EigenSide end
+struct Left <: EigenSide end
+struct NoLeft <: EigenSide end
+struct Right <: EigenSide end
+struct NoRight <: EigenSide end
+
+"""
     EigMax <: Measure
 
-    Eigmax(tol)
+    Eigmax(; kw...)
 
 Compute the largest eigenvalue triple (left vector, value, and right vector) 
 of the quality-scaled proximities with respect to the distance/proximity measure 
 in the [`MovementMode`](@ref).
+
+## Keywords
+
+`left`: whether to calculate left eigenvector. Defaults to `Left()`, but can be `NoLeft()`.
+`left`: whether to calculate righ eigenvector. Defaults to `Right()`, but can be `NoRight()`.
+`tol`: tolerance, defaults to `1e-14`.
+
+The triple is always returned, but if `NoLeft` or `NoRight` are used the 
+values contained in the left/right vecto will be zeros.
 """
-@kwdef struct EigMax{T} <: Measure
+@kwdef struct EigMax{L,R,T} <: Measure
+    left::L=Left()
+    right::R=Right()
     tol::T = 1e-14
 end
+
 
 Base.Symbol(m::Measure) = nameof(typeof(m))
 Base.Symbol(m::Union{Betweenness,EdgeBetweenness}) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))

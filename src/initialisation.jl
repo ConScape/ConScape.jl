@@ -91,6 +91,7 @@ abstract type Initialisation end
 const TargetID = @NamedTuple{spatialidx::CartesianIndex{2},gridgraphidx::Int,connectedgraphidx::Int,node::Int}
 const SourceID = CartesianIndex{2}
 
+# Generic methods that forward to the ConScapeProblem
 movement(i::Initialisation) = movement(problem(i))
 costfunction(i::Initialisation) = costfunction(problem(i))
 likelihoodfunction(i::Initialisation) = likelihoodfunction(problem(i))
@@ -99,14 +100,20 @@ measures(i::Initialisation) = measures(problem(i))
 proximity_measure(i::Initialisation) = proximity_measure(problem(i))
 distance_transformation(i::Initialisation) = distance_transformation(problem(i))
 diagvalue(i::Initialisation) = diagvalue(problem(i))
+
+# Getters that forward to the MovementMode
 approx(i::Initialisation) = approx(movement(i))
 theta(i::Initialisation) = theta(movement(i))
 
+# Getters that forward to the GridGraph
 gridgraph_size(i::Initialisation) = gridgraph_size(gridgraph(i))
 target_size(i::Initialisation) = (ntargets(gridgraph(i)),)
 
+# Base methods
 Base.size(i::Initialisation, args...) = Base.size(gridgraph(i), args...)
 Base.length(i::Initialisation) = Base.length(gridgraph(i))
+
+# DimensionalData methods
 DimensionalData.dims(i::Initialisation) = dims(gridgraph(i))
 
 """
@@ -179,18 +186,24 @@ function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph;
     return GridGraphInit(problem, gridgraph, connectedgraphs, workspaces, storage, outputs)
 end
 
+# Field getters
 problem(ggi::GridGraphInit) = ggi.problem
 gridgraph(ggi::GridGraphInit) = ggi.gridgraph
 connectedgraphs(ggi::GridGraphInit) = ggi.connectedgraphs
 workspaces(ggi::GridGraphInit) = ggi.workspaces
 outputs(ggi::GridGraphInit) = ggi.outputs
 storage(ggi::GridGraphInit) = ggi.storage
+
+# Methods that forward to the ConnectedGraph
 nconnectedgraphs(ggi::GridGraphInit) = length(connectedgraphs(ggi))
+
+# Methods that forward to the GridGraph
 stepcost(p::GridGraphInit) = stepcost(gridgraph(p))
 steplikelihood(p::GridGraphInit) = steplikelihood(gridgraph(p))
 sourcequality(p::GridGraphInit) = sourcequality(gridgraph(p))
 targetquality(p::GridGraphInit) = targetquality(gridgraph(p))
 
+# Sanity checks
 _check_inputs(x, init) = _check_inputs(movement(x), init)
 function _check_inputs(::RSP, g)
     isnothing(stepcost(g)) && throw(ArgumentError("GridGraph has no stepcost for RSP"))
@@ -320,6 +333,7 @@ function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int;
     )
 end
 
+# Field getters
 gridgraph(sgi::ConnectedGraphInit) = getfield(sgi, :gridgraph)
 connectedgraph(sgi::ConnectedGraphInit) = getfield(sgi, :connectedgraph)
 problem(sgi::ConnectedGraphInit) = getfield(sgi, :problem)
@@ -328,9 +342,10 @@ outputs(sgi::ConnectedGraphInit) = getfield(sgi, :outputs)
 storage(sgi::ConnectedGraphInit) = getfield(sgi, :storage)
 precalculation(sgi::ConnectedGraphInit) = getfield(sgi, :precalculation)
 connectedgraphid(sgi::ConnectedGraphInit) = getfield(sgi, :connectedgraphid)
+
+# Getters that forward to the ConnectedGraph
 nsources(sgi::ConnectedGraphInit) = nsources(connectedgraph(sgi))
 ntargets(sgi::ConnectedGraphInit) = ntargets(connectedgraph(sgi))
-
 stepcost(sgi::ConnectedGraphInit) = stepcost(connectedgraph(sgi))
 steplikelihood(sgi::ConnectedGraphInit) = steplikelihood(connectedgraph(sgi))
 sourcequality(sgi::ConnectedGraphInit) = sourcequality(connectedgraph(sgi))
@@ -342,9 +357,12 @@ connectedgraph_size(sgi::ConnectedGraphInit) = connectedgraph_size(connectedgrap
 connectedgraph_storage(::MovementMode, ::Workspaces{W}) where W<:AbstractArray{T} where T =
     Dict{Symbol,ReadOnlyArray{T,1,W}}()
 # Need to store the Woodbury matrix
+# TODO: find a better way to do this. Storage should be strongly typed
 connectedgraph_storage(::RandomWalk, ::Workspaces{W}) where W<:AbstractArray{T} where T =
     Dict{Symbol,Any}()
 
+# Base.getproperty/propertynames let us use the `cgi.somevariable` 
+# syntax in `finalize_output` and similar methods
 @inline Base.getproperty(cgi::ConnectedGraphInit, x::Symbol) = getproperty(precalculation(cgi), x)
 @inline Base.propertynames(cgi::ConnectedGraphInit) = propertynames(precalculation(cgi))
 
@@ -438,6 +456,37 @@ function TargetInit(cgi::ConnectedGraphInit, target::TargetID;
     TargetInit(cgi, target, intermediates)
 end
 
+# Field getter functions
+connectedgraphinit(ti::TargetInit) = getfield(ti, :connectedgraphinit)
+intermediates(ti::TargetInit) = getfield(ti, :intermediates)
+target(ti::TargetInit) = getfield(ti, :target)
+
+# Getter functions that forward to the target id
+targetnode(ti::TargetInit) = target(ti).node
+targetspatialidx(ti) = target(ti).spatialidx
+targetconnectedgraphidx(ti) = target(ti).connectedgraphidx
+
+# Getter functions that forward to the ConnectedGraphInit
+outputs(ti::TargetInit) = outputs(connectedgraphinit(ti))
+gridgraph(ti::TargetInit) = gridgraph(connectedgraphinit(ti))
+connectedgraph(ti::TargetInit) = connectedgraph(connectedgraphinit(ti))
+problem(ti::TargetInit) = problem(connectedgraphinit(ti))
+storage(ti::TargetInit) = storage(connectedgraphinit(ti))
+workspaces(ti::TargetInit) = workspaces(connectedgraphinit(ti))
+
+# Getter functions that forward to the ConnectedGraph
+stepcost(ti::TargetInit) = stepcost(connectedgraph(ti))
+steplikelihood(ti::TargetInit) = steplikelihood(connectedgraph(ti))
+sourcequality(ti::TargetInit) = sourcequality(connectedgraph(ti))
+targetquality(ti::TargetInit) = targetquality(connectedgraph(ti))
+sourceids(ti::TargetInit) = sourceids(connectedgraph(ti))
+targetids(ti::TargetInit) = targetids(connectedgraph(ti))
+connectedgraph_size(ti::TargetInit) = connectedgraph_size(connectedgraphinit(ti))
+precalculation(ti::TargetInit) = precalculation(connectedgraphinit(ti))
+
+# Workspace taker
+workspace(ti::Initialisation) = take!(workspaces(ti))
+
 # Reuse this DimensionalData method
 # TODO: reolve/combine with setmeasures
 function Rasters.rebuild(ti::TargetInit;
@@ -454,37 +503,16 @@ end
     TargetInit{MM,CGI,I}(connectedgraphinit, target, intermediates)
 end
 
-connectedgraphinit(ti::TargetInit) = getfield(ti, :connectedgraphinit)
-target(ti::TargetInit) = getfield(ti, :target)
-intermediates(ti::TargetInit) = getfield(ti, :intermediates)
-
-outputs(ti::TargetInit) = outputs(connectedgraphinit(ti))
-gridgraph(ti::TargetInit) = gridgraph(connectedgraphinit(ti))
-connectedgraph(ti::TargetInit) = connectedgraph(connectedgraphinit(ti))
-problem(ti::TargetInit) = problem(connectedgraphinit(ti))
-storage(ti::TargetInit) = storage(connectedgraphinit(ti))
-workspaces(ti::TargetInit) = workspaces(connectedgraphinit(ti))
-stepcost(ti::TargetInit) = stepcost(connectedgraph(ti))
-steplikelihood(ti::TargetInit) = steplikelihood(connectedgraph(ti))
-sourcequality(ti::TargetInit) = sourcequality(connectedgraph(ti))
-targetquality(ti::TargetInit) = targetquality(connectedgraph(ti))
-sourceids(ti::TargetInit) = sourceids(connectedgraph(ti))
-targetids(ti::TargetInit) = targetids(connectedgraph(ti))
-connectedgraph_size(ti::TargetInit) = connectedgraph_size(connectedgraphinit(ti))
-precalculation(ti::TargetInit) = precalculation(connectedgraphinit(ti))
-
-workspace(ti::Initialisation) = take!(workspaces(ti))
-
-# All TargetInit allow retreiving proberties with `getproperty`
-# from the parent `ConnectedGraphInit` or calculated and stored in
-# the `TargetInit`
+# All TargetInit allow retreiving properties with `getproperty`
+# from the parent `ConnectedGraphInit` or fields calculated and stored in
+# the `TargetInit` storage object.
 @inline function Base.getproperty(ti::TargetInit, x::Symbol)
     # Handle all standard properties
     if x === :workspace
         return workspace(ti)
     elseif x === :qᵗ
         # For TargetInit we alter target quality to be just the current target
-        return targetquality(ti)[target(ti).connectedgraphidx]
+        return targetquality(ti)[targetconnectedgraphidx(ti)]
     elseif hasproperty(intermediates(ti), x)
         return getproperty(intermediates(ti), x)
     elseif hasproperty(connectedgraphinit(ti), x)
@@ -498,7 +526,12 @@ end
 # @inline Base.propertynames(ti::TargetInit) =
 #     (:workspace, :propertynames(intermediates(ti))..., propertynames(connectedgraphinit(ti))...)
 
+
 # `CommonSolve.init`
+# Object initialisation methods.
+# These all take at least a measures and movement mode specification and a spatial object.
+# Spatial object may be a RasterStack or a GridGraph, or another Initialisation object
+# from a higher level.
 
 init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation, args...; kw...) =
     init(init(m, i), args...; kw...)
@@ -526,6 +559,8 @@ init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::ConScapeProblem, args.
 init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation; outputlevel=defaultoutputlevel(i)) =
     setmeasures(i, m; outputlevel)
 
+# Update measures in and object. 
+# This lets us specify different measures after defining a problem.
 setmeasures(p::ConScapeProblem, m::Measure) = setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
 setmeasures(p::ConScapeProblem, measures::Union{MeasureTuple,MeasureNamedTuple}) =
     ConstructionBase.setproperties(p, (; measures))
@@ -541,7 +576,7 @@ function setmeasures(ti::TargetInit, m; outputlevel)
     return ConstructionBase.setproperties(i, (; connectedgraphinit))
 end
 
-# Connect Initialisation with Level
+# Define the default output Level for that initialisation object
 defaultoutputlevel(::GridGraphInit) = GridGraphLevel()
 defaultoutputlevel(::ConnectedGraphInit) = ConnectedGraphLevel()
 defaultoutputlevel(::TargetInit) = TargetLevel()
