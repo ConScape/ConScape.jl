@@ -56,7 +56,7 @@ function _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Number)
     return readonlyarray(proximities)
 end
 # function _maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnodes::AbstractVector)
-# , diagvalue(ti), target(ti).node
+# , diagvalue(ti), targetnode(ti).node
 #     for (j, i) in enumerate(targetnodes)
 #         proximitymatrix[i, j] = diagvalue
 #     end

@@ -176,7 +176,7 @@ function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph;
     else
         Workspaces(0, 0)
     end
-    storage = connectedgraph_storage(movement(problem), workspaces)
+    storage = _connectedgraph_storage(movement(problem), workspaces)
     # Only allocate outputs if requested at the grid level
     # Otherwise ConnectedGraphInit will do this further down.
     outputs = if outputlevel isa GridGraphLevel
@@ -298,7 +298,7 @@ function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int;
     _check_inputs(ggi, connectedgraph)
     workspaces = _allocate_workspaces!(workspaces, problem(ggi), connectedgraph)
     if isnothing(storage)
-        storage = connectedgraph_storage(movement(ggi), workspaces)
+        storage = _connectedgraph_storage(movement(ggi), workspaces)
     end
     sparse_precalc = sparse_precalculation(problem(ggi), connectedgraph)
     outputs = allocate_output(
@@ -354,11 +354,11 @@ sourceids(sgi::ConnectedGraphInit) = sourceids(connectedgraph(sgi))
 targetids(sgi::ConnectedGraphInit) = targetids(connectedgraph(sgi))
 connectedgraph_size(sgi::ConnectedGraphInit) = connectedgraph_size(connectedgraph(sgi))
 
-connectedgraph_storage(::MovementMode, ::Workspaces{W}) where W<:AbstractArray{T} where T =
+_connectedgraph_storage(::MovementMode, ::Workspaces{W}) where W<:AbstractArray{T} where T =
     Dict{Symbol,ReadOnlyArray{T,1,W}}()
 # Need to store the Woodbury matrix
 # TODO: find a better way to do this. Storage should be strongly typed
-connectedgraph_storage(::RandomWalk, ::Workspaces{W}) where W<:AbstractArray{T} where T =
+_connectedgraph_storage(::RandomWalk, ::Workspaces{W}) where W<:AbstractArray{T} where T =
     Dict{Symbol,Any}()
 
 # Base.getproperty/propertynames let us use the `cgi.somevariable` 
@@ -522,7 +522,7 @@ end
     # We wrap the output in a `ReadOnlyArray` to prevent bugs.
     return get_or_compute!(ti, x)
 end
-# TODO: complete this for all movement modes
+# TODO: complete this for all movement modes ?
 # @inline Base.propertynames(ti::TargetInit) =
 #     (:workspace, :propertynames(intermediates(ti))..., propertynames(connectedgraphinit(ti))...)
 

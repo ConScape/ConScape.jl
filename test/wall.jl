@@ -104,25 +104,40 @@ using ConScape, Test, SparseArrays
         @test_broken solve(KullbackLeiblerDivergence(), LCP(), g)[] ≈ 1.0667623231698838e14
     end
 
-    @testset "eigmax, proximity_measure=$proximity_measure" for
-        (proximity_measure, val) in ((ExpectedCost()       , 5.576850282179157e6),
-                                     (FreeEnergyDistance(), 3.2799955467465096e6),
-                                     (SurvivalProbability(), 1.3475609129305437e7),
-                                     (PowerMeanProximity(), 3.279995546746518e6))
-        (ExpectedCost(), 5.576850282179157e6)
-        (proximity_measure, val) = (PowerMeanProximity(), 3.279995546746518e6)
-        proximity_measure = ExpectedCost()
-        rsp = RSP(proximity_measure; theta=θ)
-        vˡ, λ, vʳ = solve(EigMax(), rsp, g)[1]
+    @testset "eigmax for each proximity_measure" begin
+        function calc_landscape(rsp, g)
+            # Compute the weighted proximity matrix to check results
+            K = solve(ConScape.proximity_measure(rsp), rsp, g)
+            dt = ConScape.distance_transformation(rsp)
+            if dt !== nothing && ConScape.proximity_measure(rsp) isa ConScape.DistanceMeasure
+                map!(dt, K, K)
+            end
+            M = g.sourcequality[ConScape.sourceids(g)] .* Matrix(K) .* g.targetquality[ConScape.sourceids(g)]'
 
-        # Compute the weighted proximity matrix to check results
-        K = solve(proximity_measure, rsp, g)
-        if proximity_measure isa ConScape.DistanceMeasure
-            map!(ExpMinus(), K, K)
+            return M
         end
-        M = g.sourcequality[ConScape.sourceids(g)] .* Matrix(K) .* g.targetquality[ConScape.sourceids(g)]'
+        rsp = RSP(ExpectedCost(); theta=θ, distance_transformation=ConScape.ExpMinus())
+        M = calc_landscape(rsp, g);
+        (vˡ, λ, vʳ) = solve(EigMax(), rsp, g)[1]
+        @test λ[] ≈ 5.576850282179157e6
+        @test M * vʳ ≈ vʳ * λ[]
 
-        @test_broken λ[] ≈ val
+        rsp = RSP(FreeEnergyDistance(); theta=θ, distance_transformation=ConScape.ExpMinus())
+        M = calc_landscape(rsp, g);
+        (vˡ, λ, vʳ) = solve(EigMax(), rsp, g)[1]
+        @test λ[] ≈ 3.2799955467465096e6
+        @test M * vʳ ≈ vʳ * λ[]
+
+        rsp = RSP(SurvivalProbability(); theta=θ)
+        M = calc_landscape(rsp, g)
+        (vˡ, λ, vʳ) = solve(EigMax(), rsp, g)[1]
+        @test λ[] ≈ 1.3475609129305437e7
+        @test M * vʳ ≈ vʳ * λ[]
+
+        rsp = RSP(PowerMeanProximity(); theta=θ)
+        M = calc_landscape(rsp, g);
+        (vˡ, λ, vʳ) = solve(EigMax(), rsp, g)[1]
+        @test λ[] ≈ 3.279995546746518e6
         @test M * vʳ ≈ vʳ * λ[]
     end
 
@@ -139,14 +154,16 @@ using ConScape, Test, SparseArrays
             0.0     0.0 0.0 0.0     0.0
             0.0 14031.0 0.0 0.0 14004.0]
 
-        # @testset "eigmax, proximity_measure=$proximity_measure" for
-        #     (proximity_measure, val) in ((ExpectedCost(), 2.7249231390873615e7),
-        #                                     (FreeEnergyDistance(), 2.7217089009360086e7),
-        #                                     (SurvivalProbability(), 3.0731253357215535e7),
-        #                                     (PowerMeanProximity(), 2.7217089009360246e7))
-        #     (vˡ, λ, vʳ) = solve(EigMax(), RSP(proximity_measure; theta=θ), g_coarse)[1]
-        #     @test λ[] ≈ val
-        # end
+        @testset "eigmax for each proximity_measure" begin
+            (vˡ, λ, vʳ) = solve(EigMax(), RSP(ExpectedCost(); theta=θ), g_coarse)[1]
+            @test λ[] ≈ 2.7249231390873615e7
+            (vˡ, λ, vʳ) = solve(EigMax(), RSP(FreeEnergyDistance(); theta=θ), g_coarse)[1]
+            @test λ[] ≈ 2.7217089009360086e7
+            (vˡ, λ, vʳ) = solve(EigMax(), RSP(SurvivalProbability(); theta=θ), g_coarse)[1]
+            @test_broken λ[] ≈ 3.0731253357215535e7
+            (vˡ, λ, vʳ) = solve(EigMax(), RSP(FreeEnergyDistance(); theta=θ), g_coarse)[1]
+            @test λ[] ≈ 2.7217089009360246e7
+        end
 
         @testset "FunctionalHabitat" begin
             @testset "expected_cost" begin
