@@ -1,31 +1,3 @@
-"""
-    ReturnTrait
-
-Traits that determing what object is allocated to store
-the return values of `compute` on a [`Measures`](@ref).
-"""
-abstract type ReturnTrait end
-abstract type ReturnSpatial <: ReturnTrait end
-abstract type ReturnSparseGraph <: ReturnTrait end
-
-struct ReturnSpatialSourceSum <: ReturnSpatial end
-struct ReturnSpatialTargetSum <: ReturnSpatial end
-struct ReturnSpatialSourceAndTargetSum <: ReturnSpatial end
-struct ReturnAssignedSparse <: ReturnSparseGraph end
-struct ReturnScalarSum <: ReturnTrait end
-struct ReturnCustom <: ReturnTrait end
-
-"""
-    Level
-
-Traits for specifying the level of a computation or output:
-`GridGraphLevel` for the whole gridgraph, `ConnectedGraphLevel` for a
-connected subgraph, and `TargetLevel` for a single target pixel.
-"""
-abstract type Level end
-struct TargetLevel <: Level end
-struct ConnectedGraphLevel <: Level end
-struct GridGraphLevel <: Level end
 
 #=======================================================================================
 Output allocation, update, and finalisation
@@ -44,7 +16,7 @@ Output allocation, update, and finalisation
     │
     ├─► [ `TargetInit` level computation ]
     │   │
-    │   ├─► [ 2. `update_output!` ]
+    │   ├─► [ 2. `update_connectedgraph_output!` ]
     │   │   │
     │   │   │   Role: Populates the containers with computed data.
     │   │   │
@@ -57,7 +29,7 @@ Output allocation, update, and finalisation
     │   │
     │   └─► All targets for a `ConnectedGraphInit` are processed.
     │
-    ├─► [ 3. `finalize_output!` ]
+    ├─► [ 3. `finalize_connectegedgraph_output!` ]
     │   │
     │   │   Role: Performs aggregation or final calculations on a completed container.
     │   │
@@ -67,7 +39,7 @@ Output allocation, update, and finalisation
     │   │
     │   └─► The `ConnectedGraphInit`'s output container is now finalized.
     │
-    └─► [ 4. `transfer_output!` ]
+    └─► [ 4. `transfer_to_gridgraph_output!` ]
         │
         │   Role: Copies finalized data from a smaller container to a larger one.
         │
@@ -116,7 +88,7 @@ function allocate_output(
     connectedgraphs::Vector
 )
     A = fill(NaN, size(gridgraph))
-    return l => A
+    return A => l
 end
 # We need to use output size specific to Level
 function allocate_output(
@@ -127,7 +99,7 @@ function allocate_output(
     gridgraph::GridGraph,
     connectedgraphs::Vector
 )
-    l => spzeros(Float64, gridgraph_size(gridgraph))
+    spzeros(Float64, gridgraph_size(gridgraph)) => l
 end
 
 allocate_output(l::Level, m::Measure, cgi::ConnectedGraphInit)::Pair =
@@ -144,7 +116,7 @@ function allocate_output(
     A = fill(NaN, size(gridgraph))
     # Initialise pixels in the connected subgraph
     A[sourceids(connectedgraph)] .= 0.0
-    return l => A
+    return A => l
 end
 function allocate_output(
     l::Union{ConnectedGraphLevel,TargetLevel},
@@ -155,7 +127,7 @@ function allocate_output(
     ::ConnectedGraph,
     precalculation
 )
-    l => Ref(0.0)
+    Ref(0.0) => l
 end
 # Use a zeroed out W matrix so the indices match
 function allocate_output(
@@ -167,7 +139,7 @@ function allocate_output(
     connectedgraph::ConnectedGraph,
     precalculation
 )
-    l => spzeros(Float64, connectedgraph_size(connectedgraph))
+    spzeros(Float64, connectedgraph_size(connectedgraph)) => l
 end
 function allocate_output(
     l::TargetLevel,
@@ -179,13 +151,13 @@ function allocate_output(
     precalculation
 )
     A = fill(NaN, size(gridgraph))
-    return l => A
+    return A => l
 end
 
 allocate_intermediate(measure, cgi) = nothing
 
 ##########################################################################
-# update_output!
+# update_connectedgraph_output!
 #
 # Here we update single target results to the output object
 # How that works exactly depends on the returntrait of each graph measure and the output level.
@@ -193,67 +165,82 @@ allocate_intermediate(measure, cgi) = nothing
 # from the same computation, and to reuse the code accross multiple measures.
 
 """
-    update_output!(::ConnectedGraphInit, [intermediates])
+    update_connectedgraph_output!(::ConnectedGraphInit, [intermediates])
 
 Copy or add the result of `compute` on the targets to the connected graph output.
 """
-update_output!(output::Pair, gm::Measure, init::Initialisation, v) =
-    update_output!(output[2], output[1], gm, init, v)
-# By default update_output!based on the return trait
-update_output!(output, level::Level, gm::Measure, init::Initialisation, v) =
-    update_output!(output, level, returntrait(gm), init, v)
+update_connectedgraph_output!(output::Pair, gm::Measure, init::Initialisation, v) =
+    update_connectedgraph_output!(output..., gm, init, v)
+# By default update_connectedgraph_output!based on the return trait
+update_connectedgraph_output!(output, level::Level, gm::Measure, init::Initialisation, v) =
+    update_connectedgraph_output!(output, level, returntrait(gm), init, v)
 # Spatial outputs are always the same shape, independent of Level
-function update_output!(output::AbstractMatrix, ::Level, ::ReturnSpatialTargetSum, ti::TargetInit, v::AbstractVector)
+function update_connectedgraph_output!(output::AbstractMatrix, ::Level, ::ReturnSpatialTargetSum, ti::TargetInit, v::AbstractVector)
     view(output, sourceids(ti)) .+= v
     return output
 end
-function update_output!(output::AbstractMatrix, ::Level, ::ReturnSpatialSourceSum, ti::TargetInit, v::AbstractVector)
+function update_connectedgraph_output!(output::AbstractMatrix, ::Level, ::ReturnSpatialSourceSum, ti::TargetInit, v::AbstractVector)
     output[targetspatialidx(ti)] += sum(v)
     return output
 end
-function update_output!(output::AbstractMatrix, l::Level, ::ReturnSpatialSourceAndTargetSum, ti::TargetInit, v::AbstractVector)
-    update_output!(output, l, ReturnSpatialSourceSum(), ti, v)
-    update_output!(output, l, ReturnSpatialTargetSum(), ti, v)
+function update_connectedgraph_output!(output::AbstractMatrix, l::Level, ::ReturnSpatialSourceAndTargetSum, ti::TargetInit, v::AbstractVector)
+    update_connectedgraph_output!(output, l, ReturnSpatialSourceSum(), ti, v)
+    update_connectedgraph_output!(output, l, ReturnSpatialTargetSum(), ti, v)
     return output
 end
 # SumScalar is always a single Ref, independent of Level
-function update_output!(output::Ref, ::Level, ::ReturnScalarSum, ::Initialisation, v::Number)
+function update_connectedgraph_output!(output::Ref, ::Level, ::ReturnScalarSum, ::Initialisation, v::Number)
     output[] += v
     return output
 end
 # AssignSparse varies by Level
-function update_output!(output::AbstractMatrix, ::TargetLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector)
+function update_connectedgraph_output!(output::AbstractMatrix, ::TargetLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector)
     output[sourceids(ti)] .= v
     return output
 end
-function update_output!(output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector)
+function update_connectedgraph_output!(output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector)
     output[:, target(ti).connectedgraphidx] .= v
     return output
 end
 
 """
-    finalise_output!(::ConnectedGraphInit, [intermediates])
+    finalize_connectedgraph_output!(::ConnectedGraphInit, [intermediates])
 
 Apply any modifications required after all targets contribute
 to the output.
 """
-finalize_output!(cgi, intermediates) =
-    finalize_output!(outputs(cgi), measures(cgi), cgi, intermediates)
-function finalize_output!(outputs::NamedTuple, measures::NamedTuple, cgi, intermediates)
+finalize_connectedgraph_output!(cgi, intermediates) =
+    finalize_connectedgraph_output!(outputs(cgi), measures(cgi), cgi, intermediates)
+function finalize_connectedgraph_output!(
+    outputs::NamedTuple, measures::NamedTuple, cgi, intermediates
+)
     return map(outputs, measures, intermediates) do output, measure, intermediate
-        finalize_output!(output, measure, cgi, intermediate)
+        finalize_connectedgraph_output!(output, measure, cgi, intermediate)
     end
 end
 # Trivial default, just returns the output object as-is
-finalize_output!((level, output)::Pair, m::Measure, sgi::ConnectedGraphInit, intermediates) =
-    finalize_output!(output, level, m, sgi, intermediates)
-finalize_output!(output, level::Level, m::Measure, cgi::ConnectedGraphInit, intermediates) =
-    finalize_output!(output, m, cgi, intermediates)
-finalize_output!(output, level::Level, m::Measure, cgi::ConnectedGraphInit, intermediates) = nothing
+function finalize_connectedgraph_output!(
+    (output, level)::Pair{<:Any,<:Level},
+    m::Measure,
+    sgi::ConnectedGraphInit,
+    intermediates
+)
+    finalize_connectedgraph_output!(output, level, m, sgi, intermediates)
+end
+function finalize_connectedgraph_output!(
+    output, level::Level, m::Measure, cgi::ConnectedGraphInit, intermediates
+)
+    finalize_connectedgraph_output!(output, m, cgi, intermediates)
+end
+function finalize_connectedgraph_output!(
+    output, level::Level, m::Measure, cgi::ConnectedGraphInit, intermediates
+)
+    nothing
+end
 
 
 """
-    transfer_output!(outputs::NamedTuple, cgi::ConnectedGraphInit)
+    transfer_to_gridgraph_output!(outputs::NamedTuple, cgi::ConnectedGraphInit)
 
 Transfer output from `ConnectedGraphInit` to `GridGraphInit`.
 
@@ -263,27 +250,67 @@ graph, or may simply have empty areas that we want to skip as an optimisation.
 Either way the sparse matrices of `ConnectedGraphInit` are usually smaller than
 the sparse matrices in `GridGraphInit`, so we need to map between them.
 """
-transfer_output!(outputs::NamedTuple, cgi::ConnectedGraphInit) =
-    transfer_output!(outputs, ConScape.outputs(cgi), measures(cgi), cgi)
-function transfer_output!(dest::NamedTuple, source::NamedTuple, measures::NamedTuple, cgi)
+transfer_to_gridgraph_output!(outputs::NamedTuple, cgi::ConnectedGraphInit) =
+    transfer_to_gridgraph_output!(outputs, ConScape.outputs(cgi), measures(cgi), cgi)
+function transfer_to_gridgraph_output!(
+    dest::NamedTuple, source::NamedTuple, measures::NamedTuple, cgi
+)
     map(dest, source, measures) do d, s, m
-        transfer_output!(d, s, m, cgi)
+        transfer_to_gridgraph_output!(d..., s..., m, cgi)
     end
 end
-transfer_output!(d::Pair, s::Pair, m::Measure, cgi::ConnectedGraphInit) =
-    transfer_output!(d[2], s[2], m, cgi)
-transfer_output!(d, s, m::Measure, cgi::ConnectedGraphInit) =
-    transfer_output!(d, s, returntrait(m), cgi)
-# transfer_output!(dest, source, ::ReturnTrait, cgi::ConnectedGraphInit) =
-    # dest[connectedgraphid(cgi)] = source
-transfer_output!(dest::Vector{T}, source::Ref{T}, ::ReturnScalarSum, cgi::ConnectedGraphInit) where T =
+function transfer_to_gridgraph_output!(
+    dest, ld::Level, source, ls::Level, m::Measure, cgi::ConnectedGraphInit
+)
+    transfer_to_gridgraph_output!(dest, ld, source, ls, returntrait(m), cgi)
+end
+
+# ReturnScalarSum measures sum connectedgraph outputs to a `Ref` or zero dimensional array.
+function transfer_to_gridgraph_output!(
+    dest::Vector{T},
+    ::GridGraphLevel,
+    source::Ref{T},
+    ::ConnectedGraphLevel,
+    ::ReturnScalarSum,
+    cgi::ConnectedGraphInit
+) where T
     dest[] = source[]
-transfer_output!(dest::Vector, source, ::ReturnCustom, cgi::ConnectedGraphInit) =
-    dest[connectedgraphid(cgi)] = source
-transfer_output!(dest::AbstractMatrix, source::AbstractMatrix, ::ReturnSpatial, cgi::ConnectedGraphInit) =
+    return dest
+end
+# TODO: should this exist?
+function transfer_to_gridgraph_output!(
+    dest::AbstractVector, ::GridGraphLevel,
+    source::AbstractVector, ::ConnectedGraphLevel,
+    ::ReturnCustom,
+    cgi::ConnectedGraphInit
+)
+    dest[connectedgraphid(cgi)] .= source
+end
+# Spatial measures copy the sourceids from the connected graph to the same
+# ids at the gri graph level - filling in unconnected parts of the raster
+function transfer_to_gridgraph_output!(
+    dest::AbstractMatrix,
+    ::GridGraphLevel,
+    source::AbstractMatrix,
+    ::ConnectedGraphLevel,
+    ::ReturnSpatial,
+    cgi::ConnectedGraphInit
+)
     dest[sourceids(cgi)] .= source[sourceids(cgi)]
-function transfer_output!(dest, source, ::ReturnAssignedSparse, cgi::ConnectedGraphInit)
-    # TODO: remove this allocation
+    return dest
+end
+# Assigned sparse measures copy sparse data into a larger sparse matrix.
+function transfer_to_gridgraph_output!(
+    dest,
+    ::GridGraphLevel,
+    source,
+    ::ConnectedGraphLevel,
+    ::ReturnAssignedSparse,
+    cgi::ConnectedGraphInit
+)
+    # TODO: remove this allocation ?
     I = map(x -> x.gridgraphidx, targetids(cgi))
-    dest[view(LinearIndices(size(cgi), sourceids(cgi)), I)] .+= source
+    V = view(LinearIndices(size(cgi), sourceids(cgi)), I)
+    view(dest, V) .+= source
+    return dest
 end

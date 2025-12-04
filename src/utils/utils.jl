@@ -145,8 +145,8 @@ function _maybe_raster(
         _maybe_raster(returntrait(measure), output, dims(g); name=Symbol(measure))
     end
 end
-_maybe_raster(rt, x::Pair, g::Initialisation; kw...) = _maybe_raster(rt, x[2], g; kw...)
-_maybe_raster(rt, x::Pair, g::Union{Tuple,Nothing}; kw...) = _maybe_raster(rt, x[2], g; kw...)
+_maybe_raster(rt, x::Pair, g::Initialisation; kw...) = _maybe_raster(rt, x[1], g; kw...)
+_maybe_raster(rt, x::Pair, g::Union{Tuple,Nothing}; kw...) = _maybe_raster(rt, x[1], g; kw...)
 _maybe_raster(rt, rast::Raster, g::Initialisation; kw...) = rast
 _maybe_raster(rt, mat::AbstractMatrix, g::Initialisation; kw...) =
     _maybe_raster(rt, mat, dims(g); kw...)

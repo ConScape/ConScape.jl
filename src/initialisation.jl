@@ -77,7 +77,7 @@ grid size when not needed.
     │   • None.
     │
     │   Precalculation:
-    │   • Manages a cache for reusable computation results via `get_or_compute!`.
+    │   • Manages a cache for reusable computation results via `get_or_compute_target!`.
     │   • Holds any intermediate storage needed to link columns (such as sparse matrices).
     │
     │   Output:
@@ -181,7 +181,7 @@ function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph;
         Workspaces(0, 0)
     end
     storage = _connectedgraph_storage(movement(problem), workspaces)
-    # Only allocate outputs if requested at the grid level
+    # Only allocate outputs if requested at the grid graph level (all subgraphs)
     # Otherwise ConnectedGraphInit will do this further down.
     outputs = if outputlevel isa GridGraphLevel
         allocate_output(outputlevel, measures(problem), problem, gridgraph, connectedgraphs)
@@ -366,7 +366,7 @@ _connectedgraph_storage(::RandomWalk, ::Workspaces{W}) where W<:AbstractArray{T}
     Dict{Symbol,Any}()
 
 # Base.getproperty/propertynames let us use the `cgi.somevariable` 
-# syntax in `finalize_output` and similar methods
+# syntax in `finalize_connectedgraph_output` and similar methods
 @inline Base.getproperty(cgi::ConnectedGraphInit, x::Symbol) = getproperty(precalculation(cgi), x)
 @inline Base.propertynames(cgi::ConnectedGraphInit) = propertynames(precalculation(cgi))
 
@@ -522,9 +522,9 @@ end
     elseif hasproperty(connectedgraphinit(ti), x)
         return getproperty(connectedgraphinit(ti), x)
     end
-    # Defer to `get_or_compute` for all other properties
+    # Defer to `get_or_compute_target` for all other properties
     # We wrap the output in a `ReadOnlyArray` to prevent bugs.
-    return get_or_compute!(ti, x)
+    return get_or_compute_target!(ti, x)
 end
 # TODO: complete this for all movement modes ?
 # @inline Base.propertynames(ti::TargetInit) =

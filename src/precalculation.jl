@@ -2,8 +2,8 @@
 # Connected graph level variable precalculation
 
 # needs_full_ traits indicates that the full matrix is needed in the 
-# `finalize_output!` stage. Before then it will not be correct.
-# TODO: should it error to use these outside of finalize_output! ?
+# `finalize_connectedgraph_output!` stage. Before then it will not be correct.
+# TODO: should it error to use these outside of finalize_connectedgraph_output! ?
 needs_full_fundamentalmatrix(::Measure, ::MovementMode) = false
 needs_full_fundamentalmatrix(::EdgeBetweenness, ::RSP) = true
 needs_full_fundamentalmatrix(::SensitivityAnalysis, ::RSP) = true
@@ -93,7 +93,7 @@ end
 # TODO: preallocate these from the WindowProblem level
 function dense_precalculation(cgi::ConnectedGraphInit{<:RSP})
     # Generate a full size Z and Zrows where needed, 
-    # by looping over targetids and triggering `compute` calling `ti.Z` and/or `ti.Zrows`.
+    # by looping over targetids and triggering `compute_target` calling `ti.Z` and/or `ti.Zrows`.
     mov = movement(cgi)
     mes = measures(cgi)
 
@@ -259,7 +259,7 @@ end
 # Variable generation for TargetInit
 function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     pm = proximity_measure(ti)
-    distances = get_or_compute!(ti, pm)
+    distances = get_or_compute_target!(ti, pm)
     proximities = if pm isa DistanceMeasure
         dt = distance_transformation(ti)
         if !isnothing(dt)

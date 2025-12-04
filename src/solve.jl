@@ -48,7 +48,7 @@ function _solve_all_subgraphs!(ggi; kw...)
         # Intitalise sparse matrices and precalculate e.g. LU factorizations
         solve!(sgi)
         # Copy solved connected subgraphs to grid level outputs
-        transfer_output!(outputs(ggi), sgi)
+        transfer_to_gridgraph_output!(outputs(ggi), sgi)
     end
     return _maybe_rasterstack(ggi)
 end
@@ -66,7 +66,7 @@ function _solve_all_targets!(cgi; kw...)
         solve!(targetinit)
     end
     # Finalize output, where not all computations are target-by-target
-    finalize_output!(cgi, intermediates)
+    finalize_connectedgraph_output!(cgi, intermediates)
     return _maybe_rasterstack(cgi)
 end
 
@@ -79,10 +79,20 @@ function _solve_single_target!(ti, outputlevel)
         outputs(ti)
     end
     # Store outputs
-    results = map(outputs1, measures(ti), intermediates(ti)) do (level, output), measure, intermediate
+    results = map(outputs1, measures(ti), intermediates(ti)) do (output, level)::Pair{<:Any,<:Level}, measure, intermediate
         ti_m = TargetInit(connectedgraphinit(ti), target(ti), intermediate)
         # Dont compute the same measure multiple times
-        compute_and_update_output!(output, level, ti_m, measure)
+        st = storage(ti)
+        x = Symbol(measure)
+        if haskey(st, x)
+            update_connectedgraph_output!(output, level, measure, ti_m, st[x])
+        else
+            val = compute_target!(output, level, measure, ti_m)
+            # Store simple array outputs
+            if val isa AbstractVector
+                st[x] = readonlyarray(val)
+            end
+        end
     end
     # When just running one target we return Raster/RasterStack
     if outputlevel isa TargetLevel
