@@ -15,18 +15,26 @@ const MeasureTupleOrNamedTuple = Union{MeasureTuple,MeasureNamedTuple}
 Measure in graph space, that return a sparse array from `solve`.
 """
 abstract type GraphMeasure <: Measure end
+
 """
     SpatialMeasure <: Measure
 
 Measure in physical space, that return a dense raster matrix from `solve`.
 """
 abstract type SpatialMeasure <: Measure end
+
+# Spatial measures usually return the sum over all 
+# target nodes as a spatial raster.
+returntrait(::SpatialMeasure) = ReturnSpatialTargetSum()
+
 """
     PathDistributionMeasure <: Measure
 
 Measures of path distribution, that return a scalar from `solve`.
 """
 abstract type PathDistributionMeasure <: Measure end
+
+returntrait(::PathDistributionMeasure) = ReturnScalarSum()
 
 """
     ProximityMeasure <: GraphMeasure
@@ -37,6 +45,9 @@ as proximities (TODO: explain what proximities are)
 They return a sparse array from `solve`.
 """
 abstract type ProximityMeasure <: GraphMeasure end
+
+# All ProximityMeasure return a SparseArray of single s/t values
+returntrait(::ProximityMeasure) = ReturnAssignedSparse()
 
 """
     DistanceMeasure <: ProximityMeasure
@@ -74,6 +85,7 @@ struct Unweighted <: BetweennessWeighting end
 Compute betweenness of nodes or edges weighted by source and target qualities.
 """
 struct QualityWeighted <: BetweennessWeighting end
+
 """
     ProximityWeighted <: BetweennessWeighting
 
@@ -83,6 +95,7 @@ Compute betweenness of nodes or edges weighted by the
 proxmimity between source qualities s and target qualities t.
 """
 struct ProximityWeighted <: BetweennessWeighting end
+
 """
     QualityAndProximityWeighted <: BetweennessWeighting
 
@@ -92,6 +105,7 @@ Compute betweenness of nodes or edges weighted by source qualities s
 and target qualities t, and the proximity between s and t.
 """
 struct QualityAndProximityWeighted <: BetweennessWeighting end
+
 """
     CustomWeighted <: BetweennessWeighting
 
@@ -152,6 +166,8 @@ end
 weighting(gm::Betweenness) = gm.weighting
 weighting(gm::EdgeBetweenness) = gm.weighting
 
+returntrait(::EdgeBetweenness) = ReturnCustom()
+
 # Sensitivity
 
 abstract type TopologicalMetric end
@@ -191,6 +207,11 @@ wrt(gm::SensitivityAnalysis) = gm.wrt
 metric(gm::SensitivityAnalysis) = gm.metric
 sensitivitytype(gm::SensitivityAnalysis) = gm.type
 
+returntrait(::SensitivityAnalysis) = ReturnCustom()
+returntrait(::SensitivityAnalysis{<:Quality}) = ReturnSpatialSourceAndTargetSum()
+returntrait(::SensitivityAnalysis{<:SourceQuality}) = ReturnSpatialSourceSum()
+returntrait(::SensitivityAnalysis{<:TargetQuality}) = ReturnSpatialTargetSum()
+
 # Others
 
 """
@@ -206,13 +227,19 @@ The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
 struct FunctionalHabitat <: SpatialMeasure end
 
-struct LandscapeMatrix <: GraphMeasure end
+returntrait(::FunctionalHabitat) = ReturnSpatialTargetSum()
 
 @kwdef struct Criticality{AV,QT,QS} <: SpatialMeasure
     avalue::AV = floatmin()
     qˢvalue::QS = 0.0
     qᵗvalue::QT = 0.0
 end
+
+returntrait(::Criticality) = ReturnSpatialTargetSum()
+
+struct LandscapeMatrix <: GraphMeasure end
+
+returntrait(::LandscapeMatrix) = ReturnAssignedSparse()
 
 """
     EigenSide
@@ -224,6 +251,7 @@ These let us skip computation with `NoLeft` or `NoRight`.
 Both are computed by default, e.g. `Left()` and `Right` are used.
 """
 abstract type EigenSide end
+
 struct Left <: EigenSide end
 struct NoLeft <: EigenSide end
 struct Right <: EigenSide end
@@ -240,19 +268,25 @@ in the [`MovementMode`](@ref).
 
 ## Keywords
 
+`seed`: seed for the random seed for the left eigenvector solve. Useful if exact floating point
+    replication is needed accross runs.
+`tol`: tolerance, defaults to `1e-14`.
 `left`: whether to calculate left eigenvector. Defaults to `Left()`, but can be `NoLeft()`.
 `left`: whether to calculate righ eigenvector. Defaults to `Right()`, but can be `NoRight()`.
-`tol`: tolerance, defaults to `1e-14`.
 
 The triple is always returned, but if `NoLeft` or `NoRight` are used the 
 values contained in the left/right vecto will be zeros.
+
+
 """
-@kwdef struct EigMax{L,R,T} <: Measure
+@kwdef struct EigMax{L,R,S,T} <: Measure
     left::L=Left()
     right::R=Right()
+    seed::S = nothing
     tol::T = 1e-14
 end
 
+returntrait(::EigMax) = ReturnCustom()
 
 Base.Symbol(m::Measure) = nameof(typeof(m))
 Base.Symbol(m::Union{Betweenness,EdgeBetweenness}) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))
@@ -265,13 +299,6 @@ function Base.Symbol(m::SensitivityAnalysis)
     )
 end
 
-# Return type traits
-returntrait(::SpatialMeasure) = ReturnDenseSpatialSum()
-returntrait(::GraphMeasure) = ReturnAssignedSparse()
-returntrait(::PathDistributionMeasure) = ReturnScalarSum()
-returntrait(::EdgeBetweenness) = ReturnCustom()
-returntrait(::SensitivityAnalysis) = ReturnCustom()
-returntrait(::EigMax) = ReturnCustom()
 
 # Workspace allocation traits 
 # TODO: make these accurate

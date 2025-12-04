@@ -159,11 +159,15 @@ struct GridGraphInit{P<:ConScapeProblem,G<:GridGraph,CG<:ConnectedGraph,W<:Abstr
     storage::S
     outputs::O
 end
-GridGraphInit(problem::ConScapeProblem, rast::RasterStack; kw...) =
-    GridGraphInit(problem, GridGraph(problem, rast); kw...)
+function GridGraphInit(problem::ConScapeProblem, rast::RasterStack; 
+    workspaces=nothing,
+    outputlevel=GridGraphLevel(),
+    kw...
+)
+    return GridGraphInit(problem, GridGraph(problem, rast; kw...); workspaces, outputlevel)
+end
 function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph;
     workspaces=nothing,
-    verbose=false,
     outputlevel=GridGraphLevel(),
 )
     _check_inputs(problem, gridgraph)

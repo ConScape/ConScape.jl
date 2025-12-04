@@ -1,52 +1,90 @@
+const store = Ref{NamedTuple}((;))
+
 ######################################################################################
 # Sensitivity
-# TODO: finish and test this fragment
-# function compute!(output, m::SensitivityAnalysis{<:SourceQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
-#     (; qˢ, qᵗ, K, workspace) = ti
-#     if sensitivitytype(m) isa Elasticity
-#         target_sensitivity = workspace .*= qˢ .* K .* qᵗ[target(ti).node]
-#     else # sensitivitytype(m) isa Sensitivity
-#         target_sensitivity = workspace .= K .* qᵗ[target(ti).node]
-#     end
-#     return target_sensitivity
-# end
-# function compute!(output, m::SensitivityAnalysis{<:TargetQuality}, ti::TargetInit{<:Union{RSP,RandomWalk}})
-#     (; qˢ, qᵗ, K, workspace) = ti
-#     if sensitivitytype(m) isa Elasticity
-#         target_sensitivity = workspace .*= qˢ .* K .* qᵗ[target(ti).node]
-#     else # sensitivitytype(m) isa Sensitivity
-#         target_sensitivity = workspace .= K .* qˢ
-#     end
-#     return target_sensitivity
-# end
+
+function allocate_intermediate(
+    ::SensitivityAnalysis{<:AbstractQuality}, cgi::ConnectedGraphInit
+)
+    store[] = (; K=zeros(connectedgraph_size(cgi)))
+    return (;)
+end
+function compute(
+    m::SensitivityAnalysis{<:AbstractQuality}, 
+    ti::TargetInit{<:Union{RSP,RandomWalk}}
+)
+    # TODO: handle EigMax
+    
+    #= Sensitivity w.r.t. Quality is essentially just the landscape matrix, 
+    i.e. proximity matrix * source and target quality.
+    However for Sensitivity (as oppossed to Elasticity) we divide this
+    by the source quality after summing, in finalize_output! below.
+    
+    We cant do that at the target level because the numbers are 
+    too small and cause floating point error in the sum. =#
+    ti.M 
+end
+function finalize_output!(
+    output, 
+    level::Union{GridGraphLevel,ConnectedGraphLevel},
+    m::SensitivityAnalysis{<:AbstractQuality}, 
+    cgi::ConnectedGraphInit, 
+    intermediates
+)
+    # Divide final summed output by source quality.
+    # This has better fp characteristics than summing smaller numbers.
+    if sensitivitytype(m) isa Sensitivity
+        output[sourceids(cgi)] ./= sourcequality(cgi)
+    end
+
+    return output
+end
 
 # Shared sequence
 
-# GridGraph behavior
-allocate_output(l::Level, ::ReturnCustom, m::SensitivityAnalysis, p::ConScapeProblem, args...) =
-    allocate_output(l, ReturnDenseSpatialSum(), m, p, args...)
+# GridGraph behavior: all levels have the same spatial raster output
+function allocate_output(
+    l::Level, ::ReturnCustom, m::SensitivityAnalysis{<:Permeability}, p::ConScapeProblem, args...
+)
+    allocate_output(l::Level, ReturnSpatialTargetSum(), m, p, args...)
+end
 # ConnectedGraph behavior
 function allocate_output(
-    l::Level, ::ReturnCustom, ::SensitivityAnalysis, ::ConScapeProblem, ::GridGraph, cg::ConnectedGraph, precalculation::NamedTuple
+    l::Level, 
+    ::ReturnCustom, 
+    ::SensitivityAnalysis{<:Permeability}, 
+    ::ConScapeProblem, 
+    ::GridGraph, 
+    cg::ConnectedGraph, 
+    ::NamedTuple
 )
     l => zeros(connectedgraph_size(cg)[1])
 end
 
-allocate_intermediate(m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit) =
-    allocate_intermediate(proximity_measure(cgi), m, cgi)
+function allocate_intermediate(m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit)
+    allocate_sensitivity_intermediate(proximity_measure(cgi), m, cgi)
+end
 # Compute for the specific proximity_measure
-compute!(output::Pair, m::SensitivityAnalysis{<:Permeability}, ti::TargetInit{<:Union{RSP,RandomWalk}}) =
+# TODO: error if someone tries to compute a single target? or handle that?
+function compute!(
+    output, l::Level, m::SensitivityAnalysis{<:Permeability}, ti::TargetInit{<:RSP}
+)
     compute_sensitivity!(output, proximity_measure(ti), m, ti)
+end
 # Finalize the output for the proximity_measure after all targets run
-function finalize_output!((level, output)::Pair, m::SensitivityAnalysis, cgi::ConnectedGraphInit, intermediates)
-    finalize_output!(output, proximity_measure(cgi), m, cgi, intermediates)
+function finalize_output!(
+    output, l::Level, m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit, intermediates
+)
+    finalize_sensitivity_output!(output, proximity_measure(cgi), m, cgi, intermediates)
 end
 
 
 # ExpectedCost ###########################################################
 
 # Allocate storage for ExpectedCost
-function allocate_intermediate(::ExpectedCost, m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit)
+function allocate_sensitivity_intermediate(
+    ::ExpectedCost, m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit
+)
     (; W, C, CW, Z_full, Y_full) = precalculation(cgi)
 
     # kB and kΣ are set up as zeroed-out W matrices
@@ -74,8 +112,8 @@ function allocate_intermediate(::ExpectedCost, m::SensitivityAnalysis{<:Permeabi
         Kd = ti.workspace .= _diff_KD(dt).(K)
         Md = ti.workspace .= qˢ .* Kd .* qᵗ
         mdiagZⁱ = sum(Md) * Zⁱ[node]
-        Z_full[:, node] .= Z
-        Y_full[:, node] .= Y
+        # Z_full[:, node] .= Z
+        # Y_full[:, node] .= Y
         intermediates.mdiagZⁱ[node] = mdiagZⁱ
         intermediates.mdiagC̄Zⁱ[node] = mdiagZⁱ * Zⁱ[idx] * Y[idx]
     end
@@ -87,19 +125,13 @@ end
 # Compute for ExpectedCost
 # We have to do all compute in update_output! so we have the diagonal available
 function compute_sensitivity!(
-    output::Pair, ::ExpectedCost, ::SensitivityAnalysis{<:Permeability}, ti::TargetInit
+    output, ::ExpectedCost, ::SensitivityAnalysis{<:Permeability}, ti::TargetInit
 )
     node = target(ti).node
 
     # We already precomputed Z and Y, 
     # so add them to storage early so they arent coputed elsewhere
-    (; Z_full, Y_full) = ti
-    Z = readonlyarray(workspace(ti) .= view(Z_full, :, node))
-    Y = readonlyarray(workspace(ti) .= view(Y_full, :, node))
-    storage(ti)[:Z] = Z
-    storage(ti)[:Y] = Y
-
-    (; W, C, CW, K, qˢ, qᵗ, IW_adj_factorization, mdiagZⁱ, Zrows, MᵀZ_full, kB, kΣ, RHS_full) = ti
+    (; Z, Y, W, C, CW, K, qˢ, qᵗ, IW_adj_factorization, mdiagZⁱ, Zrows, MᵀZ_full, kB, kΣ, RHS_full) = ti
 
     X3 = workspace(ti) .= mdiagZⁱ .* Zrows
     Zⁱ = workspace(ti) .= _inv.(Z)
@@ -128,8 +160,12 @@ function compute_sensitivity!(
     return output
 end
 # Finalize for ExpectedCost after all targets run
-function finalize_output!(
-    output::AbstractArray, ::ExpectedCost, m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit, intermediates::NamedTuple
+function finalize_sensitivity_output!(
+    output::AbstractArray,
+    ::ExpectedCost,
+    m::SensitivityAnalysis{<:Permeability},
+    cgi::ConnectedGraphInit,
+    intermediates::NamedTuple
 )
     (; W, C, CW, IW_adj_factorization, A_rowsums, A, Aⁱ, Z_full, Y_full, Zrows_full) = cgi
     (; kB, kΣ, mdiagZⁱ, mdiagC̄Zⁱ, MᵀZ_full, RHS_full) = intermediates
@@ -176,27 +212,34 @@ function finalize_output!(
     return output
 end
 # Transfer connected graph output to the final spatial grid
-transfer_output!(dest::AbstractMatrix, source, ::SensitivityAnalysis, cgi::ConnectedGraphInit) =
+function transfer_output!(
+    dest, source, ::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit
+)
     dest[sourceids(cgi)] .= source
+end
 
 
 # PowerMeanProximity ###########################################################
 
-function allocate_intermediate(::PowerMeanProximity, m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit)
+function allocate_sensitivity_intermediate(
+    ::PowerMeanProximity, m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit
+)
     (; W) = cgi
 
     custom_weighted = CustomWeighted(nothing) # We dont need the weights in the allocation phase, just the type
-    bet_edge_k = allocate_intermediate(EdgeBetweenness(custom_weighted), cgi) 
-    bet_edge_k_output = allocate_output(ConnectedGraphLevel(), EdgeBetweenness(custom_weighted), cgi) 
-    bet_node_k_output = allocate_output(ConnectedGraphLevel(), Betweenness(custom_weighted), cgi)
-    intermediates = (; bet_edge_k, bet_edge_k_output, bet_node_k_output)
+    bet_edge = allocate_intermediate(EdgeBetweenness(custom_weighted), cgi) 
+    bet_edge_output = allocate_output(ConnectedGraphLevel(), EdgeBetweenness(custom_weighted), cgi) 
+    bet_node_output = allocate_output(ConnectedGraphLevel(), Betweenness(custom_weighted), cgi)
+    intermediates = (; bet_edge, bet_edge_output, bet_node_output)
 
     return intermediates
 end
 # Store the output of compute into the output for each target for PowerMeanProximity
 # This is part of PM_sensitivity in the original code
-function compute_sensitivity!(output, pmp::PowerMeanProximity, ::SensitivityAnalysis{<:Permeability}, ti::TargetInit)
-    # Get stored Z from bet_edge_k rather than calculating it again
+function compute_sensitivity!(
+    output, pmp::PowerMeanProximity, ::SensitivityAnalysis{<:Permeability}, ti::TargetInit
+)
+    # Get stored Z from bet_edge rather than calculating it again
     node = target(ti).node
 
     (; qˢ, qᵗ, θ, Z) = ti
@@ -208,30 +251,38 @@ function compute_sensitivity!(output, pmp::PowerMeanProximity, ::SensitivityAnal
     bet_edge = EdgeBetweenness(CustomWeighted(weights))
     bet_node = Betweenness(CustomWeighted(weights))
 
-    ti_bet_edge = rebuild(ti; intermediates=intermediates(ti).bet_edge_k)
-    ti_bet_node = rebuild(ti; intermediates=(;))
-    compute!(ti.bet_edge_k_output, bet_edge, ti_bet_edge)
-    compute!(ti.bet_node_k_output, bet_node, ti_bet_node)
+    ti_edge = rebuild(ti; intermediates=intermediates(ti).bet_edge)
+    ti_node = rebuild(ti; intermediates=(;))
+    _, edge_out = ti.bet_edge_output
+    _, node_out = ti.bet_node_output
+
+    compute!(edge_out, ConnectedGraphLevel(), bet_edge, ti_edge)
+    compute!(node_out, ConnectedGraphLevel(), bet_node, ti_node)
 
     return output
 end
 # Finalize for PowerMeanProximity after all targets run
-function finalize_output!(
-    output::AbstractArray, ::PowerMeanProximity, m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit, intermediates
+function finalize_sensitivity_output!(
+    output::AbstractArray,
+    ::PowerMeanProximity,
+    m::SensitivityAnalysis{<:Permeability},
+    cgi::ConnectedGraphInit,
+    intermediates
 )
     (; A_rowsums, Aⁱ, A, Z_full) = cgi
-    (; bet_edge_k_output, bet_node_k_output) = intermediates
-    bet_edge_k, bet_node_k = bet_edge_k_output[2], bet_node_k_output[2]
+    (; bet_edge_output, bet_node_output) = intermediates
+    bet_edge, bet_node = bet_edge_output[2], bet_node_output[2]
 
     # Finalize edge betweenness
-    bet_edge = EdgeBetweenness(CustomWeighted(nothing))
-    finalize_output!(intermediates.bet_edge_k_output, bet_edge, cgi, intermediates.bet_edge_k)
+    finalize_output!(
+        intermediates.bet_edge_output, EdgeBetweenness(CustomWeighted(nothing)), cgi, intermediates.bet_edge
+    )
 
     # This is from PM_sensitivy in the original code
     foreachnz(Aⁱ) do i, j, n
         I = sourceids(cgi)[i]
-        S_cost = -bet_edge_k.nzval[n]
-        S_likelihood = (bet_edge_k.nzval[n] * Aⁱ.nzval[n] - (bet_node_k[I] / A_rowsums[i]) * (A.nzval[n] > 0)) * theta(cgi)
+        S_cost = -bet_edge.nzval[n]
+        S_likelihood = (bet_edge.nzval[n] * Aⁱ.nzval[n] - (bet_node[I] / A_rowsums[i]) * (A.nzval[n] > 0)) * theta(cgi)
         S_e_likelihood_scaled = _maybe_scale(S_likelihood, sensitivitytype(m), wrt(m), cgi, n)
         S_e_cost_scaled = _maybe_scale(S_cost, sensitivitytype(m), wrt(m), cgi, n)
         x = _combine_sensitivity(wrt(m), S_e_likelihood_scaled, S_e_cost_scaled, cgi, n)

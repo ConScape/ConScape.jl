@@ -79,10 +79,10 @@ function _solve_single_target!(ti, outputlevel)
         outputs(ti)
     end
     # Store outputs
-    results = map(measures(ti), outputs1, intermediates(ti)) do measure, output, intermediate
+    results = map(outputs1, measures(ti), intermediates(ti)) do (level, output), measure, intermediate
         ti_m = TargetInit(connectedgraphinit(ti), target(ti), intermediate)
         # Dont compute the same measure multiple times
-        compute_and_update_output!(output, ti_m, measure)
+        compute_and_update_output!(output, level, ti_m, measure)
     end
     # When just running one target we return Raster/RasterStack
     if outputlevel isa TargetLevel

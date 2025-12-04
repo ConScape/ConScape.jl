@@ -1,13 +1,16 @@
 """
     ReturnTrait
 
-Traits that determing what object is allocated to store 
+Traits that determing what object is allocated to store
 the return values of `compute` on a [`Measures`](@ref).
 """
 abstract type ReturnTrait end
-abstract type ReturnDenseSpatial <: ReturnTrait end
+abstract type ReturnSpatial <: ReturnTrait end
 abstract type ReturnSparseGraph <: ReturnTrait end
-struct ReturnDenseSpatialSum <: ReturnDenseSpatial end
+
+struct ReturnSpatialSourceSum <: ReturnSpatial end
+struct ReturnSpatialTargetSum <: ReturnSpatial end
+struct ReturnSpatialSourceAndTargetSum <: ReturnSpatial end
 struct ReturnAssignedSparse <: ReturnSparseGraph end
 struct ReturnScalarSum <: ReturnTrait end
 struct ReturnCustom <: ReturnTrait end
@@ -16,7 +19,7 @@ struct ReturnCustom <: ReturnTrait end
     Level
 
 Traits for specifying the level of a computation or output:
-`GridGraphLevel` for the whole gridgraph, `ConnectedGraphLevel` for a 
+`GridGraphLevel` for the whole gridgraph, `ConnectedGraphLevel` for a
 connected subgraph, and `TargetLevel` for a single target pixel.
 """
 abstract type Level end
@@ -84,14 +87,14 @@ Output allocation, update, and finalisation
 
 # Preallocate the output for a measure, depending on the output level and returntrait.
 """
-allocate_output(l::Level, problem::ConScapeProblem, args...) = 
+allocate_output(l::Level, problem::ConScapeProblem, args...) =
     allocate_output(l, measures(problem), problem, args...)
-allocate_output(l::Level, measures::Union{Tuple,NamedTuple}, args...) = 
+allocate_output(l::Level, measures::Union{Tuple,NamedTuple}, args...) =
     map(m -> allocate_output(l, m, args...), measures)
-allocate_output(l::Level, m::Measure, args...)::Pair = 
+allocate_output(l::Level, m::Measure, args...)::Pair =
     allocate_output(l, returntrait(m), m, args...)
 
-allocate_output(l::Level, rt::ReturnTrait, m::Measure, ggi::GridGraphInit)::Pair = 
+allocate_output(l::Level, rt::ReturnTrait, m::Measure, ggi::GridGraphInit)::Pair =
     allocate_output(l, rt, m, problem(ggi), gridgraph(ggi), connectedgraphs(ggi))
 function allocate_output(
     l::GridGraphLevel,
@@ -106,7 +109,7 @@ end
 # We need to zero out all connected subgraphs
 function allocate_output(
     l::GridGraphLevel,
-    ::ReturnDenseSpatial,
+    ::ReturnSpatial,
     ::Measure,
     ::ConScapeProblem,
     gridgraph::GridGraph,
@@ -123,19 +126,19 @@ function allocate_output(
     ::ConScapeProblem,
     gridgraph::GridGraph,
     connectedgraphs::Vector
-) 
+)
     l => spzeros(Float64, gridgraph_size(gridgraph))
 end
 
-allocate_output(l::Level, m::Measure, cgi::ConnectedGraphInit)::Pair = 
+allocate_output(l::Level, m::Measure, cgi::ConnectedGraphInit)::Pair =
     allocate_output(l, returntrait(m), m, problem(cgi), gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
 function allocate_output(
-    l::Union{ConnectedGraphLevel,TargetLevel}, 
-    ::ReturnDenseSpatial, 
+    l::Union{ConnectedGraphLevel,TargetLevel},
+    ::ReturnSpatial,
     ::Measure,
-    ::ConScapeProblem, 
-    gridgraph::GridGraph, 
-    connectedgraph::ConnectedGraph, 
+    ::ConScapeProblem,
+    gridgraph::GridGraph,
+    connectedgraph::ConnectedGraph,
     precalculation,
 )
     A = fill(NaN, size(gridgraph))
@@ -143,7 +146,6 @@ function allocate_output(
     A[sourceids(connectedgraph)] .= 0.0
     return l => A
 end
-# 
 function allocate_output(
     l::Union{ConnectedGraphLevel,TargetLevel},
     ::ReturnScalarSum,
@@ -164,7 +166,7 @@ function allocate_output(
     ::GridGraph,
     connectedgraph::ConnectedGraph,
     precalculation
-) 
+)
     l => spzeros(Float64, connectedgraph_size(connectedgraph))
 end
 function allocate_output(
@@ -187,7 +189,7 @@ allocate_intermediate(measure, cgi) = nothing
 #
 # Here we update single target results to the output object
 # How that works exactly depends on the returntrait of each graph measure and the output level.
-# Separating this from `compute` allows us to return different types of output 
+# Separating this from `compute` allows us to return different types of output
 # from the same computation, and to reuse the code accross multiple measures.
 
 """
@@ -195,21 +197,39 @@ allocate_intermediate(measure, cgi) = nothing
 
 Copy or add the result of `compute` on the targets to the connected graph output.
 """
-update_output!(output::Pair, gm::Measure, init::Initialisation, v) = 
-    update_output!(output[2], output[1], gm, init, v) 
+update_output!(output::Pair, gm::Measure, init::Initialisation, v) =
+    update_output!(output[2], output[1], gm, init, v)
 # By default update_output!based on the return trait
-update_output!(output, level::Level, gm::Measure, init::Initialisation, v) = 
-    update_output!(output, level, returntrait(gm), init, v) 
+update_output!(output, level::Level, gm::Measure, init::Initialisation, v) =
+    update_output!(output, level, returntrait(gm), init, v)
 # Spatial outputs are always the same shape, independent of Level
-update_output!(output::AbstractMatrix, ::Level, ::ReturnDenseSpatialSum, ti::TargetInit, v::AbstractVector) = 
+function update_output!(output::AbstractMatrix, ::Level, ::ReturnSpatialTargetSum, ti::TargetInit, v::AbstractVector)
     view(output, sourceids(ti)) .+= v
-# SumScalar is always a single Ref, independent of Level 
-update_output!(output::Ref, ::Level, ::ReturnScalarSum, ::Initialisation, v::Number) = output[] += v
+    return output
+end
+function update_output!(output::AbstractMatrix, ::Level, ::ReturnSpatialSourceSum, ti::TargetInit, v::AbstractVector)
+    output[targetspatialidx(ti)] += sum(v)
+    return output
+end
+function update_output!(output::AbstractMatrix, l::Level, ::ReturnSpatialSourceAndTargetSum, ti::TargetInit, v::AbstractVector)
+    update_output!(output, l, ReturnSpatialSourceSum(), ti, v)
+    update_output!(output, l, ReturnSpatialTargetSum(), ti, v)
+    return output
+end
+# SumScalar is always a single Ref, independent of Level
+function update_output!(output::Ref, ::Level, ::ReturnScalarSum, ::Initialisation, v::Number)
+    output[] += v
+    return output
+end
 # AssignSparse varies by Level
-update_output!(output::AbstractMatrix, ::TargetLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector) = 
+function update_output!(output::AbstractMatrix, ::TargetLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector)
     output[sourceids(ti)] .= v
-update_output!(output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector) = 
+    return output
+end
+function update_output!(output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector)
     output[:, target(ti).connectedgraphidx] .= v
+    return output
+end
 
 """
     finalise_output!(::ConnectedGraphInit, [intermediates])
@@ -217,7 +237,7 @@ update_output!(output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSp
 Apply any modifications required after all targets contribute
 to the output.
 """
-finalize_output!(cgi, intermediates) = 
+finalize_output!(cgi, intermediates) =
     finalize_output!(outputs(cgi), measures(cgi), cgi, intermediates)
 function finalize_output!(outputs::NamedTuple, measures::NamedTuple, cgi, intermediates)
     return map(outputs, measures, intermediates) do output, measure, intermediate
@@ -225,8 +245,10 @@ function finalize_output!(outputs::NamedTuple, measures::NamedTuple, cgi, interm
     end
 end
 # Trivial default, just returns the output object as-is
-finalize_output!((level, output)::Pair, m::Measure, sgi::ConnectedGraphInit, intermediates) = 
+finalize_output!((level, output)::Pair, m::Measure, sgi::ConnectedGraphInit, intermediates) =
     finalize_output!(output, level, m, sgi, intermediates)
+finalize_output!(output, level::Level, m::Measure, cgi::ConnectedGraphInit, intermediates) =
+    finalize_output!(output, m, cgi, intermediates)
 finalize_output!(output, level::Level, m::Measure, cgi::ConnectedGraphInit, intermediates) = nothing
 
 
@@ -238,11 +260,11 @@ Transfer output from `ConnectedGraphInit` to `GridGraphInit`.
 This step is necessary because the GridGraph may no be a single connected
 graph, or may simply have empty areas that we want to skip as an optimisation.
 
-Either way the sparse matrices of `ConnectedGraphInit` are usually smaller than 
+Either way the sparse matrices of `ConnectedGraphInit` are usually smaller than
 the sparse matrices in `GridGraphInit`, so we need to map between them.
 """
-transfer_output!(outputs::NamedTuple, cgi::ConnectedGraphInit) = 
-    transfer_output!(outputs, ConScape.outputs(cgi), measures(cgi), cgi) 
+transfer_output!(outputs::NamedTuple, cgi::ConnectedGraphInit) =
+    transfer_output!(outputs, ConScape.outputs(cgi), measures(cgi), cgi)
 function transfer_output!(dest::NamedTuple, source::NamedTuple, measures::NamedTuple, cgi)
     map(dest, source, measures) do d, s, m
         transfer_output!(d, s, m, cgi)
@@ -252,13 +274,16 @@ transfer_output!(d::Pair, s::Pair, m::Measure, cgi::ConnectedGraphInit) =
     transfer_output!(d[2], s[2], m, cgi)
 transfer_output!(d, s, m::Measure, cgi::ConnectedGraphInit) =
     transfer_output!(d, s, returntrait(m), cgi)
-# transfer_output!(dest, source, ::ReturnTrait, cgi::ConnectedGraphInit) = 
+# transfer_output!(dest, source, ::ReturnTrait, cgi::ConnectedGraphInit) =
     # dest[connectedgraphid(cgi)] = source
 transfer_output!(dest::Vector{T}, source::Ref{T}, ::ReturnScalarSum, cgi::ConnectedGraphInit) where T =
     dest[] = source[]
 transfer_output!(dest::Vector, source, ::ReturnCustom, cgi::ConnectedGraphInit) =
     dest[connectedgraphid(cgi)] = source
-transfer_output!(dest::AbstractMatrix, source::AbstractMatrix, ::ReturnDenseSpatialSum, cgi::ConnectedGraphInit) = 
+transfer_output!(dest::AbstractMatrix, source::AbstractMatrix, ::ReturnSpatial, cgi::ConnectedGraphInit) =
     dest[sourceids(cgi)] .= source[sourceids(cgi)]
-transfer_output!(dest, source, ::ReturnAssignedSparse, cgi::ConnectedGraphInit) = 
-    dest[view(LinearIndices(size(cgi)), sourceids(cgi)), map(x -> x.gridgraphidx, targetids(cgi))] .+= source
+function transfer_output!(dest, source, ::ReturnAssignedSparse, cgi::ConnectedGraphInit)
+    # TODO: remove this allocation
+    I = map(x -> x.gridgraphidx, targetids(cgi))
+    dest[view(LinearIndices(size(cgi), sourceids(cgi)), I)] .+= source
+end

@@ -23,10 +23,10 @@ abstract type AbstractProblem end
 abstract type InputType end
 abstract type Permeability <: InputType end
 
-abstract type AbstractgQuality <: InputType end
-struct Quality <: AbstractgQuality end
-struct SourceQuality <: AbstractgQuality end
-struct TargetQuality <: AbstractgQuality end
+abstract type AbstractQuality <: InputType end
+struct Quality <: AbstractQuality end
+struct SourceQuality <: AbstractQuality end
+struct TargetQuality <: AbstractQuality end
 
 struct StepLikelihood <: Permeability end
 struct StepCost <: Permeability end

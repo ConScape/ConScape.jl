@@ -5,6 +5,8 @@ Abstract supertype for movement modes.
 
 These define the path distribution of all possible paths between source and targets.
 
+TODO: should Euclidean be outside the Spatial heterogeneity branch.
+
 ```
                                   MovementMode
                                        │
@@ -16,8 +18,8 @@ These define the path distribution of all possible paths between source and targ
                  │                          │        (not yet implemented)
      ┌───────────┼───────────┐              │                │
      │           │           │              │                │
-LeastCostPath   RSP   RandomWalk        Euclidean   AbsorbingRandomWalk
- (θ → ∞)       (θ)       (θ → 0)
+LeastCostPath   RSP   RandomWalk        Euclidean   AbsorbingRandomWalk 
+ (θ → ∞)    ,    (θ)       (θ → 0)
 ```
 """
 abstract type MovementMode end

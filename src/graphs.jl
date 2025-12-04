@@ -115,13 +115,20 @@ function GridGraph(rast::RasterStack;
 )
     GridGraph(; likelihood, cost, sourcequality, targetquality, kw...)
 end
-function GridGraph(p::AbstractProblem, rast::RasterStack; kw...)
+function GridGraph(p::AbstractProblem, rast::RasterStack; 
+    grain=nothing, 
+    neighbors=nothing,
+    stepweight=nothing,
+    kw...
+)
     GridGraph(rast;
-        grain=grain(p),
+        # Purely spatial keywords can be passed in
+        grain=isnothing(grain) ? ConScape.grain(p) : grain,
+        neighbors=isnothing(neighbors) ? ConScape.neighbors(p) : neighbors,
+        stepweight=isnothing(stepweight) ? ConScape.stepweight(p) : stepweight,
+        # Functions must match the problem
         costfunction=costfunction(p),
         likelihoodfunction=likelihoodfunction(p),
-        neighbors=neighbors(p),
-        stepweight=stepweight(p),
         kw...
     )
 end

@@ -273,6 +273,7 @@ function _proximitymatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     proximities = _maybe_set_diagonal!(ti, proximities)
     return readonlyarray(proximities)
 end
+
 function _fundamentalmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     b = _diag_vec!(workspace(ti), target(ti))
     b_copy = _diag_vec!(workspace(ti), target(ti))
@@ -282,9 +283,11 @@ function _fundamentalmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     end
     return readonlyarray(Z)
 end
+
 function _inversefundamentalmatrix(ti)
     readonlyarray(_inv!(workspace(ti), ti.Z))
 end
+
 function _fundamentalrowmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
     Zrows = if connectedgraph_size(ti)[1] != connectedgraph_size(ti)[2]
         b = _diag_vec!(workspace(ti), target(ti))
@@ -299,6 +302,8 @@ function _fundamentalrowmatrix(ti::TargetInit{<:Union{RSP,RandomWalk}})
 
     return Zrows
 end
+
+# TODO: is this the most correct name for Y ?
 function _costdistancematrix(ti)
     (; CW, Z, IW_factorization) = ti
     # Solve: (I - W) \ (C .* W) * Z ./ Z
@@ -308,20 +313,25 @@ function _costdistancematrix(ti)
     foreachnz(CW) do i, j, n
         RHS[i] += CW.nzval[n] * Z[j] 
     end
+
     Y = ldiv!(ti, IW_factorization, RHS)
     if hasproperty(precalculation(ti), :Y_full)
         precalculation(ti).Y_full[:, target(ti).node] .= Y
     end
+
     return readonlyarray(Y)
 end
+
 function _landscapematrix(ti::TargetInit)
     (; qˢ, K, qᵗ) = ti
     return readonlyarray(workspace(ti) .= qˢ .* K .* qᵗ)
 end
+
 function _qualitymatrix(ti::TargetInit)
     (; qˢ, qᵗ) = ti
     return readonlyarray(workspace(ti) .= qˢ .* qᵗ)
 end
+
 function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
     (; P, IP, IP_factorization) = ti
     t = target(ti).node
