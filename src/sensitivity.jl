@@ -1,4 +1,4 @@
-const store = Ref{NamedTuple}((;))
+:onst store = Ref{NamedTuple}((;))
 
 ######################################################################################
 # Sensitivity
@@ -12,7 +12,7 @@ function compute_target(
     m::SensitivityAnalysis{<:AbstractQuality}, 
     ti::TargetInit{<:Union{RSP,RandomWalk}}
 )
-    # TODO: handle EigMax
+   (; M) = ti
     
     #= Sensitivity w.r.t. Quality is essentially just the landscape matrix, 
     i.e. proximity matrix * source and target quality.
@@ -21,7 +21,11 @@ function compute_target(
     
     We cant do that at the target level because the numbers are 
     too small and cause floating point error in the sum. =#
-    ti.M 
+    if metric(m) isa EigMax
+        workspace(ti) .= v .* M .* w[targetnode(ti)]
+    else
+        M
+    end
 end
 function finalize_connectedgraph_output!(
     output, 
@@ -84,22 +88,23 @@ end
 function allocate_sensitivity_intermediate(
     ::ExpectedCost, m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit
 )
-    (; W, C, CW, Z_full, Y_full) = precalculation(cgi)
+    (; W, C, CW) = precalculation(cgi)
 
-    # kB and kΣ are set up as zeroed-out W matrices
     intermediates = (; 
         # Sparse matrices. `mapnz` means we keep the sparse structure but 
         # initialise values to zero internally
+        # kB and kΣ are zeroed-out W matrices
         kB = mapnz(_ -> 0.0, W),
         kΣ = mapnz(_ -> 0.0, W),
         # Diagonal vectors
-        mdiagZⁱ = zeros(length(targetids(cgi))),
-        mdiagC̄Zⁱ = zeros(length(targetids(cgi))),
+        mdiagZⁱ = zeros(ntargets(cgi)),
+        mdiagC̄Zⁱ = zeros(ntargets(cgi)),
         # Allocate Z-size matrices
         MᵀZ_full = zeros(connectedgraph_size(cgi)),
-        RHS_full = zeros(connectedgraph_size(cgi)),
+        X5_full = zeros(connectedgraph_size(cgi)),
     )
     
+    # Precalculate mdiagZ and mdiagC̄Z
     for target in targetids(cgi)
         # Precalculate for this target and graph measures
         ti = TargetInit(cgi, target)
@@ -111,10 +116,8 @@ function allocate_sensitivity_intermediate(
         Kd = ti.workspace .= _diff_KD(dt).(K)
         Md = ti.workspace .= qˢ .* Kd .* qᵗ
         mdiagZⁱ = sum(Md) * Zⁱ[node]
-        # Z_full[:, node] .= Z
-        # Y_full[:, node] .= Y
-        intermediates.mdiagZⁱ[node] = mdiagZⁱ
-        intermediates.mdiagC̄Zⁱ[node] = mdiagZⁱ * Zⁱ[idx] * Y[idx]
+        intermediates.mdiagZⁱ[idx] = mdiagZⁱ
+        intermediates.mdiagC̄Zⁱ[idx] = mdiagZⁱ * Zⁱ[node] * Y[node]
     end
 
     return intermediates
@@ -126,34 +129,37 @@ end
 function compute_target_sensitivity!(
     output, ::ExpectedCost, ::SensitivityAnalysis{<:Permeability}, ti::TargetInit
 )
-    node = target(ti).node
+    node = targetnode(ti)
+    idx = targetconnectedgraphidx(ti)
 
     # We already precomputed Z and Y, 
     # so add them to storage early so they arent coputed elsewhere
-    (; Z, Y, W, C, CW, K, qˢ, qᵗ, IW_adj_factorization, mdiagZⁱ, Zrows, MᵀZ_full, kB, kΣ, RHS_full) = ti
+    (; Z, Zⁱ, Y, W, C, CW, K, qˢ, qᵗ, IW_adj_factorization, mdiagZⁱ, Zrows_full, MᵀZ_full, kB, kΣ, X5_full) = ti
 
-    X3 = workspace(ti) .= mdiagZⁱ .* Zrows
-    Zⁱ = workspace(ti) .= _inv.(Z)
-
+    X3 = view(workspace(ti), 1:ntargets(ti)) .= mdiagZⁱ .* view(Zrows_full, :, node)
+    C̄ᵣ = workspace(ti) .= Y .* Zⁱ
     Kd = workspace(ti) .= _diff_KD(distance_transformation(ti)).(K)
     Md = workspace(ti) .= qˢ .* Kd .* qᵗ
     MZⁱ = workspace(ti) .= Md .* Zⁱ
     MᵀZ = ldiv!(ti, IW_adj_factorization, (workspace(ti) .= MZⁱ)) # MᵀZ = MZⁱ' / IW
-    MᵀZ_full[:, node] .= MᵀZ
+    MᵀZ_full[:, idx] .= MᵀZ # Update the full matrix for later use
 
-    # Unrolled broadcast and matrix multiplications
-    # RHS = ((M .* Zⁱ .* C̄ᵣ)' - (MᵀZ * CW) + (X3 * CW))
-    C̄ᵣ = workspace(ti) .= Y .* Zⁱ
-    view(RHS_full, :, node) .+= Md .* Zⁱ .* C̄ᵣ
+    # Here we do unrolled matrix multiplications to reduce memory use
+    # This is basically duplicating the function:
+    # RHS = (M .* Zⁱ .* C̄ᵣ)' - (MᵀZ * CW) + (X3 * CW)
+    # First the broadcast
+    view(X5_full, :, idx) .+= Md .* Zⁱ .* C̄ᵣ
+    # Then both matmuls are calculated for non-zero values of CW.
+    # This is hard to understand without a lot of work.
     foreachnz(CW) do i, j, n
+        # First MᵀZ * CW is subtracted from the column of the current target node
+        X5_full[j, idx] -= MᵀZ[i] .* CW.nzval[n]
+        # Then X3 * CW is added where i is the current target node
         if i == node
-            # The contribution is the target column of X3, scaled by the value.
-            for k in 1:length(X3)
-                RHS_full[j, k] += X3[k] * CW.nzval[n]
+            for k in eachindex(X3)
+                X5_full[j, k] += X3[k] * CW.nzval[n]
             end
         end
-        # MᵀZ * CW is subtracted along the row
-        RHS_full[j, node] -= MᵀZ[i] .* CW.nzval[n]
     end
 
     return output
@@ -168,39 +174,37 @@ function finalize_connectedgraph_output!(
     intermediates::NamedTuple
 )
     (; W, C, CW, IW_adj_factorization, A_rowsums, A, Aⁱ, Z_full, Y_full, Zrows_full) = cgi
-    (; kB, kΣ, mdiagZⁱ, mdiagC̄Zⁱ, MᵀZ_full, RHS_full) = intermediates
+    (; kB, kΣ, mdiagZⁱ, mdiagC̄Zⁱ, MᵀZ_full, X5_full) = intermediates
 
     free!(workspaces(cgi))
 
     # Full matrix solve, but broken into columns to halve the memory use.
-    # Reuse RHS as dest X5
     ws = workspace(cgi) 
-    for j in axes(RHS_full, 2)
-        rhs = view(RHS_full, :, j)
+    for j in axes(X5_full, 2)
+        rhs = view(X5_full, :, j)
         ws .= rhs
         ldiv!(solver(cgi), rhs, IW_adj_factorization, ws)
     end
-    X5_full = RHS_full
 
     # Use workspaces for columns
-    X5 = workspace(cgi)
-    X6 = workspace(cgi)
+    X5 = view(workspace(cgi), 1:ntargets(cgi))
+    X6 = view(workspace(cgi), 1:ntargets(cgi))
 
-    cur_j = 0
+    # Set kB an kΣ for non-zero values of W
     foreachnz(W) do i, j, n
-        if j != cur_j
-            cur_j = j
-        end
         Z = view(Z_full, j, :)
         Y = view(Y_full, j, :)
         @views X5 .= X5_full[i, :] .- mdiagC̄Zⁱ .* Zrows_full[:, i]
         @views X6 .= MᵀZ_full[i, :] .- mdiagZⁱ .* Zrows_full[:, i]
-        kB.nzval[n] = W.nzval[n] * ((Z' * X6)[1])
-        kΣ.nzval[n] = W.nzval[n] * ((Z' * X5)[1] - (Y' * X6)[1] - C.nzval[n] * kB.nzval[n] / W.nzval[n])
+        kBn = W.nzval[n] * ((Z' * X6)[])
+        kB.nzval[n] = kBn
+        kΣ.nzval[n] = W.nzval[n] * ((Z' * X5)[] - (Y' * X6)[] - (C.nzval[n] * kBn / W.nzval[n]))
     end
 
     kΣ_node = sum(kΣ, dims=2)
-    foreachnz(Aⁱ) do i, j, n
+
+    # Calculate output from non-zero values  of W/Aⁱ/kB/kΣ
+    foreachnz(kB) do i, j, n
         S_cost = kB.nzval[n] + theta(cgi) * kΣ.nzval[n]
         S_likelihood = (kΣ_node[i] / A_rowsums[i]) - kΣ.nzval[n] * Aⁱ.nzval[n]
         S_e_likelihood_scaled = _maybe_scale(S_likelihood, sensitivitytype(m), wrt(m), cgi, n)
@@ -209,7 +213,7 @@ function finalize_connectedgraph_output!(
         return nothing
     end
 
-    store[] = (; C, W, Z=Z_full, kB, kΣ, kΣ_node)
+    store[] = (; C, W, Zrows=Zrows_full, Z=Z_full, Y=Y_full, kB, kΣ, kΣ_node, diag=mdiagZⁱ, diagC=mdiagC̄Zⁱ, MᵀZ=MᵀZ_full, X5=X5_full)
 
     return output
 end
@@ -292,10 +296,11 @@ function finalize_connectedgraph_output!(
         I = sourceids(cgi)[i]
         S_cost = -bet_edge.nzval[n]
         S_likelihood = (bet_edge.nzval[n] * Aⁱ.nzval[n] - (bet_node[I] / A_rowsums[i]) * (A.nzval[n] > 0)) * theta(cgi)
+        # Scaling depends on Elasticity/Sensitivity and w.r.t.
         S_e_likelihood_scaled = _maybe_scale(S_likelihood, sensitivitytype(m), wrt(m), cgi, n)
         S_e_cost_scaled = _maybe_scale(S_cost, sensitivitytype(m), wrt(m), cgi, n)
-        x = _combine_sensitivity(wrt(m), S_e_likelihood_scaled, S_e_cost_scaled, cgi, n)
-        output[j] += x
+        # Combination of cost / likelihood depends on w.r.t. 
+        output[j] += _combine_sensitivity(wrt(m), S_e_likelihood_scaled, S_e_cost_scaled, cgi, n)
     end
 
     return output

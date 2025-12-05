@@ -197,9 +197,9 @@ Compute sensitivity of all nodes.
 
 The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
-@kwdef struct SensitivityAnalysis{WRT<:InputType,TM<:TopologicalMetric,ST<:SensitivityType} <: SpatialMeasure
+@kwdef struct SensitivityAnalysis{WRT<:InputType,M,ST<:SensitivityType} <: SpatialMeasure
     wrt::WRT
-    metric::TM = Summation()
+    metric::M = Summation()
     type::ST = Sensitivity()
 end
 

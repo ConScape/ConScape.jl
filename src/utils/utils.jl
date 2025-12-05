@@ -155,3 +155,9 @@ _maybe_raster(rt::ReturnSpatial, mat::Matrix{T}, dims::Tuple; kw...) where T =
 _maybe_raster(rt::ReturnSpatial, vec::Vector{T}, dims::Tuple; kw...) where T<:Number =
     Raster(vec, dims; missingval=T(NaN), kw...)
 _maybe_raster(rt, x, y; kw...) = x
+
+_issquare(A::AbstractMatrix) = size(A, 1) == size(A, 2)
+function _issquare(A::Union{TargetInit,ConnectedGraphInit}) 
+    (a, b) = connectedgraph_size(A) 
+    return a == b
+end

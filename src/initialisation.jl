@@ -479,6 +479,8 @@ storage(ti::TargetInit) = storage(connectedgraphinit(ti))
 workspaces(ti::TargetInit) = workspaces(connectedgraphinit(ti))
 
 # Getter functions that forward to the ConnectedGraph
+nsources(sgi::TargetInit) = nsources(connectedgraph(sgi))
+ntargets(sgi::TargetInit) = ntargets(connectedgraph(sgi))
 stepcost(ti::TargetInit) = stepcost(connectedgraph(ti))
 steplikelihood(ti::TargetInit) = steplikelihood(connectedgraph(ti))
 sourcequality(ti::TargetInit) = sourcequality(connectedgraph(ti))

@@ -181,12 +181,13 @@ function compute_target!(
     (; XdiagZⁱ, XᵀZ_full) = intermediates(ti)
     (; IW_adj_factorization, Z, Zⁱ) = ti
     node = targetnode(ti)
+    idx = targetconnectedgraphidx(ti)
 
     weights = _weight(m, ti)
-    XdiagZⁱ[node] = sum(weights) * Zⁱ[node]
+    XdiagZⁱ[idx] = sum(weights) * Zⁱ[node]
     XZⁱ = workspace(ti) .= weights .* Zⁱ
     XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
-    view(XᵀZ_full, :, node) .+= XᵀZ
+    view(XᵀZ_full, :, idx) .+= XᵀZ
 
     # We only update output in finalize_connectedgraph_output!
     return output
@@ -199,15 +200,14 @@ function finalize_connectedgraph_output!(
     cgi::ConnectedGraphInit,
     intermediates
 )
-    (; W, Z_full) = cgi # This Z is the full graph size
+    (; W, Z_full, Zrows_full) = cgi # This Z is the full graph size
     (; XdiagZⁱ, XᵀZ_full) = intermediates
 
     for target in targetids(cgi)
         ti = TargetInit(cgi, target)
         node = target.node
-        (; Zrows) = ti
 
-        XᵀZ_full[node, :] .-= XdiagZⁱ .* Zrows
+        XᵀZ_full[node, :] .-= XdiagZⁱ .* view(Zrows_full, :, node)
     end
 
     foreachnz(W) do i, j, n
