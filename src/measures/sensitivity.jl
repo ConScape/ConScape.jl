@@ -1,4 +1,50 @@
-:onst store = Ref{NamedTuple}((;))
+const store = Ref{NamedTuple}((;))
+
+# Sensitivity
+
+# A metric, but not a measure like EigMax
+struct Summation end
+
+abstract type SensitivityType end
+struct Sensitivity <: SensitivityType end
+struct Elasticity <: SensitivityType end
+
+"""
+    SensitivityAnalysis <: SpatialMeasure
+
+    SensitivityAnalysis(; wrt, metric, sentitivitytype)
+
+Compute sensitivity of all nodes. 
+
+## Keywords
+
+- `wrt`: Five types of node sensitivity are implemented: `Affinity()`, `Cost()`, 
+    `Quality()`, `CostAndAffinity()` and `AffinityAndCost()`.
+- `metric`: Two [`TopologicalMetric`](@ref)s are implemented to summarize the landscape matrix 
+    either through summation ([`Summation()`](@ref)) or through eigen analysis [`LandscapeEigen()`](@ref). 
+    The default is `Eigen()`.
+- `type`: The results can be provided either as sensitivity w.r.t. `Sensitivity()`
+    or w.r.t. `Elasticity()`, the latter are also known as elasticities. The default is `Sensitivity()`
+
+The value returned from `solve` is a spatial `Raster` or `Matrix`.
+"""
+@kwdef struct SensitivityAnalysis{WRT<:InputType,M,ST<:SensitivityType} <: SpatialMeasure
+    wrt::WRT
+    metric::M = Summation()
+    type::ST = Sensitivity()
+end
+
+wrt(gm::SensitivityAnalysis) = gm.wrt
+metric(gm::SensitivityAnalysis) = gm.metric
+sensitivitytype(gm::SensitivityAnalysis) = gm.type
+
+returntrait(::SensitivityAnalysis) = ReturnCustom()
+returntrait(::SensitivityAnalysis{<:Quality}) = ReturnSpatialSourceAndTargetSum()
+returntrait(::SensitivityAnalysis{<:SourceQuality}) = ReturnSpatialSourceSum()
+returntrait(::SensitivityAnalysis{<:TargetQuality}) = ReturnSpatialTargetSum()
+
+needs_workspaces(::SensitivityAnalysis{<:Quality}) = 2
+needs_workspaces(::SensitivityAnalysis{<:Permeability}) = 6
 
 ######################################################################################
 # Sensitivity
