@@ -762,7 +762,7 @@ function sensitivity(grsp::ConScape.GridRSP;
             #for theta = 1, ConScape.power_mean_proximity = ConScape.survival_probability
             # Now assumes grsp.g.costfunction = MinusLog
 
-            S_e_aff, S_e_cost = PM_sensitivity(grsp.g.affinities, nothing, grsp.θ, grsp.W, grsp.Z, grsp.Z, qˢ, qᵗ, targetnodes)
+            S_e_aff, S_e_cost = PM_sensitivity(grsp.g.affinities, nothing, grsp.θ, grsp.W, grsp.Z, copy(grsp.Z), qˢ, qᵗ, targetnodes)
 
             if unitless && (wrt in ["A", "A&C=f(A)"])
                 S_e_aff = S_e_aff.*grsp.g.affinities
