@@ -11,6 +11,7 @@ import Rasters
 import GeometryOps as GO
 import GeometryOps.GeoInterface as GI
 import SortTileRecursiveTree as STR
+import ReadOnlyArrays
 
 import Rasters.Extents
 import Rasters.DimensionalData
@@ -49,21 +50,17 @@ export solve, solve!, init, assess, reassess
 
 
 include("types.jl")
+include("measures/types.jl")
 
 include("utils/workspaces.jl")
 include("utils/bellman_ford.jl")
 
 include("transformations.jl")
 include("graphs.jl")
-include("measures/types.jl")
-include("measures.jl")
 include("movement.jl")
 include("problem.jl")
 include("initialisation.jl")
 include("solvers.jl")
-include("precalculation.jl")
-include("solve.jl")
-include("outputs.jl")
 include("measures/shared.jl")
 include("measures/proximity.jl")
 include("measures/eigmax.jl")
@@ -73,6 +70,9 @@ include("measures/kullback_leibler.jl")
 include("measures/landscape_matrix.jl")
 include("measures/functional_habitat.jl")
 include("measures/sensitivity.jl")
+include("precalculation.jl")
+include("solve.jl")
+include("output.jl")
 include("windows.jl")
 include("assessment.jl")
 

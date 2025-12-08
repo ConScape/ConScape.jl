@@ -2,6 +2,10 @@
 # TODO: docstring
 struct KullbackLeiblerDivergence <: PathDistributionMeasure end
 
+computelevel(::KullbackLeiblerDivergence) = TargetLevel()
+returntrait(::KullbackLeiblerDivergence) = ReturnScalarSum()
+
+# LeastCostPath
 function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:LCP})
     (; cost_weighted_digraph, P, qˢ, qᵗ) = ti
     node = targetnode(ti)
@@ -37,9 +41,11 @@ function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:LCP})
     end
     return sum(output .*= qˢ) * qᵗ # qs' * output * qt
 end
+# RandomWalk
 function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:RandomWalk})
     return 0.0 # Trivially returns zero
 end
+# RSP
 function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:RSP})
     (; θ, qˢ, qᵗ, workspace) = ti
     fed = get_or_compute_target!(ti, FreeEnergyDistance())

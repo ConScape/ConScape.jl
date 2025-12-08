@@ -24,16 +24,18 @@ put!(ws, workspace1)
 put!(ws, workspace3)
 ````
 """
-struct Workspaces{W}
+struct Workspaces{W,N}
+    size::NTuple{N,Int}
     workspaces::Vector{W}
     unused::BitVector
 end
-Workspaces(workspaces::Vector) = Workspaces(workspaces, trues(length(workspaces)))
-Workspaces(len::Int, n::Int) = Workspaces(Float64, len, n)
-Workspaces(::Type{T}, len::Int, n::Int) where T = 
-    Workspaces([Vector{T}(undef, len) for _ in 1:n])
+Workspaces(size::Tuple, workspaces::Vector) = Workspaces(size, workspaces, trues(length(workspaces)))
+Workspaces(size::Union{Int,Tuple}, n::Int) = Workspaces(Float64, size, n)
+Workspaces(::Type{T}, length::Int, n::Int) where T = Workspaces(T, (length,), n)
+Workspaces(::Type{T}, size::NTuple{N,Int}, n::Int) where {T,N} = 
+    Workspaces(size, Array{T,N}[Array{T}(undef, size...) for _ in 1:n])
 
-function Base.take!(ws::Workspaces)
+function Base.take!(ws::Workspaces{T})::T where T
     # Find the first unused workspace
     i = findfirst(ws.unused)
     # Error if there are no unused workspaces
@@ -54,13 +56,21 @@ function Base.put!(ws::Workspaces, w)
 end
 Base.iterate(ws::Workspaces, args...) = take!(ws), nothing
 Base.length(ws::Workspaces) = length(first(ws.workspaces))
-function Base.resize!(ws::Workspaces, n::Int) 
-    ws = Workspaces(map(w -> resize!(w, n), ws.workspaces))
-    length(ws) == n || _not_matching_error(ws, n)
-    return ws
+Base.size(ws::Workspaces) = size(first(ws.workspaces))
+
+function Base.resize!(ws::Workspaces{V}, len::Int)::Workspaces{V} where {V<:AbstractVector}
+    ws = map(w -> resize!(w, len), ws.workspaces)
+    return Workspaces((len,), ws)
+end
+function Base.resize!(ws::Workspaces{A}, sze::Tuple)::Workspaces{A} where {A<:AbstractArray}
+    len = prod(sze)
+    ws = map(ws.workspaces) do w
+        reshape(resize!(vec(w), len), sze)
+    end 
+    return Workspaces(sze, ws)
 end
 
-@noinline _not_matching_error(ws, n) =
-    error("Not matching $(length(ws)), $n, $(map(length, ws.workspaces))")
+@noinline _not_matching_error(ws, sze) =
+    error("Not matching $(length(ws)), $sze, $(map(size, ws.workspaces))")
 
 free!(ws::Workspaces) = (ws.unused .= true; ws)

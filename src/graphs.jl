@@ -222,8 +222,8 @@ function split_connected_graphs(g::GridGraph;
         targets = _target_ids(targetquality(g), sourceidxs, spatialidxs)
 
         # Get source and target quality vectors for subgraph
-        sourcequality_vector = view(sourcequality(g), sourceidxs)
-        targetquality_vector = [targetquality(g)[i.spatialidx] for i in targets]
+        sourcequality_vector = readonlyarray(sourcequality(g)[sourceidxs])
+        targetquality_vector = readonlyarray([targetquality(g)[i.spatialidx] for i in targets])
 
         # Return a ConnectedGraph
         ConnectedGraph(

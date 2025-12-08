@@ -1,63 +1,30 @@
 """
-    EigenSide
-
-Abstract supertype for sides of [`EigMax`](@ref).
-
-These let us skip computation with `NoLeft` or `NoRight`.
-
-Both are computed by default, e.g. `Left()` and `Right` are used.
-"""
-abstract type EigenSide end
-
-struct Left <: EigenSide end
-struct NoLeft <: EigenSide end
-struct Right <: EigenSide end
-struct NoRight <: EigenSide end
-
-Base.Symbol(m::Measure) = nameof(typeof(m))
-function Base.Symbol(m::SensitivityAnalysis) 
-    Symbol(
-        nameof(typeof(m)), :_, 
-        nameof(typeof(wrt(m))), :_, 
-        nameof(typeof(metric(m))), :_, 
-        nameof(typeof(sensitivitytype(m)))
-    )
-end
-
-"""
     EigMax <: Measure
 
     Eigmax(; kw...)
 
-Compute the largest eigenvalue triple (left vector, value, and right vector) 
-of the quality-scaled proximities with respect to the distance/proximity measure 
+Compute the largest eigenvalue triple (left vector, value, and right vector)
+of the quality-scaled proximities with respect to the distance/proximity measure
 in the [`MovementMode`](@ref).
 
 ## Keywords
 
-`seed`: seed for the random seed for the left eigenvector solve. Useful if exact floating point
-    replication is needed accross runs.
-`tol`: tolerance, defaults to `1e-14`.
-`left`: whether to calculate left eigenvector. Defaults to `Left()`, but can be `NoLeft()`.
-`left`: whether to calculate righ eigenvector. Defaults to `Right()`, but can be `NoRight()`.
-
-The triple is always returned, but if `NoLeft` or `NoRight` are used the 
-values contained in the left/right vecto will be zeros.
-
-
+- `seed`: seed for the random seed for the left eigenvector solve. 
+    Useful if exact floating point replication is needed accross runs.
+- `tol`: tolerance, defaults to `1e-14`.
 """
-@kwdef struct EigMax{L,R,S,T} <: Measure
-    left::L=Left()
-    right::R=Right()
+@kwdef struct EigMax{S,T} <: Measure
     seed::S = nothing
     tol::T = 1e-14
 end
 
+computelevel(m::EigMax) = ConnectedGraphLevel()
 returntrait(::EigMax) = ReturnCustom()
+num_matrix_workspaces(::EigMax) = 1
+
 
 # Allocate sqauare matrix of target * target size
-function allocate_output(
-    l::GridGraphLevel,
+function allocate_gridgraph_output(
     ::ReturnCustom,
     m::EigMax,
     ::ConScapeProblem,
@@ -65,10 +32,11 @@ function allocate_output(
     connectedgraphs::Vector
 )
     T = Tuple{Vector{Float64},Array{Float64,0},Vector{Float64}}
-    l => Vector{T}(undef, length(connectedgraphs))
+    o = Vector{T}(undef, length(connectedgraphs))
+    return MeasureOutput(m, o)
 end
-function allocate_output(
-    l::Union{ConnectedGraphLevel,GridGraphLevel}, # TargetLevel would be very expensive
+function allocate_connectedgraph_output(
+    ::ConnectedGraphLevel,
     ::ReturnCustom,
     m::EigMax,
     ::ConScapeProblem,
@@ -80,38 +48,32 @@ function allocate_output(
     vʳ = fill(NaN, n)
     λ = fill(0.0)
     vˡ = zeros(n)
-    return l => (vʳ, λ, vˡ)
+    o = (vʳ, λ, vˡ)
+    return MeasureOutput(m, o)
 end
 
-function allocate_intermediate(::EigMax, cgi::ConnectedGraphInit)
-    (; C, W, Z_full) = cgi
+function compute_connectedgraph!(::EigMax, cgi::ConnectedGraphInit)
+    (; C, W) = cgi
     m = length(targetids(cgi))
     targetnodes = map(x -> x.node, targetids(cgi))
     nontargetnodes = setdiff(1:m, targetnodes)
-    Mtarget = zeros(m, m)
-    Mnontarget = zeros(length(nontargetnodes), m)
-    return (; Mtarget, Mnontarget, targetnodes, nontargetnodes)
-end
 
-function compute_target(::EigMax, ti::TargetInit{<:Union{RSP,RandomWalk}})
-    (; K, M, Mtarget, Mnontarget, targetnodes, nontargetnodes, Z_full) = ti
-    idx = targetconnectedgraphidx(ti)
+    # We use views into one matrix workspace for both M matrices
+    M = mworkspace(cgi)
+    Mtarget = view(M, 1:m, 1:m)
+    Mnontarget = view(M, m+1:m+length(nontargetnodes), 1:m)
 
-    Mtarget[:, idx] .= view(M, targetnodes)
+    for target in targetnodes(cgi)
+        ti = TargetInit(cgi, target)
+        idx = target.connectedgraphidx
+        M = ti.M
 
-    if size(Mnontarget, 1) > 0
-        Mnontarget[:, idx] .= view(M, nontargetnodes)
+        # Copy M to matrices
+        Mtarget[:, idx] .= view(M, targetnodes)
+        if size(Mnontarget, 1) > 0
+            Mnontarget[:, idx] .= view(M, nontargetnodes)
+        end
     end
-end
-
-update_connectedgraph_output!(output, ::Level, ::EigMax, ::TargetInit, v) = nothing
-
-# We do most of eigmax in finalize_connectedgraph_output!
-function finalize_connectedgraph_output!(
-    (vˡ, λ, vʳ), ::ConnectedGraphLevel, em::EigMax, cgi::ConnectedGraphInit, intermediates
-)
-    (; Mtarget, Mnontarget, targetnodes, nontargetnodes) = intermediates
-
 
     # size of the full problem
     n = nsources(connectedgraph(cgi))
@@ -142,5 +104,5 @@ function finalize_connectedgraph_output!(
     # Assign to the output Ref for λ
     λ[] = λ₀[1]
 
-    return vˡ, λ[], vʳ
+    return (vˡ, λ[], vʳ)
 end

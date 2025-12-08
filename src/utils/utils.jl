@@ -4,15 +4,13 @@
 
 Map the non-zero values of a sparse matrix `A` with the function `f`.
 """
-function mapnz(f, A::SparseMatrixCSC)
+function mapnz(f, A::T)::T where {T<:SparseMatrixCSC}
     B = copy(A)
     map!(f, B.nzval, A.nzval)
     return B
 end
-function mapnz(f, A::AbstractArray)
-    B = copy(A)
-    map!(f, B.data, A.data)
-    return B
+function mapnz(f, A::T)::T where {T<:ReadOnlyArray{<:Any,<:SparseMatrixCSC}}
+    readonlyarray(mapnz(f, parent(A)))
 end
 
 _prepare_qualities(A::AbstractMatrix) = _no_nan_f64.(_unwrap_raster(A))
@@ -51,9 +49,9 @@ _maybe_set_diagonal!(ti::TargetInit, proximities) =
     _maybe_set_diagonal!(ti, proximities, diagvalue(ti))
 _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Nothing) = proximities
 function _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Number)
-    proximities = ti.workspace .= proximities
+    proximities = workspace(ti) .= proximities
     proximities[targetnode(ti)] = diagvalue
-    return readonlyarray(proximities)
+    return proximities
 end
 # function _maybe_set_diagonal!(proximitymatrix, diagvalue::Number, targetnodes::AbstractVector)
 # , diagvalue(ti), targetnode(ti).node
@@ -85,17 +83,19 @@ function _reshape!(A::Array, size::Tuple{Vararg{Int}})
     end
 end
 
-_allocate_workspaces!(x, problem::ConScapeProblem, graph::ConnectedGraph) =
-    _allocate_workspaces!(x, problem, nsources(graph))
-_allocate_workspaces!(x::Nothing, problem::ConScapeProblem, length::Int) =
-    Workspaces(length, nworkspaces(problem) + 20)
+_allocate_workspaces!(workspaces, problem::ConScapeProblem, graph::ConnectedGraph) =
+    _allocate_workspaces!(workspaces, problem, nsources(graph))
+_allocate_workspaces!(workspaces::Nothing, problem::ConScapeProblem, length::Int) =
+    Workspaces(length, 30)
 _allocate_workspaces!(workspaces::Workspaces, ::ConScapeProblem, length::Int) =
     free!(resize!(workspaces, length))
 
-_maybe_new_outputs(level::GridGraphLevel, mes, ggi::GridGraphInit) =
-    mes === measures(ggi) ? outputs(ggi) : allocate_output(level, mes, gridgraph(ggi), connectedgraphs(ggi))
-_maybe_new_outputs(level::Level, mes, cgi::Union{ConnectedGraphInit,TargetInit}) =
-    mes === measures(cgi) ? outputs(cgi) : allocate_output(level, mes, gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
+_allocate_mworkspaces!(ws, problem::ConScapeProblem, graph::ConnectedGraph) =
+    _allocate_mworkspaces!(ws, problem, connectedgraph_size(graph))
+_allocate_mworkspaces!(::Nothing, problem::ConScapeProblem, size::Tuple) =
+    Workspaces(size, num_matrix_workspaces(problem))
+_allocate_mworkspaces!(mworkspaces::Workspaces, ::ConScapeProblem, size::Tuple) =
+    free!(resize!(mworkspaces, size))
 
 # Get layers from a RasterStack or return nothing
 _get_sourcequality(rast::RasterStack) = _keys_or_nothing(rast, (:sourcequality, :quality))
@@ -125,9 +125,9 @@ function foreachnz(f, S)
 end
 
 # Return a RasterStack if all outputs are Raster
-_maybe_rasterstack(ggi) = _maybe_rasterstack(measures(ggi), outputs(ggi), ggi)
-function _maybe_rasterstack(measures, outputs, ggi)
-    out = _maybe_raster(measures, outputs, ggi)
+_maybe_rasterstack(ggi) = _maybe_rasterstack(measures_outputs(ggi), ggi)
+function _maybe_rasterstack(measures_outputs, ggi)
+    out = _maybe_raster(measures_outputs, ggi)
     if all(map(o -> o isa Raster, out))
         return RasterStack(out)
     else
@@ -137,11 +137,10 @@ end
 
 # Return a Raster where possible
 function _maybe_raster(
-    measures::Union{MeasureTuple,MeasureNamedTuple}, 
-    outputs::Union{Tuple,NamedTuple}, 
+    measures_outputs::Union{Tuple,NamedTuple}, 
     g::Initialisation
 )
-    map(measures, outputs) do measure, output
+    map(measures_outputs) do (; measure, output)
         _maybe_raster(returntrait(measure), output, dims(g); name=Symbol(measure))
     end
 end
@@ -160,4 +159,90 @@ _issquare(A::AbstractMatrix) = size(A, 1) == size(A, 2)
 function _issquare(A::Union{TargetInit,ConnectedGraphInit}) 
     (a, b) = connectedgraph_size(A) 
     return a == b
+end
+
+function _split_by_level(cgi::ConnectedGraphInit)
+    tlevel, cglevel = _split_by_level(measures_outputs(cgi))
+
+    return setmeasures(cgi, tlevel), setmeasures(cgi, cglevel)
+end
+function _split_by_level(mos::NamedTuple{names}) where names
+    # We need to wrap and unwrap `names` in `Val` so they 
+    # stay in the type domain and dont lose type stability
+    vnames = map(n -> Val{n}(), names)
+    key_mo_tuple = map(Pair, vnames, values(mos))
+    tkeys, cgkeys = reduce(key_mo_tuple; init=((), ())) do (t, cg), (k, v)  
+        if computelevel(v.measure) isa TargetLevel
+            ((t..., k), cg) # Add key to target keys 
+        else
+            (t, (cg..., k)) # Add key to connected graph keys
+        end
+    end
+
+    return mos[map(_unwrap, tkeys)], mos[map(_unwrap, cgkeys)]
+end
+
+_unwrap(::Val{X}) where X = X
+
+const MeasureOutputNamedTuple = NamedTuple{<:Any,<:Tuple{Vararg{MeasureOutput}}} 
+
+# Update measures in and object.
+# This lets us specify different measures after defining a problem.
+setmeasures(p::ConScapeProblem, m::Measure) =
+    setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
+function setmeasures(p::ConScapeProblem, measures::Union{Tuple,NamedTuple})
+    ConstructionBase.setproperties(p, (; measures))
+end
+function setmeasures(ggi::GridGraphInit, m::NamedTuple{<:Any,Tuple{Vararg{MeasureOutput}}};
+    finallevel=defaultfinallevel(ggi)
+)
+    problem = setmeasures(ConScape.problem(ggi), m)
+    return ConstructionBase.setproperties(ggi, (; problem, outputs))
+end
+function setmeasures(ggi::GridGraphInit, m::MeasureNamedTuple;
+    finallevel=defaultfinallevel(ggi)
+)
+    problem = setmeasures(ConScape.problem(ggi), m)
+    outputs = map(measures(problem)) do m
+        allocate_gridgraph_output(finallevel, m, ggi)
+    end
+    return ConstructionBase.setproperties(ggi, (; problem, outputs))
+end
+function setmeasures(cgi::ConnectedGraphInit, m::MeasureNamedTuple;
+    finallevel=defaultfinallevel(cgi)
+)
+    problem = setmeasures(ConScape.problem(cgi), m)
+    outputs = map(measures(problem)) do m
+        allocate_connectedgraph_output(finallevel, m, cgi)
+    end
+    return ConnectedGraphInit(
+        problem,
+        gridgraph(cgi),
+        connectedgraph(cgi),
+        outputs,
+        workspaces(cgi),
+        mworkspaces(cgi),
+        storage(cgi),
+        precalculation(cgi),
+        connectedgraphid(cgi),
+    )
+end
+function setmeasures(cgi::ConnectedGraphInit, mos::MeasureOutputNamedTuple;
+    finallevel=defaultfinallevel(cgi)
+)
+    return ConnectedGraphInit(
+        problem(cgi),
+        gridgraph(cgi),
+        connectedgraph(cgi),
+        mos,
+        workspaces(cgi),
+        mworkspaces(cgi),
+        storage(cgi),
+        precalculation(cgi),
+        connectedgraphid(cgi),
+    )
+end
+function setmeasures(ti::TargetInit, m; finallevel=defaultfinallevel(ti))
+    connectedgraphinit = setmeasures(connectedgraphinit(ti), m; finallevel)
+    return TargetInit(connectedgraphinit, target(ti))
 end

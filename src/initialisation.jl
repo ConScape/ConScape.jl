@@ -78,13 +78,9 @@ grid size when not needed.
     │
     │   Precalculation:
     │   • Manages a cache for reusable computation results via `get_or_compute_target!`.
-    │   • Holds any intermediate storage needed to link columns (such as sparse matrices).
     │
     │   Output:
     │   • Computes the final numerical result for each requested measure.
-    │   • If one measure's output is an intermediate step for another
-    │     the cached result is reused, avoiding redundant calculations.
-
 """
 abstract type Initialisation end
 
@@ -96,7 +92,8 @@ movement(i::Initialisation) = movement(problem(i))
 costfunction(i::Initialisation) = costfunction(problem(i))
 likelihoodfunction(i::Initialisation) = likelihoodfunction(problem(i))
 solver(i::Initialisation) = solver(problem(i))
-measures(i::Initialisation) = measures(problem(i))
+measures(i::Initialisation) = map(mol -> mol.measure, measures_outputs(i))
+outputs(i::Initialisation) = map(mol -> mol.output, measures_outputs(i))
 proximity_measure(i::Initialisation) = proximity_measure(problem(i))
 distance_transformation(i::Initialisation) = distance_transformation(problem(i))
 diagvalue(i::Initialisation) = diagvalue(problem(i))
@@ -151,24 +148,31 @@ ec = solve(ExpectedCost(), ggi)
 ec, ch = solve((ExpectedCost(), ConnectedHabitat()), ggi)
 ```
 """
-struct GridGraphInit{P<:ConScapeProblem,G<:GridGraph,CG<:ConnectedGraph,W<:AbstractVector,S<:Dict,O} <: Initialisation
+struct GridGraphInit{
+    P<:ConScapeProblem,G<:GridGraph,CG<:ConnectedGraph,S<:Dict,O
+} <: Initialisation
     problem::P
     gridgraph::G
     connectedgraphs::Vector{CG}
-    workspaces::Workspaces{W}
+    workspaces::Workspaces{Vector{Float64}}
+    mworkspaces::Workspaces{Matrix{Float64}}
     storage::S
     outputs::O
 end
 function GridGraphInit(problem::ConScapeProblem, rast::RasterStack; 
     workspaces=nothing,
-    outputlevel=GridGraphLevel(),
+    mworkspaces=nothing,
+    finallevel=GridGraphLevel(),
     kw...
 )
-    return GridGraphInit(problem, GridGraph(problem, rast; kw...); workspaces, outputlevel)
+    return GridGraphInit(problem, GridGraph(problem, rast; kw...); 
+        workspaces, mworkspaces, finallevel
+    )
 end
 function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph;
     workspaces=nothing,
-    outputlevel=GridGraphLevel(),
+    mworkspaces=nothing,
+    finallevel=GridGraphLevel(),
 )
     _check_inputs(problem, gridgraph)
     connectedgraphs = split_connected_graphs(gridgraph;
@@ -180,14 +184,23 @@ function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph;
     else
         Workspaces(0, 0)
     end
+    mworkspaces = if length(connectedgraphs) > 0
+        _allocate_mworkspaces!(mworkspaces, problem, first(connectedgraphs))
+    else
+        Workspaces(0, 0)
+    end
     storage = _connectedgraph_storage(movement(problem), workspaces)
     # Only allocate outputs if requested at the grid graph level (all subgraphs)
     # Otherwise ConnectedGraphInit will do this further down.
-    outputs = if outputlevel isa GridGraphLevel
-        allocate_output(outputlevel, measures(problem), problem, gridgraph, connectedgraphs)
+    outputs = if finallevel isa GridGraphLevel
+        allocate_gridgraph_output(
+            measures(problem), problem, gridgraph, connectedgraphs
+        )
     end
     # Now create a GridGraphInit with outputs
-    return GridGraphInit(problem, gridgraph, connectedgraphs, workspaces, storage, outputs)
+    return GridGraphInit(
+        problem, gridgraph, connectedgraphs, workspaces, mworkspaces, storage, outputs
+    )
 end
 
 # Field getters
@@ -195,8 +208,9 @@ problem(ggi::GridGraphInit) = ggi.problem
 gridgraph(ggi::GridGraphInit) = ggi.gridgraph
 connectedgraphs(ggi::GridGraphInit) = ggi.connectedgraphs
 workspaces(ggi::GridGraphInit) = ggi.workspaces
-outputs(ggi::GridGraphInit) = ggi.outputs
+mworkspaces(ggi::GridGraphInit) = ggi.mworkspaces
 storage(ggi::GridGraphInit) = ggi.storage
+measures_outputs(ggi::GridGraphInit) = ggi.outputs
 
 # Methods that forward to the ConnectedGraph
 nconnectedgraphs(ggi::GridGraphInit) = length(connectedgraphs(ggi))
@@ -258,7 +272,6 @@ struct ConnectedGraphInit{
     GG<:GridGraph,
     CG<:ConnectedGraph,
     O<:Union{Nothing,NamedTuple,Tuple},
-    W<:AbstractArray,
     S<:Dict,
     Pr
 } <: Initialisation
@@ -266,7 +279,8 @@ struct ConnectedGraphInit{
     gridgraph::GG
     connectedgraph::CG
     outputs::O
-    workspaces::Workspaces{W}
+    workspaces::Workspaces{Vector{Float64}}
+    mworkspaces::Workspaces{Matrix{Float64}}
     storage::S
     precalculation::Pr
     connectedgraphid::Int
@@ -279,34 +293,37 @@ struct ConnectedGraphInit{
         gridgraph::GG,
         connectedgraph::CG,
         outputs::O,
-        workspaces::Workspaces{W},
+        workspaces::Workspaces{Vector{Float64}},
+        mworkspaces::Workspaces{Matrix{Float64}},
         storage::S,
         precalculation::Pr,
         id::Int,
-    ) where {P<:ConScapeProblem{MM},GG,CG,O,W,S,Pr} where MM
+    ) where {P<:ConScapeProblem{MM},GG,CG,O,S,Pr} where MM
         @assert length(workspaces) == nsources(connectedgraph)
         empty!(storage)
         free!(workspaces)
-        new{MM,P,GG,CG,O,W,S,Pr}(
-            problem, gridgraph, connectedgraph, outputs, workspaces, storage, precalculation, id
+        new{MM,P,GG,CG,O,S,Pr}(
+            problem, gridgraph, connectedgraph, outputs, workspaces, mworkspaces, storage, precalculation, id
         )
     end
 end
 function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int;
-    outputlevel=ConnectedGraphLevel(),
+    finallevel=ConnectedGraphLevel(),
     workspaces=workspaces(ggi),
+    mworkspaces=mworkspaces(ggi),
     storage=storage(ggi),
     kw...
 )
     connectedgraph = connectedgraphs(ggi)[connectedgraphid]
     _check_inputs(ggi, connectedgraph)
     workspaces = _allocate_workspaces!(workspaces, problem(ggi), connectedgraph)
+    mworkspaces = _allocate_mworkspaces!(mworkspaces, problem(ggi), connectedgraph)
     if isnothing(storage)
         storage = _connectedgraph_storage(movement(ggi), workspaces)
     end
     sparse_precalc = sparse_precalculation(problem(ggi), connectedgraph)
-    outputs = allocate_output(
-        outputlevel, problem(ggi), gridgraph(ggi), connectedgraph, sparse_precalc
+    outputs = allocate_connectedgraph_output(
+        finallevel, problem(ggi), gridgraph(ggi), connectedgraph, sparse_precalc
     )
 
     # Partially initialise so we can use this in dense precalculation
@@ -316,6 +333,7 @@ function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int;
         connectedgraph,
         outputs,
         workspaces,
+        mworkspaces,
         storage,
         sparse_precalc,
         connectedgraphid,
@@ -331,6 +349,7 @@ function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int;
         connectedgraph,
         outputs,
         workspaces,
+        mworkspaces,
         storage,
         precalculation,
         connectedgraphid,
@@ -342,7 +361,8 @@ gridgraph(sgi::ConnectedGraphInit) = getfield(sgi, :gridgraph)
 connectedgraph(sgi::ConnectedGraphInit) = getfield(sgi, :connectedgraph)
 problem(sgi::ConnectedGraphInit) = getfield(sgi, :problem)
 workspaces(sgi::ConnectedGraphInit) = getfield(sgi, :workspaces)
-outputs(sgi::ConnectedGraphInit) = getfield(sgi, :outputs)
+mworkspaces(sgi::ConnectedGraphInit) = getfield(sgi, :mworkspaces)
+measures_outputs(sgi::ConnectedGraphInit) = getfield(sgi, :outputs)
 storage(sgi::ConnectedGraphInit) = getfield(sgi, :storage)
 precalculation(sgi::ConnectedGraphInit) = getfield(sgi, :precalculation)
 connectedgraphid(sgi::ConnectedGraphInit) = getfield(sgi, :connectedgraphid)
@@ -367,8 +387,10 @@ _connectedgraph_storage(::RandomWalk, ::Workspaces{W}) where W<:AbstractArray{T}
 
 # Base.getproperty/propertynames let us use the `cgi.somevariable` 
 # syntax in `finalize_connectedgraph_output` and similar methods
-@inline Base.getproperty(cgi::ConnectedGraphInit, x::Symbol) = getproperty(precalculation(cgi), x)
-@inline Base.propertynames(cgi::ConnectedGraphInit) = propertynames(precalculation(cgi))
+Base.@assume_effects :foldable @inline Base.getproperty(cgi::ConnectedGraphInit, x::Symbol) = 
+    getproperty(precalculation(cgi), x)
+Base.@assume_effects :foldable @inline Base.propertynames(cgi::ConnectedGraphInit) = 
+    propertynames(precalculation(cgi))
 
 """
     TargetInit
@@ -423,12 +445,11 @@ ec = solve(ExpectedCost(), ti)
 ec, ch = solve((ExpectedCost(), ConnectedHabitat()), ti)
 ```
 """
-struct TargetInit{MovMode,CGI<:ConnectedGraphInit{MovMode},I} <: Initialisation
+struct TargetInit{MovMode,CGI<:ConnectedGraphInit{MovMode}} <: Initialisation
     connectedgraphinit::CGI
     target::TargetID
-    intermediates::I
-    function TargetInit{MovMode,CGI,I}(cgi, target, intermediates) where {MovMode,CGI,I}
-        new{MovMode,CGI,I}(cgi, target, intermediates)
+    function TargetInit{MovMode,CGI}(cgi, target) where {MovMode,CGI}
+        new{MovMode,CGI}(cgi, target)
     end
 end
 # Constructor enforces:
@@ -436,8 +457,8 @@ end
 # 2. storage Dict is empty
 # 3. workspaces are freed for use
 function TargetInit(
-    cgi::CGI, target::TargetID, intermediates::I
-) where {CGI<:ConnectedGraphInit{MM},I} where MM
+    cgi::CGI, target::TargetID
+) where {CGI<:ConnectedGraphInit{MM}} where MM
     @assert (
         length(workspaces(cgi)) ==
         nsources(connectedgraph(cgi)) ==
@@ -445,7 +466,7 @@ function TargetInit(
     )
     free!(workspaces(cgi))
     empty!(storage(cgi))
-    TargetInit{MM,CGI,I}(cgi, target, intermediates)
+    TargetInit{MM,CGI}(cgi, target)
 end
 function TargetInit(cgi::ConnectedGraphInit, target::CartesianIndex; kw...)
     i = findfirst(t -> t.spatialidx == target, targetids(cgi))
@@ -454,15 +475,9 @@ function TargetInit(cgi::ConnectedGraphInit, target::CartesianIndex; kw...)
 end
 TargetInit(cgi::ConnectedGraphInit, target::Int; kw...) =
     TargetInit(cgi, targetids(cgi)[target]; kw...)
-function TargetInit(cgi::ConnectedGraphInit, target::TargetID;
-    intermediates=map(_ -> nothing, measures(cgi)),
-)
-    TargetInit(cgi, target, intermediates)
-end
 
 # Field getter functions
 connectedgraphinit(ti::TargetInit) = getfield(ti, :connectedgraphinit)
-intermediates(ti::TargetInit) = getfield(ti, :intermediates)
 target(ti::TargetInit) = getfield(ti, :target)
 
 # Getter functions that forward to the target id
@@ -471,12 +486,13 @@ targetspatialidx(ti) = target(ti).spatialidx
 targetconnectedgraphidx(ti) = target(ti).connectedgraphidx
 
 # Getter functions that forward to the ConnectedGraphInit
-outputs(ti::TargetInit) = outputs(connectedgraphinit(ti))
+measures_outputs(ti::TargetInit) = measures_outputs(connectedgraphinit(ti))
 gridgraph(ti::TargetInit) = gridgraph(connectedgraphinit(ti))
 connectedgraph(ti::TargetInit) = connectedgraph(connectedgraphinit(ti))
 problem(ti::TargetInit) = problem(connectedgraphinit(ti))
 storage(ti::TargetInit) = storage(connectedgraphinit(ti))
 workspaces(ti::TargetInit) = workspaces(connectedgraphinit(ti))
+mworkspaces(ti::TargetInit) = mworkspaces(connectedgraphinit(ti))
 
 # Getter functions that forward to the ConnectedGraph
 nsources(sgi::TargetInit) = nsources(connectedgraph(sgi))
@@ -492,21 +508,21 @@ precalculation(ti::TargetInit) = precalculation(connectedgraphinit(ti))
 
 # Workspace taker
 workspace(ti::Initialisation) = take!(workspaces(ti))
+mworkspace(ti::Initialisation) = take!(mworkspaces(ti))
 
 # Reuse this DimensionalData method
 # TODO: reolve/combine with setmeasures
 function Rasters.rebuild(ti::TargetInit;
     connectedgraphinit=connectedgraphinit(ti),
     target=target(ti),
-    intermediates=intermediates(ti),
 )
-    _rebuild(ti, connectedgraphinit, target, intermediates)
+    _rebuild(ti, connectedgraphinit, target)
 end
 
 @noinline function _rebuild(
-    ti::TargetInit, connectedgraphinit::CGI, target::TargetID, intermediates::I,
-) where {CGI<:ConnectedGraphInit{MM},I} where {MM}
-    TargetInit{MM,CGI,I}(connectedgraphinit, target, intermediates)
+    ti::TargetInit, connectedgraphinit::CGI, target::TargetID
+) where {CGI<:ConnectedGraphInit{MM}} where {MM}
+    TargetInit{MM,CGI}(connectedgraphinit, target)
 end
 
 # All TargetInit allow retreiving properties with `getproperty`
@@ -514,23 +530,18 @@ end
 # the `TargetInit` storage object.
 @inline function Base.getproperty(ti::TargetInit, x::Symbol)
     # Handle all standard properties
-    if x === :workspace
-        return workspace(ti)
-    elseif x === :qᵗ
+    if x === :qᵗ
         # For TargetInit we alter target quality to be just the current target
-        return targetquality(ti)[targetconnectedgraphidx(ti)]
-    elseif hasproperty(intermediates(ti), x)
-        return getproperty(intermediates(ti), x)
+        return targetquality(ti)[targetconnectedgraphidx(ti)]::Float64
     elseif hasproperty(connectedgraphinit(ti), x)
         return getproperty(connectedgraphinit(ti), x)
+    else
+        # Defer to `get_or_compute_target` for all other properties
+        # We wrap the output in a `ReadOnlyArray` to prevent bugs.
+        return get_or_compute_target!(ti, x)
     end
-    # Defer to `get_or_compute_target` for all other properties
-    # We wrap the output in a `ReadOnlyArray` to prevent bugs.
-    return get_or_compute_target!(ti, x)
 end
 # TODO: complete this for all movement modes ?
-# @inline Base.propertynames(ti::TargetInit) =
-#     (:workspace, :propertynames(intermediates(ti))..., propertynames(connectedgraphinit(ti))...)
 
 
 # `CommonSolve.init`
@@ -539,50 +550,65 @@ end
 # Spatial object may be a RasterStack or a GridGraph, or another Initialisation object
 # from a higher level.
 
-init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation, args...; kw...) =
+function init(
+    m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation, args...; kw...
+)
     init(init(m, i), args...; kw...)
-init(movement::MovementMode, x::Union{RasterStack,GridGraph}, args...; kw...) =
+end
+function init(movement::MovementMode, x::Union{RasterStack,GridGraph}, args...; kw...)
     init(ConScapeProblem(; movement, kw...), x, args...)
-init(measure::Union{Measure,MeasureTuple,MeasureNamedTuple},
+end
+function init(
+    measure::Union{Measure,MeasureTuple,MeasureNamedTuple},
     movement::MovementMode,
     x::Union{RasterStack,GridGraph},
     args...;
     kw...
-) = init(ConScapeProblem(measure; movement, kw...), x, args...)
-init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}; kw...) =
+)
+    init(ConScapeProblem(measure; movement, kw...), x, args...)
+end
+function init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}; kw...)
     GridGraphInit(problem, x; kw...)
-init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}, connectedgraph::Int; outputlevel=ConnectedGraphLevel(), kw...) =
-    init(GridGraphInit(problem, x; outputlevel, kw...), connectedgraph; outputlevel)
+end
+function init(
+    problem::ConScapeProblem, x::Union{RasterStack,GridGraph}, connectedgraph::Int; 
+    finallevel=ConnectedGraphLevel(), kw...
+)
+    init(GridGraphInit(problem, x; finallevel, kw...), connectedgraph; finallevel)
+end
 # We don't want to allocate outputs if we work at the target level
-init(problem::ConScapeProblem, x::Union{RasterStack,GridGraph}, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) =
-    init(GridGraphInit(problem, x; outputs=nothing, kw...), connectedgraph, target; outputlevel=TargetLevel())
-init(ggi::GridGraphInit, connectedgraph::Int; kw...) = ConnectedGraphInit(ggi, connectedgraph; kw...)
-init(ggi::GridGraphInit, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) =
+function init(
+    problem::ConScapeProblem,
+    x::Union{RasterStack,GridGraph},
+    connectedgraph::Int,
+    target::Union{Int,CartesianIndex,TargetID};
+    kw...
+)
+    ggi = GridGraphInit(problem, x; outputs=nothing, kw...)
+    init(ggi, connectedgraph, target; finallevel=TargetLevel())
+end
+init(ggi::GridGraphInit, connectedgraph::Int; kw...) = 
+    ConnectedGraphInit(ggi, connectedgraph; kw...)
+function init(
+    ggi::GridGraphInit, connectedgraph::Int, target::Union{Int,CartesianIndex,TargetID}; 
+    kw...
+)
     init(ConnectedGraphInit(ggi, connectedgraph; kw...), target)
-    init(gi::ConnectedGraphInit, target::Union{Int,CartesianIndex,TargetID}; kw...) = TargetInit(gi, target; kw...)
-init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::ConScapeProblem, args...; kw...) =
+end
+function init(
+    gi::ConnectedGraphInit, target::Union{Int,CartesianIndex,TargetID}; kw...
+)
+    TargetInit(gi, target; kw...)
+end
+function init(
+    m::Union{Measure,MeasureTuple,MeasureNamedTuple}, p::ConScapeProblem, args...; 
+    kw...
+)
     init(setmeasures(p, m), args...; kw...)
-init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation; outputlevel=defaultoutputlevel(i)) =
-    setmeasures(i, m; outputlevel)
-
-# Update measures in and object. 
-# This lets us specify different measures after defining a problem.
-setmeasures(p::ConScapeProblem, m::Measure) = setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
-setmeasures(p::ConScapeProblem, measures::Union{MeasureTuple,MeasureNamedTuple}) =
-    ConstructionBase.setproperties(p, (; measures))
-function setmeasures(i::Union{GridGraphInit,ConnectedGraphInit}, m; outputlevel)
-    problem = setmeasures(ConScape.problem(i), m)
-    outputs = map(measures(problem)) do m
-        allocate_output(outputlevel, m, i)
-    end
-    return ConstructionBase.setproperties(i, (; problem, outputs))
 end
-function setmeasures(ti::TargetInit, m; outputlevel)
-    connectedgraphinit = setmeasures(connectedgraphinit(ti), m; outputlevel)
-    return ConstructionBase.setproperties(i, (; connectedgraphinit))
+function init(
+    m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation; 
+    finallevel=defaultfinallevel(i)
+)
+    setmeasures(i, m; finallevel)
 end
-
-# Define the default output Level for that initialisation object
-defaultoutputlevel(::GridGraphInit) = GridGraphLevel()
-defaultoutputlevel(::ConnectedGraphInit) = ConnectedGraphLevel()
-defaultoutputlevel(::TargetInit) = TargetLevel()

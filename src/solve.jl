@@ -1,11 +1,11 @@
 
 # solve methods
 
-# These allocate an Initialisation objection then call `solve!`
+# These all simply allocate an Initialisation objection then call `solve!`
 
 solve(p::ConScapeProblem, x::Union{GridGraph,RasterStack}, args...; kw...) = 
     solve!(init(p, x, args...; kw...))
-# TODO put measures into the ConScapeProblem before solving
+# TODO: put measures into the ConScapeProblem before solving ?
 solve(m::Union{MeasureTuple,MeasureNamedTuple}, p::ConScapeProblem, input::Union{GridGraph,RasterStack}, args...; kw...) = 
     solve!(init(m, p, input, args...; kw...))
 solve(m::Measure, p::ConScapeProblem, input::Union{GridGraph,RasterStack}, args...; kw...) = 
@@ -28,77 +28,91 @@ solve!(i::Initialisation, m::Union{MeasureTuple,MeasureNamedTuple}, args...; kw.
     solve!(init(m, i, args...; kw...))
 solve!(i::Initialisation, m::Measure, args...; kw...) =
     only(values(solve!(init(m, i, args...; kw...))))
-solve!(ggi::GridGraphInit; kw...) = _solve_all_subgraphs!(ggi; kw...)
+solve!(ggi::GridGraphInit; kw...) = _solve_gridgraph!(ggi; kw...)
 solve!(ggi::GridGraphInit, i::Int; kw...) = solve!(init(ggi, i; kw...))
 solve!(ggi::GridGraphInit, i::Int, target::Union{Int,CartesianIndex,TargetID}; kw...) =
     solve!(init(ggi, i, target; kw...))
-solve!(cgi::ConnectedGraphInit; kw...) = _solve_all_targets!(cgi; kw...)
+solve!(cgi::ConnectedGraphInit; kw...) = _solve_connectedgraph!(cgi; kw...)
 solve!(gi::ConnectedGraphInit, measures::Union{MeasureTuple,MeasureNamedTuple}, i::Int; kw...) =
     solve!(init(measures, gi, targetids(gi)[i]::typeof(TargetID)); kw...)
-solve!(ti::TargetInit, measures::MeasureNamedTuple; outputlevel=TargetLevel(), kw...) = 
-    solve!(init(measures, ti; kw...); outputlevel)
-solve!(ti::TargetInit; outputlevel=TargetLevel()) = _solve_single_target!(ti, outputlevel)
+solve!(ti::TargetInit, measures::MeasureNamedTuple; finallevel=TargetLevel(), kw...) = 
+    solve!(init(measures, ti; kw...); finallevel)
+solve!(ti::TargetInit; finallevel=TargetLevel()) = _solve_target!(ti; finallevel)
 
-# Logic separated out from solve! dispatch
 
-function _solve_all_subgraphs!(ggi; kw...)
+# Actual solve Logic separated out from solve! dispatch
+
+# Solve the whole grid into one output, 
+# possibly from multiple connected subgraphs
+function _solve_gridgraph!(ggi; kw...)
     # Loop over subgraphs (there may be only one)
     for i in eachindex(connectedgraphs(ggi))
-        sgi = init(ggi, i)
         # Intitalise sparse matrices and precalculate e.g. LU factorizations
-        solve!(sgi)
+        cgi = init(ggi, i)
+        _solve_connectedgraph!(cgi)
         # Copy solved connected subgraphs to grid level outputs
-        transfer_to_gridgraph_output!(outputs(ggi), sgi)
+        transfer_to_gridgraph_output!(outputs(ggi), cgi)
     end
     return _maybe_rasterstack(ggi)
 end
 
-function _solve_all_targets!(cgi; kw...)
-    # In case some measures need intermediate storage 
-    # oar precalculations for all targets
-    intermediates = map(measures(cgi)) do measure
-        allocate_intermediate(measure, cgi)
+# Solve a single connected graph, for all measures
+function _solve_connectedgraph!(cgi; finallevel=ConnectedGraphLevel(), kw...)
+    target_cgi, cg_cgi = _split_by_level(cgi)
+
+    # ConnectedGraphLevel Measures
+    # Solve the whole graph in one function
+    map(measures_outputs(cg_cgi)) do (; measure, output)
+        compute_connectedgraph!(output, measure, cg_cgi)
     end
+
+    # TargetLevel Measures
     # Solve each target separately
-    for target_id in targetids(cgi)
+    for target_id in targetids(target_cgi)
         # Precalculate for this target and graph measures
-        targetinit = init(cgi, target_id; intermediates)
-        solve!(targetinit)
+        targetinit = init(target_cgi, target_id)
+        _solve_target!(targetinit; finallevel)
     end
     # Finalize output, where not all computations are target-by-target
-    finalize_connectedgraph_output!(cgi, intermediates)
+    finalize_connectedgraph_output!(target_cgi)
+
     return _maybe_rasterstack(cgi)
 end
 
-function _solve_single_target!(ti, outputlevel)
-    # Allocate target vectors rather than matrices
-    # TODO move this to the constructor?
-    outputs1 = if isnothing(outputs(ti))
-        allocate_output(outputlevel, measures(ti), ti)
-    else
-        outputs(ti)
-    end
-    # Store outputs
-    results = map(outputs1, measures(ti), intermediates(ti)) do (output, level)::Pair{<:Any,<:Level}, measure, intermediate
-        ti_m = TargetInit(connectedgraphinit(ti), target(ti), intermediate)
+# Solve a single target pixel, for all measures computed at TargetLevel
+function _solve_target!(ti; finallevel)
+    # Allocate target size outputs only?
+    # This is only used when a single target is being solved.
+    # outputs = if isnothing(ConScape.outputs(ti))
+    #     allocate_output(finallevel, measures(ti), ti)
+    # else
+    #     ConScape.outputs(ti)
+    # end
+
+    # Compute for each measure and store outputs
+    map(measures_outputs(ti)) do (; measure, output)
+        ti_m = TargetInit(connectedgraphinit(ti), target(ti))
         # Dont compute the same measure multiple times
-        st = storage(ti)
-        x = Symbol(measure)
-        if haskey(st, x)
-            update_connectedgraph_output!(output, level, measure, ti_m, st[x])
+        store = storage(ti)
+        key = Symbol(measure)
+        if haskey(store, key)
+            # We already have this variable, 
+            update_connectedgraph_output!(output, finallevel, measure, ti_m, st[key])
         else
-            val = compute_target!(output, level, measure, ti_m)
+            result = compute_target!(output, finallevel, measure, ti_m)
             # Store simple array outputs
-            if val isa AbstractVector
-                st[x] = readonlyarray(val)
+            if result isa AbstractVector
+                store[key] = readonlyarray(result)
             end
         end
     end
-    # When just running one target we return Raster/RasterStack
-    if outputlevel isa TargetLevel
-        return _maybe_rasterstack(measures, outputs1, ti)
+
+    if finallevel isa TargetLevel
+        # When just running one target we may return Raster/RasterStack
+        return _maybe_rasterstack(measures, outputs, ti)
     else
-        return results
+        # Otherwise outputs as-is
+        return outputs
     end
 end
 

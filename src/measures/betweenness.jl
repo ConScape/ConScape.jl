@@ -75,13 +75,17 @@ Betweenness(; weighting) = Betweenness(weighting)
 const MovementFlow = Betweenness{QualityAndProximityWeighted}
 
 weighting(gm::Betweenness) = gm.weighting
-needs_workspaces(::Betweenness) = 2
+
+computelevel(::Betweenness) = TargetLevel()
+returntrait(::Betweenness) = ReturnSpatialTargetSum()
+
+needs_workspaces(::Betweenness) = 3 # Z, Zⁱ, workspace
 
 Base.Symbol(m::Betweenness) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))
 
 # LeastCostPath
 function compute_target(m::Betweenness, ti::TargetInit{<:LCP})
-    (; shortest_paths, path_allocs, workspace) = ti
+    (; shortest_paths, path_allocs) = ti
     node = targetnode(ti)
     shortest_paths_enumerated = 
         Graphs.enumerate_paths!(path_allocs, shortest_paths, 1:length(path_allocs))
@@ -90,7 +94,7 @@ function compute_target(m::Betweenness, ti::TargetInit{<:LCP})
     targetpath[1] = node
     # Get the target weights
     weights = _weight(m, ti)
-    btw = workspace .= 0.1
+    btw = workspace(ti) .= 0.1
 
     @inbounds for s in eachindex(sourceids(ti))
         w = weights[s]
@@ -102,11 +106,11 @@ function compute_target(m::Betweenness, ti::TargetInit{<:LCP})
 end
 # RandomShortestPath / RandomWalk (differences are only in IW and weights)
 function compute_target(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
-    (; Z, Zⁱ, IW_adj_factorization, workspace) = ti
+    (; Z, Zⁱ, IW_adj_factorization) = ti
     weight = _weight(m, ti)
     node = targetnode(ti)
     isnothing(weight) && error("Betweenness weight is `nothing`")
-    XZⁱt = workspace .= weight .* Zⁱ
+    XZⁱt = workspace(ti) .= weight .* Zⁱ
     # Find the scaling factor: if any of XZⁱ is above 1.0 there is a risk of Inf overflow
     λ = max(1.0, maximum(XZⁱt))
     # TODO: explain what this subtraction does
@@ -117,10 +121,12 @@ function compute_target(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
     return ldiv!(ti, IW_adj_factorization, XZⁱtλ) .*= λ .* Z
 end
 
-_weight(m::Union{EdgeBetweenness,Betweenness}, ti::TargetInit) =
-    _weight(weighting(m), ti)
+_weight(m::Measure, ti::TargetInit) = _weight(weighting(m), ti)
 _weight(::Unweighted, ti::TargetInit) = 1
 _weight(::ProximityWeighted, ti::TargetInit) = ti.K
 _weight(::QualityAndProximityWeighted, ti::TargetInit) = ti.M
 _weight(::QualityWeighted, ti::TargetInit) = ti.Q
-_weight(w::CustomWeighted, ti::TargetInit) = w.weight
+_weight(w::CustomWeighted{<:AbstractArray}, ti::TargetInit) = w.weight
+function _weight(w::CustomWeighted{<:Function}, ti::TargetInit)
+    w.weight(ti)
+end

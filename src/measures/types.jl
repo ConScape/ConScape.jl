@@ -34,14 +34,22 @@ Measures of path distribution, that return a scalar from `solve`.
 """
 abstract type PathDistributionMeasure <: Measure end
 
-returntrait(::PathDistributionMeasure) = ReturnScalarSum()
+"""
+    ProximityMeasure <: GraphMeasure
 
-# Workspace allocation traits 
-# TODO: make these accurate
-needs_workspaces(::Measure) = 2
-# Count how many workspaces are needed for a problem
-nworkspaces(p::AbstractProblem) =
-    isempty(measures(p)) ? 0 : mapreduce(needs_workspaces, +, measures(p))
+Abstract supertype for measures that can be used
+as proximities (TODO: explain what proximities are)
 
-# Trait aggregator
-hastrait(t, gms) = reduce(|, map(t, gms); init=false)
+They return a sparse array from `solve`.
+"""
+abstract type ProximityMeasure <: GraphMeasure end
+
+"""
+    DistanceMeasure <: ProximityMeasure
+
+Abstract supertype for measures that can be used as proximities,
+but first need conversion with a `distance_transformation`.
+
+They return a sparse array from `solve`.
+"""
+abstract type DistanceMeasure <: ProximityMeasure end

@@ -1,34 +1,65 @@
 @inline function get_or_compute_target!(ti::TargetInit, m::Measure)
-    st = storage(ti)
+    store = storage(ti)
+    # TODO: this loses const propagation type stability
     x = Symbol(m)
-    haskey(st, x) && return st[x]
+    haskey(store, x) && return store[x]
     val = compute_target(m, ti)
-    if returntrait(m) isa ReturnSpatial
-        st[x] = readonlyarray(val)
+
+    # For type stability only Vector{Float64} go in store
+    if val isa Vector{Float64}
+        store[x] = readonlyarray(val)
         return readonlyarray(val)
     else
         return val
     end
 end
 @inline function get_or_compute_target!(ti::TargetInit, x::Symbol)
-    st = storage(ti)
-    haskey(st, x) && return st[x]
+    store = storage(ti)
+    haskey(store, x) && return store[x]
 
     val = target_precalculation!(ti, x)
     # TODO: storing other types
-    if val isa Vector
-        st[x] = readonlyarray(val)
+    if val isa Vector{Float64}
+        store[x] = readonlyarray(val)
     end
-    return val
+
+    if val isa Array
+        return readonlyarray(val)
+    else
+        return val
+    end
 end
 
-# Most measures dont need to deal with `update_connectedgraph_output` and just use `compute`
+# Most measures dont need to deal with
+# `update_connectedgraph_output!` and just define `compute_target`
 function compute_target!(output, l::Level, m::Measure, ti::TargetInit)
     val = compute_target(m, ti)
     update_connectedgraph_output!(output, l, m, ti, val)
 
     return output
 end
+
+@generated Base.Symbol(m::Measure) = QuoteNode(nameof(m))
+
+num_matrix_workspaces(::Measure, ::MovementMode) = 0
+function num_matrix_workspaces(problem::ConScapeProblem)
+    mes = measures(problem)
+    mov = movement(problem)
+
+    max_workspaces =
+        mapreduce(m -> num_matrix_workspaces(m, mov), max, mes; init=0) +
+        anymeasure(needs_full_fundamentalmatrix, mes, mov) +
+        anymeasure(needs_full_fundamentalmatrix, mes, mov) +
+        anymeasure(needs_full_costdistancematrix, mes, mov) +
+        2 * anymeasure(needs_sensitivity_precursors, mes, mov)
+
+    return max_workspaces
+end
+
+# Define the default output Level for that initialisation object
+defaultfinallevel(::GridGraphInit) = GridGraphLevel()
+defaultfinallevel(::ConnectedGraphInit) = ConnectedGraphLevel()
+defaultfinallevel(::TargetInit) = TargetLevel()
 
 #-------------------------------------------------------------------------------------------
 # ConnectedGraph level measures

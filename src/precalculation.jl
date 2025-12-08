@@ -1,3 +1,9 @@
+
+const MSp = SparseMatrixCSC{Float64,Int64}
+const MDe = Matrix{Float64}
+const VDe = Vector{Float64}
+const RVDe = ReadOnlyArrays.ReadOnlyVector{Float64,Vector{Float64}}
+
 #################################################################################3
 # Connected graph level variable precalculation
 
@@ -5,19 +11,8 @@
 # `finalize_connectedgraph_output!` stage. Before then it will not be correct.
 # TODO: should it error to use these outside of finalize_connectedgraph_output! ?
 needs_full_fundamentalmatrix(::Measure, ::MovementMode) = false
-needs_full_fundamentalmatrix(::EdgeBetweenness, ::RSP) = true
-needs_full_fundamentalmatrix(::SensitivityAnalysis, ::RSP) = true
-needs_full_eigen(::SensitivityAnalysis, ::RSP) = true
-
 needs_full_fundamentalrowmatrix(::Measure, ::MovementMode) = false
-needs_full_fundamentalrowmatrix(::EdgeBetweenness, ::RSP) = true
-needs_full_fundamentalrowmatrix(::SensitivityAnalysis, ::RSP) = true
-
 needs_full_costdistancematrix(::Measure, ::MovementMode) = false
-needs_full_costdistancematrix(::SensitivityAnalysis, rsp::RSP) = 
-    proximity_measure(rsp) isa ExpectedCost
-
-needs_eigmax(m::SensitivityAnalysis, rsp::RSP) = metric(m) isa EigMax
 
 anymeasure(f, measures::NamedTuple, mov::MovementMode) = 
     anymeasure(f, values(measures), mov)
@@ -94,7 +89,6 @@ end
 # they are gigabyte each for a 600 * 600 matrix with all targets used.
 # 8 GB for 1000 * 1000 !
 # But when its unnavoidable, this is where it happens.
-# TODO: preallocate these from the WindowProblem level
 function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk}})
     # Generate a full size Z and Zrows where needed, 
     # by looping over targetids and triggering `compute_target` calling `ti.Z` and/or `ti.Zrows`.
@@ -105,24 +99,21 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
     function needs_full_matrix(args...)
         needs_full_fundamentalmatrix(args...) || 
         needs_full_fundamentalrowmatrix(args...) ||
-        needs_full_costdistancematrix(args...)
+        needs_full_costdistancematrix(args...) ||
+        needs_sensitivity_precursors(args...)
     end
 
     # If needed, allocated and precalculate some full size matrices
     if anymeasure(needs_full_matrix, mes, movement(cgi))
         # Allocate required matrices
         Z_full = if anymeasure(needs_full_fundamentalmatrix, mes, mov)
-            Matrix{Float64}(undef, connectedgraph_size(cgi))
+            mworkspace(cgi) 
         end
         Zrows_full = if anymeasure(needs_full_fundamentalrowmatrix, mes, mov)
-            if _issquare(cgi)
-                Z_full
-            else
-                Matrix{Float64}(undef, reverse(connectedgraph_size(cgi)))
-            end
+            _issquare(cgi) ? Z_full : transpose(mworkspace(cgi))
         end
         Y_full = if anymeasure(needs_full_costdistancematrix, mes, mov)
-            Matrix{Float64}(undef, connectedgraph_size(cgi))
+            mworkspace(cgi) 
         end
 
         # Precalculate required matrices column by column
@@ -144,28 +135,36 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
             end
         end
 
-        if anymeasure(needs_eigmax, mes, mov)
-            cgi_part_precalc = ConnectedGraphInit(
-                cgi.problem,
-                cgi.gridgraph,
-                cgi.connectedgraph,
-                cgi.outputs,
-                cgi.workspaces,
-                cgi.storage,
-                precalculation,
-                cgi.connectedgraphid,
-            )
-            solve(_get_eigmax(mes), cgi_part_precalc)
-        end
-
-
-        # Return only the required dense matrices in a NamedTuple
-        return merge(
+        precalculation = merge(
+            ConScape.precalculation(cgi),  
             isnothing(Z_full) ? (;) : (; Z_full), 
             isnothing(Zrows_full) ? (;) : (; Zrows_full),
             isnothing(Y_full) ? (;) : (; Y_full),
-            isnothing(eigmax) ? (;) : (; Y_full),
+            isnothing(Y_full) ? (;) : (; Y_full),
         )
+
+        if anymeasure(needs_eigmax, mes, mov)
+            cgi_part_precalc = ConnectedGraphInit(
+                problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), workspaces(cgi),
+                mworkspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
+            )
+            em = _get_eigmax(mes)::EigMax
+            solve!(cgi_part_precalc, em)
+            precalculation = (; precalculation..., EigMax)
+        end
+
+        if anymeasure(needs_sensitivity_precursors, mes, mov)
+            cgi_part_precalc = ConnectedGraphInit(
+                problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), workspaces(cgi), 
+                mworkspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
+            )
+            sensitivity_precursors = _compute_sensitivity_precursors(proximity_measure(cgi), cgi_part_precalc)
+            precalculation = (; precalculation..., sensitivity_precursors)
+        end
+
+        return precalculation
+
+        # Return only the required dense matrices in a NamedTuple
     else
         return (;)
     end
@@ -175,11 +174,24 @@ function dense_precalculation(::ConnectedGraphInit)
     (;)
 end
 
+function _get_eigmax(measures::NamedTuple)::EigMax
+    all_eigmax = map(_get_eigmax, values(measures))
+    return reduce(all_eigmax; init=nothing) do out, cur
+        if !(isnothing(out) || isnothing(cur))
+            out == cur || throw(ArgumenError("All EigMax must match exactly"))
+        end
+        isnothing(out) ? cur : out
+    end
+end
+_get_eigmax(m::EigMax) = m
+_get_eigmax(m::SensitivityAnalysis) = metric(m)
+
 # Variable generation for ConnectedGraphInit
 function _transitionprobability(L::SparseMatrixCSC)
-    source_sums = vec(sum(L, dims=2))
+    source_sums = readonlyarray(vec(sum(L, dims=2)))
     source_scaling = inv.(source_sums)
     P = Diagonal(source_scaling) * L
+
     return P, source_sums
 end
 # Connectedstochastic
@@ -333,23 +345,21 @@ end
 # Variable generation for TargetInit
 
 # Copy a column  from a precalculated full matrix
-_copyrow(A, ti) = readonlyarray(workspace(ti) .= A[targetconnectedgraphidx(ti), :])
-_copycol(A, ti) = readonlyarray(workspace(ti) .= A[:, targetconnectedgraphidx(ti)])
+_copyrow(A, ti) = readonlyarray(workspace(ti) .= view(A, targetconnectedgraphidx(ti), :))
+_copycol(A, ti) = readonlyarray(workspace(ti) .= view(A, :, targetconnectedgraphidx(ti)))
 
 function _proximitymatrixcol(ti::TargetInit{<:Union{RSP,RandomWalk}})
     pm = proximity_measure(ti)
     distances = get_or_compute_target!(ti, pm)
-    proximities = if pm isa DistanceMeasure
-        dt = distance_transformation(ti)
-        if !isnothing(dt)
-            workspace(ti) .= dt.(distances)
-        else
-            distances
-        end
+    proximities = parent(distances)
+    dt = distance_transformation(ti)
+    proximities = if pm isa DistanceMeasure && !isnothing(dt)
+        workspace(ti) .= dt.(distances)
     else
-        distances
+        workspace(ti) .= distances
     end
-    proximities = _maybe_set_diagonal!(ti, proximities)
+    _maybe_set_diagonal!(ti, proximities)
+
     return readonlyarray(proximities)
 end
 
@@ -393,7 +403,7 @@ function _costdistancematrixcol(ti)
 end
 
 function _landscapematrixcol(ti::TargetInit)
-    (; qˢ, K, qᵗ) = ti
+    (; qˢ, K::RVDe, qᵗ::Float64) = ti
     return readonlyarray(workspace(ti) .= qˢ .* K .* qᵗ)
 end
 

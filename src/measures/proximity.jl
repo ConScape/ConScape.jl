@@ -1,27 +1,10 @@
+
 # All ProximityMeasure are grouped here as they are relatively trivial
 
-"""
-    ProximityMeasure <: GraphMeasure
-
-Abstract supertype for measures that can be used
-as proximities (TODO: explain what proximities are)
-
-They return a sparse array from `solve`.
-"""
-abstract type ProximityMeasure <: GraphMeasure end
-
-# All ProximityMeasure return a SparseArray of single s/t values
+# All ProximityMeasure compute at target level, 
+# and return a SparseArray of single s/t values
+computelevel(::ProximityMeasure) = TargetLevel()
 returntrait(::ProximityMeasure) = ReturnAssignedSparse()
-
-"""
-    DistanceMeasure <: ProximityMeasure
-
-Abstract supertype for measures that can be used as proximities,
-but first need conversion with a `distance_transformation`.
-
-They return a sparse array from `solve`.
-"""
-abstract type DistanceMeasure <: ProximityMeasure end
 
 # TODO: docs
 struct Distance <: DistanceMeasure end
@@ -36,18 +19,18 @@ struct SurvivalProbability <: ProximityMeasure end
 function compute_target(::Distance, ti::TargetInit{<:Euclidean})
     _hypot(a::CartesianIndex, b::CartesianIndex) = _hypot(Tuple(a), Tuple(b))
     _hypot((a1, a2)::Tuple, (b1, b2)::Tuple) = hypot((b1 - a1), (b2 - a2))
-    return ti.workspace .= _hypot.(sourceids(ti), (targetspatialidx(ti),))
+
+    return workspace(ti) .= _hypot.(sourceids(ti), (targetspatialidx(ti),))
 end
 compute_target(::Distance, ti::TargetInit{<:LCP}) = readonlyarray(ti.shortest_paths.dists)
 
 function compute_target(
     ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}
 )
-    (; IW_factorization) = ti
+    (; IW_factorization, PC_rowsums) = ti
     node = targetnode(ti)
-    PC_rowsums = ti.workspace
     # Set target rowsum of PC to zero
-    PC_rowsums .= ti.PC_rowsums
+    PC_rowsums = workspace(ti) .= ti.
     PC_rowsums[node] = 0
     # Solve (I - W) \ PC_rowsums
     return ldiv!(ti, IW_factorization, PC_rowsums)
@@ -62,16 +45,16 @@ function compute_target(::ExpectedCost, ti::TargetInit{<:RSP})
     return C̄
 end
 function compute_target(::FreeEnergyDistance, ti::TargetInit{<:RSP})
-    (; θ, workspace) = ti
+    (; θ) = ti
     sp = get_or_compute_target!(ti, SurvivalProbability())
-    return workspace .= -log.(max.(0, sp)) ./ θ
+    return workspace(ti) .= -log.(max.(0, sp)) ./ θ
 end
 function compute_target(::PowerMeanProximity, ti::TargetInit{<:RSP})
-    (; θ, workspace) = ti
+    (; θ) = ti
     sp = get_or_compute_target!(ti, SurvivalProbability())
-    return workspace .= sp .^ (1 / θ)
+    return workspace(ti) .= sp .^ (1 / θ)
 end
 function compute_target(::SurvivalProbability, ti::TargetInit{<:RSP})
-    (; Z, workspace) = ti
-    return workspace .= Z ./ Z[targetnode(ti)]
+    (; Z) = ti
+    return workspace(ti) .= Z ./ Z[targetnode(ti)]
 end

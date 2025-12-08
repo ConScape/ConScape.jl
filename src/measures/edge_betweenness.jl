@@ -15,82 +15,68 @@ Returns a sparse matrix where element (i, j) is the betweenness of edge (i, j).
 end
 
 weighting(gm::EdgeBetweenness) = gm.weighting
-needs_workspaces(::EdgeBetweenness) = 4
 returntrait(::EdgeBetweenness) = ReturnCustom()
+needs_workspaces(::EdgeBetweenness) = 4
+needs_full_fundamentalmatrix(::EdgeBetweenness, ::RSP) = true
+needs_full_fundamentalrowmatrix(::EdgeBetweenness, ::RSP) = true
 
 Base.Symbol(m::EdgeBetweenness) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))
 
-# At the GridGraph level we return a Vector or SparseMatrixCSC,
+# At the GridGraph level we return a Vector of SparseMatrixCSC,
 # one for each connected graph (often just one total)
-function allocate_output(
-    l::GridGraphLevel,
+function allocate_gridgraph_output(
     ::ReturnCustom,
-    ::EdgeBetweenness,
+    m::EdgeBetweenness,
     ::ConScapeProblem,
     ::GridGraph,
     connectedgraphs::Vector
 )
-    Vector{SparseMatrixCSC{Float64,Int}}(undef, length(connectedgraphs)) => l 
+    # Make a Vector of SparseMatrixCSC
+    o = Vector{SparseMatrixCSC{Float64,Int}}(undef, length(connectedgraphs))
+    return MeasureOutput(m, o)
 end
 # At the ConnectedGraph level we return a SparseMatrixCSC
-function allocate_output(
+function allocate_connectedgraph_output(
     l::ConnectedGraphLevel,
     ::ReturnCustom,
-    ::EdgeBetweenness,
+    m::EdgeBetweenness,
     ::ConScapeProblem,
     ::GridGraph,
     ::ConnectedGraph,
     precalculation
 )
-    mapnz(_ -> 0.0, precalculation.W) => l
+    # Make a zeroed sparse matrix with the same pattern as W
+    o = mapnz(_ -> 0.0, precalculation.W)
+    return MeasureOutput(m, o)
 end
 
-function allocate_intermediate(m::EdgeBetweenness, cgi::ConnectedGraphInit)
-    (; W) = cgi
-
-    XᵀZ_full = zeros(connectedgraph_size(cgi))
-    XdiagZⁱ = zeros(length(targetids(cgi)))
-
-    return (; XdiagZⁱ, XᵀZ_full)
-end
-
-# RandomShortestPath / RandomWalk
-function compute_target!(
-    output,
-    ::Union{ConnectedGraphLevel,GridGraphLevel},
-    m::EdgeBetweenness,
-    ti::TargetInit{<:Union{RSP,RandomWalk}}
-)
-    (; XdiagZⁱ, XᵀZ_full) = intermediates(ti)
-    (; IW_adj_factorization, Z, Zⁱ) = ti
-    node = targetnode(ti)
-    idx = targetconnectedgraphidx(ti)
-
-    weights = _weight(m, ti)
-    XdiagZⁱ[idx] = sum(weights) * Zⁱ[node]
-    XZⁱ = workspace(ti) .= weights .* Zⁱ
-    XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
-    view(XᵀZ_full, :, idx) .+= XᵀZ
-
-    # We only update output in finalize_connectedgraph_output!
-    return output
-end
-
-function finalize_connectedgraph_output!(
-    output::SparseMatrixCSC,
-    ::ConnectedGraphLevel,
-    ::EdgeBetweenness,
-    cgi::ConnectedGraphInit,
-    intermediates
-)
+function compute_connectedgraph!(output, m::EdgeBetweenness, cgi::ConnectedGraphInit)
     (; W, Z_full, Zrows_full) = cgi # This Z is the full graph size
-    (; XdiagZⁱ, XᵀZ_full) = intermediates
 
+    XᵀZ_full = mworkspace(cgi)
+    XdiagZⁱ::VDe = fill!(view(workspace(cgi), 1:ntargets(cgi)), 0.0)
+
+    # Loop over targets to calculate the diagonal
+    for target in targetids(cgi)
+        ti = TargetInit(cgi, target)
+        idx = target.connectedgraphidx
+        (; IW_adj_factorization, Z, Zⁱ) = ti
+        node = targetnode(ti)
+        idx = targetconnectedgraphidx(ti)
+
+        weights = _weight(m, ti)
+        XdiagZⁱ[idx] = sum(weights) * Zⁱ[node]
+        XZⁱ = workspace(ti) .= weights .* Zⁱ
+        XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
+        @views XᵀZ_full[:, idx] .+= XᵀZ
+    end
+
+    # Loop over targets to update XᵀZ  
     for target in targetids(cgi)
         ti = TargetInit(cgi, target)
         node = target.node
 
-        XᵀZ_full[node, :] .-= XdiagZⁱ .* view(Zrows_full, :, node)
+        view(XᵀZ_full, node, :) .-= XdiagZⁱ .* view(Zrows_full, :, node)
     end
 
     foreachnz(W) do i, j, n
@@ -98,6 +84,8 @@ function finalize_connectedgraph_output!(
             # TODO: is j in the right place?
             W.nzval[n] * only(view(Z_full, j, :)' * view(XᵀZ_full, i, :))
     end
+    put!(mworkspaces(cgi), XᵀZ_full)
+
     return output
 end
 
@@ -111,6 +99,7 @@ function transfer_to_gridgraph_output!(
     cgi::ConnectedGraphInit
 )
     I = LinearIndices(size(cgi))[sourceids(cgi)]
+    # TODO: this should be a Vector{Int} already?
     J = map(t -> t.gridgraphidx, targetids(cgi))
     dest[I, J] .= source
 
