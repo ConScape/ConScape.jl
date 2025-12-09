@@ -74,7 +74,7 @@ function _solve_connectedgraph!(cgi; finallevel=ConnectedGraphLevel(), kw...)
         _solve_target!(targetinit; finallevel)
     end
     # Finalize output, where not all computations are target-by-target
-    finalize_connectedgraph_output!(target_cgi)
+    finalize_connectedgraph_output!(finallevel, target_cgi)
 
     return _maybe_rasterstack(cgi)
 end

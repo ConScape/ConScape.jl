@@ -163,32 +163,19 @@ end
 Apply any modifications required after all targets contribute
 to the output.
 """
-finalize_connectedgraph_output!(cgi) =
-    finalize_connectedgraph_output!(outputs(cgi), measures(cgi), cgi)
+finalize_connectedgraph_output!(finallevel::Level, cgi::ConnectedGraphInit) =
+    finalize_connectedgraph_output!(outputs(cgi), measures(cgi), finallevel, cgi)
 function finalize_connectedgraph_output!(
-    outputs::NamedTuple, measures::NamedTuple, cgi
+    outputs::NamedTuple, measures::NamedTuple, finallevel::Level, cgi::ConnectedGraphInit
 )
     return map(outputs, measures) do output, measure
-        finalize_connectedgraph_output!(output, measure, cgi)
+        finalize_connectedgraph_output!(output, measure, finallevel, cgi)
     end
 end
-# Trivial default, just returns the output object as-is
 function finalize_connectedgraph_output!(
-    (output, level)::Pair{<:Any,<:Level},
-    m::Measure,
-    sgi::ConnectedGraphInit
+    output, m::Measure, level::Level, cgi::ConnectedGraphInit
 )
-    finalize_connectedgraph_output!(output, level, m, sgi)
-end
-function finalize_connectedgraph_output!(
-    output, level::Level, m::Measure, cgi::ConnectedGraphInit
-)
-    finalize_connectedgraph_output!(output, m, cgi)
-end
-function finalize_connectedgraph_output!(
-    output, m::Measure, cgi::ConnectedGraphInit
-)
-    nothing
+    return nothing
 end
 
 

@@ -82,8 +82,8 @@ function compute_target(
 end
 function finalize_connectedgraph_output!(
     output, 
-    level::ConnectedGraphLevel,
     m::SensitivityAnalysis{<:AbstractQuality}, 
+    level::ConnectedGraphLevel,
     cgi::ConnectedGraphInit, 
 )
     # Divide final summed output by source quality.
