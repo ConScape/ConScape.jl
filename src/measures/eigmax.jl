@@ -63,7 +63,7 @@ function compute_connectedgraph!(::EigMax, cgi::ConnectedGraphInit)
     Mtarget = view(M, 1:m, 1:m)
     Mnontarget = view(M, m+1:m+length(nontargetnodes), 1:m)
 
-    for target in targetnodes(cgi)
+    for target in targetids(cgi)
         ti = TargetInit(cgi, target)
         idx = target.connectedgraphidx
         M = ti.M

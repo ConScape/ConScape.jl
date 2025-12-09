@@ -11,6 +11,7 @@ The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """
 struct FunctionalHabitat <: SpatialMeasure end
 
+computelevel(::FunctionalHabitat) = TargetLevel()
 returntrait(::FunctionalHabitat) = ReturnSpatialTargetSum()
 
 # Its just M

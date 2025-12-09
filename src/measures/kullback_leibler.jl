@@ -9,7 +9,7 @@ returntrait(::KullbackLeiblerDivergence) = ReturnScalarSum()
 function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:LCP})
     (; cost_weighted_digraph, P, qˢ, qᵗ) = ti
     node = targetnode(ti)
-    output = ti.workspace
+    output = workspace(ti)
     from = Vector{Int}(undef, length(output))
     to = Vector{Int}(undef, length(output))
 
@@ -47,9 +47,9 @@ function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:RandomWalk
 end
 # RSP
 function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:RSP})
-    (; θ, qˢ, qᵗ, workspace) = ti
+    (; θ, qˢ, qᵗ) = ti
     fed = get_or_compute_target!(ti, FreeEnergyDistance())
     ec = get_or_compute_target!(ti, ExpectedCost())
-    diff = workspace .= fed .- ec
+    diff = workspace(ti) .= fed .- ec
     return sum(diff .*= qˢ) * qᵗ * θ # qˢ' * diff * qᵗ * θ
 end

@@ -13,6 +13,8 @@ const RVDe = ReadOnlyArrays.ReadOnlyVector{Float64,Vector{Float64}}
 needs_full_fundamentalmatrix(::Measure, ::MovementMode) = false
 needs_full_fundamentalrowmatrix(::Measure, ::MovementMode) = false
 needs_full_costdistancematrix(::Measure, ::MovementMode) = false
+needs_sensitivity_precursors(::Measure, ::MovementMode) = false
+needs_eigmax(::Measure, ::MovementMode) = false
 
 anymeasure(f, measures::NamedTuple, mov::MovementMode) = 
     anymeasure(f, values(measures), mov)
@@ -40,13 +42,14 @@ function sparse_precalculation(problem::ConScapeProblem{<:RSP}, graph::Connected
     end
     C = stepcost(graph)
     CW = C .* W
+    CW_t = sparse(transpose(CW))
 
     # For completeness we also move these to precalculations
     θ = theta(problem)
     qᵗ = targetquality(graph)
     qˢ = sourcequality(graph)
 
-    return (; P, W, IW, IW_adj, C, CW, IW_factorization, IW_adj_factorization, A, Aⁱ, A_rowsums, θ, qᵗ, qˢ)
+    return (; P, W, IW, IW_adj, C, CW, CW_t, IW_factorization, IW_adj_factorization, A, Aⁱ, A_rowsums, θ, qᵗ, qˢ)
 end
 function sparse_precalculation(p::ConScapeProblem{<:LCP}, graph::ConnectedGraph)
     _check_inputs(p, graph)
@@ -100,6 +103,7 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
         needs_full_fundamentalmatrix(args...) || 
         needs_full_fundamentalrowmatrix(args...) ||
         needs_full_costdistancematrix(args...) ||
+        needs_eigmax(args...) ||
         needs_sensitivity_precursors(args...)
     end
 
@@ -186,7 +190,9 @@ end
 _get_eigmax(m::EigMax) = m
 _get_eigmax(m::SensitivityAnalysis) = metric(m)
 
+###########################################################################################
 # Variable generation for ConnectedGraphInit
+    
 function _transitionprobability(L::SparseMatrixCSC)
     source_sums = readonlyarray(vec(sum(L, dims=2)))
     source_scaling = inv.(source_sums)
@@ -198,6 +204,7 @@ end
 function _substochasticmatrix(rsp::RSP, P::SparseMatrixCSC, C::SparseMatrixCSC)
     @assert LinearAlgebra.checksquare(C) == LinearAlgebra.checksquare(P)
     W = P .* exp.(-theta(rsp) .* C)
+    # Any NaNs become zero probabilities
     replace!(W.nzval, NaN => 0.0)
     return W
 end

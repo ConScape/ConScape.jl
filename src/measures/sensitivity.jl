@@ -1,5 +1,3 @@
-const store = Ref{NamedTuple}((;))
-
 # Sensitivity
 
 # A metric, but not a measure like EigMax
@@ -111,7 +109,7 @@ end
 
 # These are computed first ast they can be reused for all permeability_sensitivities
 function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit)
-    (; W, C, CW, A, Aⁱ, IW_adj_factorization, A_rowsums, Z_full, Y_full, Zrows_full) = cgi
+    (; qˢ, W, C, CW, CW_t, A, Aⁱ, IW_adj_factorization, A_rowsums, Z_full, Y_full, Zrows_full) = cgi
 
     # Sparse matrices. `mapnz` means we keep the sparse structure but 
     # initialise values to zero internally
@@ -124,24 +122,23 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
     # Allocate Z-size matrices
     MᵀZ_full::MDe = mworkspace(cgi)
     X5_full::MDe = mworkspace(cgi)
-    K_full = zeros(size(X5_full))
     
     # Loop to calculate diagonals mdiagZ and mdiagC̄Z
     for target::TargetID in targetids(cgi)
         # Precalculate for this target and graph measures
         ti = TargetInit(cgi, target)
-        (; K, qˢ, qᵗ, Y, Z, Zⁱ) = ti
+        (; K, qᵗ, Y, Z, Zⁱ) = ti
         dt = distance_transformation(ti)
         node = target.node
         idx = target.connectedgraphidx
 
         Kd = workspace(ti) .= _diff_KD(dt).(K)
-        K_full[:, idx] .= Kd
         Md = workspace(ti) .= qˢ .* Kd .* qᵗ
         x = sum(Md) * Zⁱ[node]
         mdiagZⁱ[idx] = x
         mdiagC̄Zⁱ[idx] = x * Zⁱ[node] * Y[node]
     end
+
 
     # Loop to calcualte MᵀZ and X5
     for target in targetids(cgi)
@@ -153,7 +150,6 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         # so add them to storage early so they arent coputed elsewhere
         (; Z::RVDe, Zⁱ::RVDe, K::RVDe, Y::RVDe, qˢ, qᵗ::Float64) = ti
 
-        X3 = view(workspace(ti), 1:ntargets(ti)) .= mdiagZⁱ .* view(Zrows_full, :, node)
         C̄ᵣ::VDe = workspace(ti) .= Y .* Zⁱ
         Kd::VDe = workspace(ti) .= _diff_KD(distance_transformation(ti)).(K)
         Md::VDe = workspace(ti) .= qˢ .* Kd .* qᵗ
@@ -161,26 +157,43 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         MᵀZ::VDe = ldiv!(ti, IW_adj_factorization, (workspace(ti) .= MZⁱ)) # MᵀZ = MZⁱ' / IW
         MᵀZ_full[:, idx] .= MᵀZ # Update the full matrix for later use
 
-        # Here we do unrolled matrix multiplications to reduce memory use
-        # This is basically duplicating the function:
+        # Here we do unrolled matrix multiplications to reduce memory use.
+        # This is essentially the same as:
         # RHS = (M .* Zⁱ .* C̄ᵣ)' - (MᵀZ * CW) + (X3 * CW)
         # First the broadcast
-        view(X5_full, :, idx) .+= Md .* Zⁱ .* C̄ᵣ
-        # Then both matmuls are calculated for non-zero values of CW.
-        # This is hard to understand without a lot of work.
-        foreachnz(CW) do i, j, n
-            # First MᵀZ * CW is subtracted from the column of the current target node
-            X5_full[j, idx] -= MᵀZ[i] .* CW.nzval[n]
-            # Then X3 * CW is added where i is the current target node
-            if i == node
-                for k in eachindex(X3)
-                    X5_full[j, k] += X3[k] * CW.nzval[n]
-                end
-            end
-        end
+        view(X5_full, :, idx) .= Md .* Zⁱ .* C̄ᵣ
+        # Then MᵀZ * CW is subtracted row by row
+        matmul_by_row!(-, X5_full, MᵀZ, idx, CW)
+    end
+        
+    X3 = view(workspace(cgi), 1:ntargets(cgi))
+    # Last we add X3 by source
+    for node in 1:nsources(cgi)
+        X3 .= mdiagZⁱ .* view(Zrows_full, :, node)
+        # And X3 * CW is added column by column
+        matmul_by_col!(+, X5_full, X3, node, CW_t)
     end
 
-    store[] = (; C, W, Zrows=Zrows_full, Z=Z_full, Y=Y_full, K=K_full, kB, kΣ, diag=mdiagZⁱ, diagC=mdiagC̄Zⁱ, MᵀZ=MᵀZ_full, X5=X5_full)
+    rhs_copy = workspace(cgi) 
+    for j in axes(X5_full, 2)
+        rhs = view(X5_full, :, j)
+        rhs_copy .= rhs
+        ldiv!(solver(cgi), rhs, IW_adj_factorization, rhs_copy)
+    end
+
+    # Use smaller workspaces 
+    X5 = view(workspace(cgi), 1:ntargets(cgi))
+    X6 = view(workspace(cgi), 1:ntargets(cgi))
+
+    foreachnz(W) do i, j, n
+        Z = view(Z_full, j, :)
+        Y = view(Y_full, j, :)
+        @views X5 .= X5_full[i, :] .- mdiagC̄Zⁱ .* Zrows_full[:, i]
+        @views X6 .= MᵀZ_full[i, :] .- mdiagZⁱ .* Zrows_full[:, i]
+        kBn = W.nzval[n] * ((Z' * X6)[])
+        kB.nzval[n] = kBn
+        kΣ.nzval[n] = W.nzval[n] * ((Z' * X5)[] - (Y' * X6)[] - (C.nzval[n] * kBn / W.nzval[n]))
+    end
     
     # Put back the matrix workspaces we used
     put!(mworkspaces(cgi), X5_full)
@@ -198,11 +211,12 @@ function compute_connectedgraph!(
     kΣ_node = sum(kΣ; dims=2)
     # Calculate output from non-zero values  of W/Aⁱ/kB/kΣ
     foreachnz(kB) do i, j, n
+        J = sourceids(cgi)[j]
         S_cost = kB.nzval[n] + theta(cgi) * kΣ.nzval[n]
         S_likelihood = (kΣ_node[i] / A_rowsums[i]) - kΣ.nzval[n] * Aⁱ.nzval[n]
         S_e_likelihood_scaled = _maybe_scale(S_likelihood, sensitivitytype(m), wrt(m), cgi, n)
         S_e_cost_scaled = _maybe_scale(S_cost, sensitivitytype(m), wrt(m), cgi, n)
-        output[j] += _combine_sensitivity(wrt(m), S_e_likelihood_scaled, S_e_cost_scaled, cgi, n)
+        output[J] += _combine_sensitivity(wrt(m), S_e_likelihood_scaled, S_e_cost_scaled, cgi, n)
         return nothing
     end
 

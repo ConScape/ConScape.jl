@@ -15,30 +15,21 @@ Returns a sparse matrix where element (i, j) is the betweenness of edge (i, j).
 end
 
 weighting(gm::EdgeBetweenness) = gm.weighting
-returntrait(::EdgeBetweenness) = ReturnCustom()
+
+computelevel(::EdgeBetweenness) = ConnectedGraphLevel()
+returntrait(::EdgeBetweenness) = ReturnAssignedSparse()
+
 needs_workspaces(::EdgeBetweenness) = 4
 needs_full_fundamentalmatrix(::EdgeBetweenness, ::RSP) = true
 needs_full_fundamentalrowmatrix(::EdgeBetweenness, ::RSP) = true
 
-Base.Symbol(m::EdgeBetweenness) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))
+@generated Base.Symbol(m::EdgeBetweenness{W}) where W = 
+    QuoteNode(Symbol(nameof(m), :_, nameof(W)))
 
-# At the GridGraph level we return a Vector of SparseMatrixCSC,
-# one for each connected graph (often just one total)
-function allocate_gridgraph_output(
-    ::ReturnCustom,
-    m::EdgeBetweenness,
-    ::ConScapeProblem,
-    ::GridGraph,
-    connectedgraphs::Vector
-)
-    # Make a Vector of SparseMatrixCSC
-    o = Vector{SparseMatrixCSC{Float64,Int}}(undef, length(connectedgraphs))
-    return MeasureOutput(m, o)
-end
 # At the ConnectedGraph level we return a SparseMatrixCSC
 function allocate_connectedgraph_output(
     l::ConnectedGraphLevel,
-    ::ReturnCustom,
+    ::ReturnSparseGraph,
     m::EdgeBetweenness,
     ::ConScapeProblem,
     ::GridGraph,
@@ -46,6 +37,7 @@ function allocate_connectedgraph_output(
     precalculation
 )
     # Make a zeroed sparse matrix with the same pattern as W
+    # This is faster than starting with an empty sparse matrix
     o = mapnz(_ -> 0.0, precalculation.W)
     return MeasureOutput(m, o)
 end
@@ -68,14 +60,11 @@ function compute_connectedgraph!(output, m::EdgeBetweenness, cgi::ConnectedGraph
         XdiagZⁱ[idx] = sum(weights) * Zⁱ[node]
         XZⁱ = workspace(ti) .= weights .* Zⁱ
         XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
-        @views XᵀZ_full[:, idx] .+= XᵀZ
+        @views XᵀZ_full[:, idx] .= XᵀZ
     end
 
     # Loop over targets to update XᵀZ  
-    for target in targetids(cgi)
-        ti = TargetInit(cgi, target)
-        node = target.node
-
+    for node in 1:nsources(cgi)
         view(XᵀZ_full, node, :) .-= XdiagZⁱ .* view(Zrows_full, :, node)
     end
 
@@ -87,23 +76,6 @@ function compute_connectedgraph!(output, m::EdgeBetweenness, cgi::ConnectedGraph
     put!(mworkspaces(cgi), XᵀZ_full)
 
     return output
-end
-
-# TODO: not copied to a vector?
-function transfer_to_gridgraph_output!(
-    dest::SparseMatrixCSC,
-    ::GridGraphLevel,
-    source::SparseMatrixCSC,
-    ::ConnectedGraphLevel,
-    m::EdgeBetweenness,
-    cgi::ConnectedGraphInit
-)
-    I = LinearIndices(size(cgi))[sourceids(cgi)]
-    # TODO: this should be a Vector{Int} already?
-    J = map(t -> t.gridgraphidx, targetids(cgi))
-    dest[I, J] .= source
-
-    return dest
 end
 
 # LeastCostPath EdgeBetweenness

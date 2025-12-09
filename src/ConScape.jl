@@ -54,6 +54,7 @@ include("measures/types.jl")
 
 include("utils/workspaces.jl")
 include("utils/bellman_ford.jl")
+include("utils/sparse.jl")
 
 include("transformations.jl")
 include("graphs.jl")

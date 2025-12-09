@@ -37,7 +37,6 @@ function allocate_gridgraph_output(
     o = fill(NaN, size(gridgraph))
     return MeasureOutput(m, o)
 end
-# We need to use output size specific to Level
 function allocate_gridgraph_output(
     ::ReturnSparseGraph,
     m::Measure,
@@ -45,7 +44,8 @@ function allocate_gridgraph_output(
     gridgraph::GridGraph,
     connectedgraphs::Vector
 )
-    return MeasureOutput(m, spzeros(Float64, gridgraph_size(gridgraph)))
+    o = Vector{SparseMatrixCSC{Float64,Int}}(undef, length(connectedgraphs))
+    return MeasureOutput(m, o)
 end
 
 allocate_connectedgraph_output(l::Level, problem::ConScapeProblem, args...) =
@@ -217,7 +217,6 @@ function transfer_to_gridgraph_output!(
 )
     transfer_to_gridgraph_output!(dest, source, returntrait(m), cgi)
 end
-
 # ReturnScalarSum measures sum connectedgraph outputs to a `Ref` or zero dimensional array.
 function transfer_to_gridgraph_output!(
     dest::Vector{T},
@@ -228,15 +227,6 @@ function transfer_to_gridgraph_output!(
     dest[] = source[]
     return dest
 end
-# TODO: should this exist for ReturnCustom?
-# function transfer_to_gridgraph_output!(
-#     dest::AbstractVector,
-#     source::AbstractVector,
-#     ::ReturnCustom,
-#     cgi::ConnectedGraphInit
-# )
-#     dest[connectedgraphid(cgi)] .= source
-# end
 # Spatial measures copy the sourceids from the connected graph to the same
 # ids at the gri graph level - filling in unconnected parts of the raster
 function transfer_to_gridgraph_output!(
@@ -248,18 +238,13 @@ function transfer_to_gridgraph_output!(
     dest[sourceids(cgi)] .= source[sourceids(cgi)]
     return dest
 end
-# Assigned sparse measures copy sparse data into a larger sparse matrix.
-# TODO should this just be dense?
+# Fallback: we just copy to a Vector for each connected graph
 function transfer_to_gridgraph_output!(
-    dest::AbstractMatrix,
-    source::AbstractMatrix,
-    ::ReturnAssignedSparse,
+    dest::Vector{<:SparseMatrixCSC},
+    source::SparseMatrixCSC,
+    m::ReturnTrait,
     cgi::ConnectedGraphInit
 )
-    # TODO: remove this allocation ?
-    I = map(x -> x.gridgraphidx, targetids(cgi))
-    V = view(LinearIndices(size(cgi), sourceids(cgi)), I)
-    view(dest, V) .+= source
-
+    dest[connectedgraphid(cgi)] = source
     return dest
 end
