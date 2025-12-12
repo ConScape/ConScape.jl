@@ -1,5 +1,3 @@
-const store = Ref{NamedTuple}((;))
-
 # Sensitivity
 
 # A metric, but not a measure like EigMax
@@ -72,7 +70,7 @@ needs_eigmax_sensitivity_precursors(::Measure, rsp::MovementMode) = false
 function compute_target(
     m::SensitivityAnalysis{<:AbstractQuality}, 
     ti::TargetInit{<:Union{RSP,RandomWalk}}
-)
+)::RVDe
     (; M) = ti
     
     #= Sensitivity w.r.t. Quality is essentially just the landscape matrix, 
@@ -84,9 +82,10 @@ function compute_target(
     too small and cause floating point error in the sum. =#
     if metric(m) isa EigMax
         (v, λ, w) = ti.eigmax
-        workspace(ti) .= v .* M .* w[targetnode(ti)] ./ (v' * w)
+        targetcol = workspace(ti) .= v .* M .* w[targetnode(ti)] ./ (v' * w)
+        return readonlyarray(targetcol)
     else
-        M
+        return M
     end
 end
 function finalize_connectedgraph_output!(
@@ -128,7 +127,6 @@ function _compute_eigmax_sensitivity_precursors(pm::ProximityMeasure, cgi::Conne
     qˢ = cgi.qˢ .* v    
     qᵗ = cgi.qᵗ .* w[map(id -> id.node, targetids(cgi))]
 
-    store[] = (; store[]..., map(copy, (; v, λ, w))...)
     return _compute_sensitivity_precursors(pm, cgi, qˢ, qᵗ)
 end
 
@@ -151,10 +149,10 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
     mdiagZⁱ::VDe = fill!(view(workspace(cgi), 1:ntargets(cgi)), 0.0)
     mdiagC̄Zⁱ::VDe = fill!(view(workspace(cgi), 1:ntargets(cgi)), 0.0)
     # Allocate Z-size matrices
+    # These can't be used split into column vectors unless we calculate them twice. 
+    # This is a serious option if RAM turns out to be more limiting than CPU time.
     MᵀZ_full::MDe = mworkspace(cgi)
     X5_full::MDe = mworkspace(cgi)
-    K_full::MDe = zeros(size(X5_full))
-    M_full::MDe = zeros(size(X5_full))
 
     
     # Loop to calculate diagonals mdiagZ and mdiagC̄Z
@@ -168,8 +166,6 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
 
         Kd = workspace(ti) .= _diff_KD(dt).(K)
         Md = workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
-        K_full[:, idx] .= Kd
-        M_full[:, idx] .= Md
         x = sum(Md) * Zⁱ[node]
         mdiagZⁱ[idx] = x
         mdiagC̄Zⁱ[idx] = x * Zⁱ[node] * Y[node]
@@ -199,7 +195,7 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         # First the broadcast
         view(X5_full, :, idx) .= Md .* Zⁱ .* C̄ᵣ
         # Then MᵀZ * CW is subtracted row by row
-        matmul_by_row!(-, X5_full, MᵀZ, idx, CW)
+        matmul_by_col!(-, X5_full, MᵀZ, idx, CW)
     end
         
     X3 = view(workspace(cgi), 1:ntargets(cgi))
@@ -207,7 +203,7 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
     for node in 1:nsources(cgi)
         X3 .= mdiagZⁱ .* view(Zrows_full, :, node)
         # And X3 * CW is added column by column
-        matmul_by_col!(+, X5_full, X3, node, CW_t)
+        matmul_by_row!(+, X5_full, X3, node, CW_t)
     end
 
     rhs_copy = workspace(cgi) 
@@ -235,8 +231,6 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
     put!(mworkspaces(cgi), X5_full)
     put!(mworkspaces(cgi), MᵀZ_full)
 
-    store[] = (; store[]..., C, W, Z=Z_full, Zrows=Zrows_full, Y=Y_full, diag=copy(mdiagZⁱ), diagC=copy(mdiagC̄Zⁱ), X5=X5_full, kB, kΣ, K=K_full, M=M_full, qˢ, qᵗ)
-
     return (; kB, kΣ)
 end
 
@@ -263,10 +257,8 @@ function compute_connectedgraph!(
     end
 
     if metric(m) isa EigMax
-        @show "eigmaxing..."
         (v, λ, w) = cgi.eigmax 
         vTw = (v' * w)
-        store[] = (; store[]..., vTw)
         output[sourceids(cgi)] ./= vTw
     end
 
@@ -334,10 +326,8 @@ function compute_connectedgraph!(
     end
 
     if metric(m) isa EigMax
-        @show "eigmaxing..."
         (v, λ, w) = cgi.eigmax 
         vTw = (v' * w)
-        store[] = (; store[]..., vTw)
         node_sensitivity ./= vTw
     end
 

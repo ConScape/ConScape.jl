@@ -16,23 +16,26 @@ end
        rows_X, cols_X = size(X)
        rows_W, cols_W = size(W)
        # Initialize the final result matrix that will be accumulated into.
-       Y = zeros(T, rows_X, cols_W)
+       Y = zeros(T, size(X))
        W_t = sparse(transpose(W))
 
        # This loop simulates processing one column of X at a time.
        for k in 1:cols_X
-           x_col_k_view = view(X, :, k)
+           x_col_k_view = view(X, k, :)
            # Update the result matrix Y with the contribution from this column.
-           ConScape.matmul_by_col!(+, Y, x_col_k_view, k, W_t)
+           ConScape.matmul_by_row!(+, Y, x_col_k_view, k, W_t)
        end
 
        return Y
     end
-    X_matrix = rand(3, 10)
+    X_matrix = rand(10, 3)
     W_sparse_matrix = sprand(10, 10, 0.2)
 
     result = iterative_matmul(X_matrix, W_sparse_matrix)
-    @test result == X_matrix * W_sparse_matrix
+    @test result == 
+    X_matrix
+    W_sparse_matrix
+    X_matrix' 
 end
 
 

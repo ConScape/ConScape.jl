@@ -102,7 +102,8 @@ function compute_target(m::Betweenness, ti::TargetInit{<:LCP})
             btw[p] += w
         end
     end
-    return btw
+
+    return readonlyarray(btw)
 end
 # RandomShortestPath / RandomWalk (differences are only in IW and weights)
 function compute_target(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
@@ -118,7 +119,9 @@ function compute_target(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
     # Scale MZⁱ with λ
     XZⁱtλ = XZⁱt .*= inv(λ)
     # Solve (I - W)' \ MZⁱλ, then multiply by Z and λ scaling
-    return ldiv!(ti, IW_adj_factorization, XZⁱtλ) .*= λ .* Z
+    targetcol = ldiv!(ti, IW_adj_factorization, XZⁱtλ) .*= λ .* Z
+
+    return readonlyarray(targetcol)
 end
 
 _weight(m::Measure, ti::TargetInit) = _weight(weighting(m), ti)

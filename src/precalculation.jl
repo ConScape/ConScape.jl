@@ -370,17 +370,16 @@ end
 _copyrow(A, ti) = readonlyarray(workspace(ti) .= view(A, targetconnectedgraphidx(ti), :))
 _copycol(A, ti) = readonlyarray(workspace(ti) .= view(A, :, targetconnectedgraphidx(ti)))
 
-function _proximitymatrixcol(ti::TargetInit{<:Union{RSP,RandomWalk}})
+function _proximitymatrixcol(ti::TargetInit{<:Union{RSP,RandomWalk}})::RVDe
     pm = proximity_measure(ti)
-    distances = get_or_compute_target!(ti, pm)
-    proximities = parent(distances)
     dt = distance_transformation(ti)
+    distances = get_or_compute_target!(ti, pm)
     proximities = if pm isa DistanceMeasure && !isnothing(dt)
         workspace(ti) .= dt.(distances)
     else
         workspace(ti) .= distances
     end
-    _maybe_set_diagonal!(ti, proximities)
+    _maybe_set_diagonal!(proximities, ti)
 
     return readonlyarray(proximities)
 end

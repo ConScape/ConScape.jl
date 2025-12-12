@@ -29,7 +29,21 @@ function foreachnz(f, S)
     return nothing
 end
 
-function matmul_by_row!(
+function foreachincol(f, W, k) 
+   # Get the structure of the TRANSPOSED matrix
+   colptr_t = SparseArrays.getcolptr(W)
+   # The k-th column of W_t corresponds to the k-th ROW of the original W.
+   # This is now an efficient lookup.
+   start_idx = colptr_t[k]
+   end_idx = colptr_t[k+1] - 1
+
+   # Iterate through the non-zero elements of row k of the original W.
+   for ptr in start_idx:end_idx
+       f(ptr)
+   end
+end
+
+function matmul_by_col!(
    f::Function,
    Y::AbstractMatrix{T},
    x_col::AbstractVector{T},
@@ -41,40 +55,33 @@ function matmul_by_row!(
     end
 end
 
-function matmul_by_col!(
+function matmul_by_row!(
    f::Function,
    Y::AbstractMatrix{T},
-   x_col::AbstractVector{T},
+   xs::AbstractVector{T},
    k::Int,
    W_t::SparseMatrixCSC{T}
 ) where T
-   # Get the structure of the TRANSPOSED matrix
-   colptr_t = SparseArrays.getcolptr(W_t)
-   rowvals_t = SparseArrays.rowvals(W_t)
-   nzvals_t = SparseArrays.nonzeros(W_t)
 
-
-   if length(x_col) != size(Y, 2)
+   if length(xs) != size(Y, 2)
        throw(ArgumentError("Dimension mismatch."))
    end
 
-   # The k-th column of W_t corresponds to the k-th ROW of the original W.
-   # This is now an efficient lookup.
-   start_idx = colptr_t[k]
-   end_idx = colptr_t[k+1] - 1
+   rowvals_t = SparseArrays.rowvals(W_t)
+   nzvals_t = SparseArrays.nonzeros(W_t)
 
    # Iterate through the non-zero elements of row k of the original W.
-   for ptr in start_idx:end_idx
+   foreachincol(W_t, k) do ptr
        # The row index in W_t is the COLUMN index in the original W.
        j = rowvals_t[ptr]
        
        # The value is W[k, j]
        val_wkj = nzvals_t[ptr]
 
-       # Manually loop to perform: Y[:, j] += x_col .* val_wkj
+       # Manually loop to perform: Y[:, j] += xs .* val_wkj
        # This avoids broadcast call overhead.
        for i in 1:size(Y, 2)
-           Y[j, i] = f(Y[j, i], x_col[i] * val_wkj)
+           Y[j, i] = f(Y[j, i], xs[i] * val_wkj)
        end
    end
 end

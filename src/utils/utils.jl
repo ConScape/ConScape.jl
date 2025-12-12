@@ -30,11 +30,10 @@ end
 readonlyarray(A::AbstractArray) = ReadOnlyArray(A)
 readonlyarray(A::ReadOnlyArray) = A
 
-_maybe_set_diagonal!(ti::TargetInit, proximities) =
-    _maybe_set_diagonal!(ti, proximities, diagvalue(ti))
-_maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Nothing) = proximities
-function _maybe_set_diagonal!(ti::TargetInit, proximities, diagvalue::Number)
-    proximities = workspace(ti) .= proximities
+_maybe_set_diagonal!(proximities::VDe, ti::TargetInit) =
+    _maybe_set_diagonal!(proximities, ti, diagvalue(ti))
+_maybe_set_diagonal!(proximities::VDe, ti::TargetInit, diagvalue::Nothing) = proximities
+function _maybe_set_diagonal!(proximities::VDe, ti::TargetInit, diagvalue::Number)
     proximities[targetnode(ti)] = diagvalue
     return proximities
 end

@@ -22,7 +22,6 @@ computelevel(m::EigMax) = ConnectedGraphLevel()
 returntrait(::EigMax) = ReturnCustom()
 needs_eigmax(::EigMax) = true
 
-
 # Allocate sqauare matrix of target * target size
 function allocate_gridgraph_output(
     ::ReturnCustom,
@@ -60,6 +59,8 @@ function _compute_eigmax(em::EigMax, cgi::ConnectedGraphInit)
 
     # We use views into one matrix workspace for both M matrices
     M_all = mworkspace(cgi)
+    MλI_all = mworkspace(cgi)
+    MλI = view(MλI_all, 1:m, :)
     Mtarget = view(M_all, 1:m, :)
     Mnontarget = view(M_all, m+1:size(M_all, 1), :)
 
@@ -87,8 +88,9 @@ function _compute_eigmax(em::EigMax, cgi::ConnectedGraphInit)
     λ = λ₀[]
 
     # compute left eigenvector (of submatrix) by shift-invert
-    MλI = Mtarget - λ * I
-    F = lu(MλI)
+    copyto!(MλI, -λ * I) # This is just alloc free `MλI = Mtarget - λ * I`
+    MλI .+= Mtarget
+    F = lu!(MλI)
     # TODO: explain rand here in a comment
     rng = isnothing(em.seed) ? Random.MersenneTwister() : Random.MersenneTwister(em.seed)
     rhs = rand(rng, length(targetnodes))
@@ -115,10 +117,9 @@ function _compute_eigmax(em::EigMax, cgi::ConnectedGraphInit)
     # map!(x -> x < zero(x) ? zero(x) : x, vˡ)
     # map!(x -> x < zero(x) ? zero(x) : x, vʳ)
 
-    store[] = merge(store[], (; Fps), map(copy, (; vʳ₀, vˡ₀=copy(vˡ₀), vˡ, λ, vʳ, targetnodes, nontargetnodes, Mnontarget=Mnontarget, Mtarget=Mtarget, rhs, MλI)))
-
     # Put back the matrix workspace
     put!(mworkspaces(cgi), M_all)
+    put!(mworkspaces(cgi), MλI_all)
 
     return (vˡ, λ, vʳ)
 end

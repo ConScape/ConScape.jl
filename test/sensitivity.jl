@@ -23,7 +23,6 @@ function isnanorapprox(x::Number, y::Number; atol, rtol)
     return out
 end
 
-
 @testset "RSP sensitivity measure" begin
     seed = 1234
     # Set up the new sensitivity measures
@@ -133,93 +132,54 @@ end
         end
     end;
 
-    OldConScape.store[] = (;)
-    ConScape.store[] = (;)
-    @time old_x = let
-        affinities_sparse = OldConScape.graph_matrix_from_raster(parent(steplikelihood))
-        g = OldConScape.Grid(size(steplikelihood)...;
-            affinities=affinities_sparse,
-            qualities=parent(quality),
-        )
-        grain = grains.no_grain
-        connectivity_function = OldConScape.expected_cost
-        wrt = "C"
-        theta = thetas.theta_one
-        metric = (elasticity=true, sensitivity=false)
-        unitless = metric.sensitivity
-        landscape_measure = "eigenanalysis"
-        # landscape_measure = "sum"
+    # @testset "old and new internals match" begin
+    #     @test isapprox(OldConScape.store[].Fps[1].eigenvalues, ConScape.store[].Fps[1].eigenvalues)
+    #     @test isapprox(OldConScape.store[].Fps[1].Q, ConScape.store[].Fps[1].Q)
+    #     @test isapprox(OldConScape.store[].Fps[1].R, ConScape.store[].Fps[1].R)
+    #     @test isapprox(OldConScape.store[].λ, ConScape.store[].λ)
+    #     @test isnanorapprox(OldConScape.store[].targetnodes, ConScape.store[].targetnodes)
+    #     @test isnanorapprox(OldConScape.store[].nontargetnodes, ConScape.store[].nontargetnodes)
+    #     @test isnanorapprox(OldConScape.store[].Mtarget, ConScape.store[].Mtarget)
+    #     @test isnanorapprox(OldConScape.store[].Mnontarget, ConScape.store[].Mnontarget)
+    #     @test isnanorapprox(OldConScape.store[].MλI, ConScape.store[].MλI)
+    #     @test isnanorapprox(OldConScape.store[].rhs, ConScape.store[].rhs)
+    #     @test isnanorapprox(OldConScape.store[].vʳ₀, ConScape.store[].vʳ₀; atol=1e-12)
+    #     @test isnanorapprox(OldConScape.store[].vʳ, ConScape.store[].vʳ; atol=1e-12)
+    #     @test isnanorapprox(ConScape.store[].vˡ, ConScape.store[].v)
+    #     @test isnanorapprox(ConScape.store[].vʳ, ConScape.store[].w)
+    #     # Only the correlation is approximately equal, not the values
+    #     @test isnanorapprox(cor(OldConScape.store[].vˡ, ConScape.store[].vˡ), 1)
+    #     @test isapprox(maximum(OldConScape.store[].vˡ), maximum(ConScape.store[].vˡ))
+    #     @test isapprox(maximum(OldConScape.store[].vˡ), 1)
+    #     @test isnanorapprox(OldConScape.store[].MλI, ConScape.store[].MλI; atol=1e-13)
+    #     @test isnanorapprox(OldConScape.store[].rhs, ConScape.store[].rhs; atol=1e-14)
+    #     @test OldConScape.store[].C == ConScape.store[].C
+    #     @test OldConScape.store[].W == ConScape.store[].W
+    #     @test OldConScape.store[].Z == ConScape.store[].Z
+    #     @test OldConScape.store[].Y == ConScape.store[].Y
+    #     @test OldConScape.store[].Zrows == ConScape.store[].Zrows
+    #     @test isapprox(OldConScape.store[].qˢ, ConScape.store[].qˢ)
+    #     # qᵗ is only highly correlated, not actually approximate
+    #     @test isapprox(cor(OldConScape.store[].qᵗ, ConScape.store[].qᵗ), 1)
+    #     # But scaled identically
+    #     @test isapprox(maximum(OldConScape.store[].qᵗ), maximum(ConScape.store[].qᵗ))
+    #     @test isapprox(OldConScape.store[].K, ConScape.store[].K)
+    #     @test isapprox(cor(vec(ConScape.store[].M), vec(OldConScape.store[].M)), 1)
+    #     @test isapprox(OldConScape.store[].diagC, ConScape.store[].diagC)
+    #     @test isapprox(OldConScape.store[].kB, ConScape.store[].kB)
+    #     @test isapprox(OldConScape.store[].kΣ, ConScape.store[].kΣ)
+    #     @test isapprox(OldConScape.store[].vTw, ConScape.store[].vTw)
+    # end
 
-        g_coarse = if isnothing(grain)
-            g
-        else
-            OldConScape.Grid(size(steplikelihood)...;
-                affinities=affinities_sparse,
-                source_qualities=parent(quality),
-                target_qualities=OldConScape.coarse_graining(g, grain)
-            )
-        end
-        grsp = OldConScape.GridRSP(g_coarse; θ=theta)
-        if !isnothing(grain) && wrt == "Q"
-            nothing
-        else
-            OldConScape.sensitivity(grsp;
-                connectivity_function,
-                distance_transformation=OldConScape.ExpMinus(),
-                α=1/2000,
-                wrt,
-                landscape_measure,
-                unitless,
-                diagvalue=nothing,
-                target_equal_source=true
-            )
-        end
-    end;
-    @time new_x = solve((; sens=sensitivity_measures.sens_eigen_cost), problems.no_grain.theta_one.ec, rast)
+    cgi = init(problems.grain_two.theta_one.ec, rast, 1)
+    I = ConScape.sourceids(cgi)
 
-    @testset "old and new internals match" begin
-        @test isapprox(OldConScape.store[].Fps[1].eigenvalues, ConScape.store[].Fps[1].eigenvalues)
-        @test isapprox(OldConScape.store[].Fps[1].Q, ConScape.store[].Fps[1].Q)
-        @test isapprox(OldConScape.store[].Fps[1].R, ConScape.store[].Fps[1].R)
-        @test isapprox(OldConScape.store[].λ, ConScape.store[].λ)
-        @test isnanorapprox(OldConScape.store[].targetnodes, ConScape.store[].targetnodes)
-        @test isnanorapprox(OldConScape.store[].nontargetnodes, ConScape.store[].nontargetnodes)
-        @test isnanorapprox(OldConScape.store[].Mtarget, ConScape.store[].Mtarget)
-        @test isnanorapprox(OldConScape.store[].Mnontarget, ConScape.store[].Mnontarget)
-        @test isnanorapprox(OldConScape.store[].MλI, ConScape.store[].MλI)
-        @test isnanorapprox(OldConScape.store[].rhs, ConScape.store[].rhs)
-        @test isnanorapprox(OldConScape.store[].vʳ₀, ConScape.store[].vʳ₀; atol=1e-12)
-        @test isnanorapprox(OldConScape.store[].vʳ, ConScape.store[].vʳ; atol=1e-12)
-        @test isnanorapprox(ConScape.store[].vˡ, ConScape.store[].v)
-        @test isnanorapprox(ConScape.store[].vʳ, ConScape.store[].w)
-        # Only the correlation is approximately equal, not the values
-        @test isnanorapprox(cor(OldConScape.store[].vˡ, ConScape.store[].vˡ), 1)
-        @test isapprox(maximum(OldConScape.store[].vˡ), maximum(ConScape.store[].vˡ))
-        @test isapprox(maximum(OldConScape.store[].vˡ), 1)
-        @test isnanorapprox(OldConScape.store[].MλI, ConScape.store[].MλI; atol=1e-13)
-        @test isnanorapprox(OldConScape.store[].rhs, ConScape.store[].rhs; atol=1e-14)
-        @test OldConScape.store[].C == ConScape.store[].C
-        @test OldConScape.store[].W == ConScape.store[].W
-        @test OldConScape.store[].Z == ConScape.store[].Z
-        @test OldConScape.store[].Y == ConScape.store[].Y
-        @test OldConScape.store[].Zrows == ConScape.store[].Zrows
-        @test isapprox(OldConScape.store[].qˢ, ConScape.store[].qˢ)
-        # qᵗ is only highly correlated, not actually approximate
-        @test isapprox(cor(OldConScape.store[].qᵗ, ConScape.store[].qᵗ), 1)
-        # But scaled identically
-        @test isapprox(maximum(OldConScape.store[].qᵗ), maximum(ConScape.store[].qᵗ))
-        @test isapprox(OldConScape.store[].K, ConScape.store[].K)
-        @test isapprox(cor(vec(ConScape.store[].M), vec(OldConScape.store[].M)), 1)
-        @test isapprox(OldConScape.store[].diagC, ConScape.store[].diagC)
-        @test isapprox(OldConScape.store[].kB, ConScape.store[].kB)
-        @test isapprox(OldConScape.store[].kΣ, ConScape.store[].kΣ)
-        @test isapprox(OldConScape.store[].vTw, ConScape.store[].vTw)
-    end
-
+    # old = old_sens.grain_two.theta_pointone.pmp
+    # new = new_sens.grain_two.theta_pointone.pmp
     @testset "square Z, no coarse graining" begin
         @testset "theta $theta" for (old_by_theta, new_by_theta, theta) in zip(old_sens.no_grain, new_sens.no_grain, thetas)
             @testset "$pm" for (old, new, pm) in zip(old_by_theta, new_by_theta, proximity_measures)
-                @testset "sum" begin
+                @testset "sum matches approximately" begin
                     @test isnanorapprox(old.sensitivity.sum["C"],          new.sens_sum_cost)
                     @test isnanorapprox(old.sensitivity.sum["A"],          new.sens_sum_likelihood)
                     @test isnanorapprox(old.sensitivity.sum["C&A=f(C)"],   new.sens_sum_likelihoodtocost)
@@ -231,7 +191,7 @@ end
                     @test isnanorapprox(old.elasticity.sum["Q"],           new.elast_sum_quality)
                     @test isnanorapprox(old.sensitivity.sum["Q"],          new.sens_sum_quality)
                 end
-                @testset "eigen" begin
+                @testset "eigen is equally scaled and exactly correlated" begin
                     @test cor(old.sensitivity.eigen["C"][I],        new.sens_eigen_cost[I]) ≈ 1
                     @test cor(old.sensitivity.eigen["A"][I],        new.sens_eigen_likelihood[I]) ≈ 1
                     @test cor(old.sensitivity.eigen["C&A=f(C)"][I], new.sens_eigen_likelihoodtocost[I]) ≈ 1
@@ -253,14 +213,11 @@ end
         end
     end
 
-    I = ConScape.sourceids(cgi)
-    old = old_sens.grain_two.theta_pointone.pmp
-    new = new_sens.grain_two.theta_pointone.pmp
     @testset "non-square, coarse graining of 2" begin
         @testset "theta $theta" for (old_by_theta, new_by_theta, theta) in zip(old_sens.grain_two, new_sens.grain_two, thetas)
             @testset "$pm" for (old, new, pm) in zip(old_by_theta, new_by_theta, proximity_measures)
                 # OldConScape cant do non-square Q
-                @testset "sum" begin
+                @testset "sum matches approximately" begin
                     @test isnanorapprox(old.sensitivity.sum["C"],          new.sens_sum_cost)
                     @test isnanorapprox(old.sensitivity.sum["A"],          new.sens_sum_likelihood)
                     @test isnanorapprox(old.sensitivity.sum["C&A=f(C)"],   new.sens_sum_likelihoodtocost)
@@ -270,7 +227,7 @@ end
                     @test isnanorapprox(old.elasticity.sum["C&A=f(C)"],    new.elast_sum_likelihoodtocost)
                     @test isnanorapprox(old.elasticity.sum["A&C=f(A)"],    new.elast_sum_costtolikelihood)
                 end
-                @testset "eigen" begin
+                @testset "eigen is equally scaled and exactly correlated" begin
                     @test cor(old.sensitivity.eigen["C"][I],        new.sens_eigen_cost[I]) ≈ 1
                     @test cor(old.sensitivity.eigen["A"][I],        new.sens_eigen_likelihood[I]) ≈ 1
                     @test cor(old.sensitivity.eigen["C&A=f(C)"][I], new.sens_eigen_likelihoodtocost[I]) ≈ 1
@@ -331,7 +288,19 @@ end
 #             one_out_of,
 #         )
 #
-#
+
+    function f(cgi, n)  
+        for i in 1:n
+            ti = init(cgi, i)
+            ConScape._proximitymatrixcol(ti)
+        end
+    end
+    @descend f(, 300)
+    cgi = init(problems.no_grain.theta_one.ec, rast, 1)
+    ti = init(cgi, 1)
+    pm = ConScape.proximity_measure(ti)
+    @inferred ConScape._proximitymatrixcol(ti)
+    @descend ConScape.get_or_compute_target!(ti, pm)
     @time out = solve(sensitivity_measures, problems.no_grain.theta_one.ec, rast);
     @time out = solve(sensitivity_measures, problems.no_grain.theta_one.pmp, rast);
     @profview solve(sensitivity_measures, problems.no_grain.theta_one.ec, rast)

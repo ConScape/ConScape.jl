@@ -1,31 +1,25 @@
-@inline function get_or_compute_target!(ti::TargetInit, m::Measure)
+function get_or_compute_target!(ti::TargetInit, m::Measure)
     store = storage(ti)
-    # TODO: this loses const propagation type stability
     x = Symbol(m)
-    haskey(store, x) && return store[x]
-    val = compute_target(m, ti)
-
-    # For type stability only Vector{Float64} go in store
-    if val isa Vector{Float64}
-        store[x] = readonlyarray(val)
-        return readonlyarray(val)
+    local val::RVDe
+    if haskey(store, x) 
+        val = store[x]
+        return val
     else
+        val = readonlyarray(compute_target(m, ti))
+        store[x] = val
         return val
     end
 end
-@inline function get_or_compute_target!(ti::TargetInit, x::Symbol)
+function get_or_compute_target!(ti::TargetInit, x::Symbol)
     store = storage(ti)
-    haskey(store, x) && return store[x]
-
-    val = target_precalculation!(ti, x)
-    # TODO: storing other types
-    if val isa Vector{Float64}
-        store[x] = readonlyarray(val)
-    end
-
-    if val isa Array
-        return readonlyarray(val)
+    local val::RVDe
+    if haskey(store, x) 
+        val = store[x]
+        return val
     else
+        val = readonlyarray(target_precalculation!(ti, x))
+        store[x] = val
         return val
     end
 end
@@ -33,9 +27,8 @@ end
 # Most measures dont need to deal with
 # `update_connectedgraph_output!` and just define `compute_target`
 function compute_target!(output, l::Level, m::Measure, ti::TargetInit)
-    val = compute_target(m, ti)
+    val::RVDe = compute_target(m, ti)
     update_connectedgraph_output!(output, l, m, ti, val)
-
     return output
 end
 
@@ -54,7 +47,7 @@ function num_matrix_workspaces(problem::ConScapeProblem)
         # These workspaces are ephemeral and `put!` back within 
         # the functions that use them, so we take the maximum.
         max(
-            anymeasure(needs_eigmax, mes, mov),
+            2 * anymeasure(needs_eigmax, mes, mov),
             2 * anymeasure(needs_sum_sensitivity_precursors, mes, mov),
             2 * anymeasure(needs_eigmax_sensitivity_precursors, mes, mov),
         )
