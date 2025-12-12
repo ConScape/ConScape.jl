@@ -12,6 +12,7 @@ import GeometryOps as GO
 import GeometryOps.GeoInterface as GI
 import SortTileRecursiveTree as STR
 import ReadOnlyArrays
+import Random
 
 import Rasters.Extents
 import Rasters.DimensionalData

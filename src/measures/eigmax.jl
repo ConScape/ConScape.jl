@@ -20,7 +20,7 @@ end
 
 computelevel(m::EigMax) = ConnectedGraphLevel()
 returntrait(::EigMax) = ReturnCustom()
-num_matrix_workspaces(::EigMax) = 1
+needs_eigmax(::EigMax) = true
 
 
 # Allocate sqauare matrix of target * target size
@@ -52,16 +52,16 @@ function allocate_connectedgraph_output(
     return MeasureOutput(m, o)
 end
 
-function compute_connectedgraph!(::EigMax, cgi::ConnectedGraphInit)
+function _compute_eigmax(em::EigMax, cgi::ConnectedGraphInit)
     (; C, W) = cgi
-    m = length(targetids(cgi))
+    m = ntargets(cgi)
     targetnodes = map(x -> x.node, targetids(cgi))
-    nontargetnodes = setdiff(1:m, targetnodes)
+    nontargetnodes = setdiff(1:nsources(cgi), targetnodes)
 
     # We use views into one matrix workspace for both M matrices
-    M = mworkspace(cgi)
-    Mtarget = view(M, 1:m, 1:m)
-    Mnontarget = view(M, m+1:m+length(nontargetnodes), 1:m)
+    M_all = mworkspace(cgi)
+    Mtarget = view(M_all, 1:m, :)
+    Mnontarget = view(M_all, m+1:size(M_all, 1), :)
 
     for target in targetids(cgi)
         ti = TargetInit(cgi, target)
@@ -83,26 +83,45 @@ function compute_connectedgraph!(::EigMax, cgi::ConnectedGraphInit)
     Fps = ArnoldiMethod.partialschur(Mtarget; nev=1, tol=em.tol)
     λ₀, vʳ₀ = ArnoldiMethod.partialeigen(Fps[1])
 
-    # Computing the left and right vectors is optional
-    if em.right isa Right
-        # assign to the full right vector
-        vʳ[targetnodes] .= vʳ₀
-        vʳ[nontargetnodes] .= Mnontarget * vʳ₀ ./ λ₀[1]
-    end
-
-    if em.left isa Left
-        # compute left vector (of submatrix) by shift-invert
-        F = lu(Mtarget - λ₀[1] * I)
-        rng = isnothing(em.seed) ? MersenneTwister() : MersenneTwister(seed)
-        # TODO: explain rand here in a comment
-        vˡ₀ = ldiv!(F', rand(rng, length(targetnodes))) # This is a hack that ensures a square matrix
-        rmul!(vˡ₀, inv(vˡ₀[1]))
-        # assign to the full left vector
-        vˡ[targetnodes] .= vˡ₀
-    end
-
     # Assign to the output Ref for λ
-    λ[] = λ₀[1]
+    λ = λ₀[]
 
-    return (vˡ, λ[], vʳ)
+    # compute left eigenvector (of submatrix) by shift-invert
+    MλI = Mtarget - λ * I
+    F = lu(MλI)
+    # TODO: explain rand here in a comment
+    rng = isnothing(em.seed) ? Random.MersenneTwister() : Random.MersenneTwister(em.seed)
+    rhs = rand(rng, length(targetnodes))
+    vˡ₀ = ldiv!(copy(rhs), F', copy(rhs))
+
+    # Allocate output left and right eigenvectors
+    vˡ = fill(NaN, nsources(cgi))
+    vʳ = fill(NaN, nsources(cgi))
+
+    # Assign to the full right vector
+    vʳ[targetnodes] .= vʳ₀
+    # Fill the gaps from sources that are not targets
+    vʳ[nontargetnodes] .= Mnontarget * vʳ₀ / λ
+    # Assign to the full left vector
+    vˡ[targetnodes] .= vˡ₀
+    vˡ[nontargetnodes] .= 0.0
+
+    # Normalize by dividing by the absolute maximum value
+    # (scaled eigenvalues are considered identical)
+    rmul!(vˡ, inv(vˡ[findmax(abs, vˡ)[2]]))
+    rmul!(vʳ, inv(vˡ[findmax(abs, vʳ)[2]]))
+
+    # Remove numbers below zero (e.g. from numerical instability)
+    # map!(x -> x < zero(x) ? zero(x) : x, vˡ)
+    # map!(x -> x < zero(x) ? zero(x) : x, vʳ)
+
+    store[] = merge(store[], (; Fps), map(copy, (; vʳ₀, vˡ₀=copy(vˡ₀), vˡ, λ, vʳ, targetnodes, nontargetnodes, Mnontarget=Mnontarget, Mtarget=Mtarget, rhs, MλI)))
+
+    # Put back the matrix workspace
+    put!(mworkspaces(cgi), M_all)
+
+    return (vˡ, λ, vʳ)
 end
+
+# The actual compute_connectedgraph! call is trivial as its fully precomputed above
+compute_connectedgraph!(::EigMax, cgi::ConnectedGraphInit) = cgi.EigMax

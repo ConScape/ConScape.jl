@@ -11,47 +11,52 @@ quality = reverse(rotr90(Raster(joinpath(datadir, "qualities_$landscape.asc"); m
 quality[(steplikelihood .> 0) .& isnan.(quality)] .= 1e-20
 rast = RasterStack((; steplikelihood, quality))
 
-isnanorapprox(xs::AbstractArray, ys::AbstractArray; atol=0.0) = 
-    all(((x, y),) -> isnanorapprox(x, y; atol), zip(xs, ys))
-function isnanorapprox(x::Number, y::Number; atol=0.0)
+function isnanorapprox(xs::AbstractArray, ys::AbstractArray; 
+    atol::Real=0,
+    rtol::Real=Base.rtoldefault(LinearAlgebra.promote_leaf_eltypes(xs), LinearAlgebra.promote_leaf_eltypes(ys), atol),
+)
+    all(((x, y),) -> isnanorapprox(x, y; atol, rtol), zip(xs, ys))
+end
+function isnanorapprox(x::Number, y::Number; atol, rtol)
     out = (isnan(x) && isnan(y)) || isapprox(x, y; atol)
     out || println("Not approx: $x $y $atol")
     return out
 end
 
+
 @testset "RSP sensitivity measure" begin
+    seed = 1234
     # Set up the new sensitivity measures
     sensitivity_measures = (;
-        sum_sens_cost =                   SensitivityAnalysis(; wrt=StepCost(), type=Sensitivity(), metric=Summation()),
-        sum_sens_likelihood =             SensitivityAnalysis(; wrt=StepLikelihood(), type=Sensitivity(), metric=Summation()),
-        sum_sens_costtolikelihood =       SensitivityAnalysis(; wrt=StepCostToLikelihood(), type=Sensitivity(), metric=Summation()),
-        sum_sens_likelihoodtocost =       SensitivityAnalysis(; wrt=StepLikelihoodToCost(), type=Sensitivity(), metric=Summation()),
-        sum_sens_quality =                SensitivityAnalysis(; wrt=Quality(), type=Sensitivity(), metric=Summation()),
-        sum_sens_source_quality =         SensitivityAnalysis(; wrt=SourceQuality(), type=Sensitivity(), metric=Summation()),
-        sum_sens_target_quality =         SensitivityAnalysis(; wrt=TargetQuality(), type=Sensitivity(), metric=Summation()),
-        sum_elast_cost =                  SensitivityAnalysis(; wrt=StepCost(), type=Elasticity(), metric=Summation()),
-        sum_elast_likelihood =            SensitivityAnalysis(; wrt=StepLikelihood(), type=Elasticity(), metric=Summation()),
-        sum_elast_costtolikelihood =      SensitivityAnalysis(; wrt=StepCostToLikelihood(), type=Elasticity(), metric=Summation()),
-        sum_elast_likelihoodtocost =      SensitivityAnalysis(; wrt=StepLikelihoodToCost(), type=Elasticity(), metric=Summation()),
-        sum_elast_quality =               SensitivityAnalysis(; wrt=Quality(), type=Elasticity(), metric=Summation()),
-        sum_elast_source_quality =        SensitivityAnalysis(; wrt=SourceQuality(), type=Elasticity(), metric=Summation()),
-        sum_elast_target_quality =        SensitivityAnalysis(; wrt=TargetQuality(), type=Elasticity(), metric=Summation()),
+        sens_sum_cost =                   SensitivityAnalysis(; wrt=StepCost(), type=Sensitivity(), metric=Summation()),
+        sens_sum_likelihood =             SensitivityAnalysis(; wrt=StepLikelihood(), type=Sensitivity(), metric=Summation()),
+        sens_sum_costtolikelihood =       SensitivityAnalysis(; wrt=StepCostToLikelihood(), type=Sensitivity(), metric=Summation()),
+        sens_sum_likelihoodtocost =       SensitivityAnalysis(; wrt=StepLikelihoodToCost(), type=Sensitivity(), metric=Summation()),
+        sens_sum_quality =                SensitivityAnalysis(; wrt=Quality(), type=Sensitivity(), metric=Summation()),
+        sens_sum_source_quality =         SensitivityAnalysis(; wrt=SourceQuality(), type=Sensitivity(), metric=Summation()),
+        sens_sum_target_quality =         SensitivityAnalysis(; wrt=TargetQuality(), type=Sensitivity(), metric=Summation()),
+        elast_sum_cost =                  SensitivityAnalysis(; wrt=StepCost(), type=Elasticity(), metric=Summation()),
+        elast_sum_likelihood =            SensitivityAnalysis(; wrt=StepLikelihood(), type=Elasticity(), metric=Summation()),
+        elast_sum_costtolikelihood =      SensitivityAnalysis(; wrt=StepCostToLikelihood(), type=Elasticity(), metric=Summation()),
+        elast_sum_likelihoodtocost =      SensitivityAnalysis(; wrt=StepLikelihoodToCost(), type=Elasticity(), metric=Summation()),
+        elast_sum_quality =               SensitivityAnalysis(; wrt=Quality(), type=Elasticity(), metric=Summation()),
+        elast_sum_source_quality =        SensitivityAnalysis(; wrt=SourceQuality(), type=Elasticity(), metric=Summation()),
+        elast_sum_target_quality =        SensitivityAnalysis(; wrt=TargetQuality(), type=Elasticity(), metric=Summation()),
+        sens_eigen_cost =                 SensitivityAnalysis(; wrt=StepCost(), type=Sensitivity(), metric=EigMax(; seed)),
+        sens_eigen_likelihood =           SensitivityAnalysis(; wrt=StepLikelihood(), type=Sensitivity(), metric=EigMax(; seed)),
+        sens_eigen_costtolikelihood =     SensitivityAnalysis(; wrt=StepCostToLikelihood(), type=Sensitivity(), metric=EigMax(; seed)),
+        sens_eigen_likelihoodtocost =     SensitivityAnalysis(; wrt=StepLikelihoodToCost(), type=Sensitivity(), metric=EigMax(; seed)),
+        sens_eigen_quality =              SensitivityAnalysis(; wrt=Quality(), type=Sensitivity(), metric=EigMax(; seed)),
+        sens_eigen_source_quality =       SensitivityAnalysis(; wrt=SourceQuality(), type=Sensitivity(), metric=EigMax(; seed)),
+        sens_eigen_target_quality =       SensitivityAnalysis(; wrt=TargetQuality(), type=Sensitivity(), metric=EigMax(; seed)),
+        elast_eigen_cost =                SensitivityAnalysis(; wrt=StepCost(), type=Elasticity(), metric=EigMax(; seed)),
+        elast_eigen_likelihood =          SensitivityAnalysis(; wrt=StepLikelihood(), type=Elasticity(), metric=EigMax(; seed)),
+        elast_eigen_costtolikelihood =    SensitivityAnalysis(; wrt=StepCostToLikelihood(), type=Elasticity(), metric=EigMax(; seed)),
+        elast_eigen_likelihoodtocost =    SensitivityAnalysis(; wrt=StepLikelihoodToCost(), type=Elasticity(), metric=EigMax(; seed)),
+        elast_eigen_quality =             SensitivityAnalysis(; wrt=Quality(), type=Elasticity(), metric=EigMax(; seed)),
+        elast_eigen_source_quality =      SensitivityAnalysis(; wrt=SourceQuality(), type=Elasticity(), metric=EigMax(; seed)),
+        elast_eigen_target_quality =      SensitivityAnalysis(; wrt=TargetQuality(), type=Elasticity(), metric=EigMax(; seed)),
     )
-        # eig_sens_cost =                   SensitivityAnalysis(; wrt=StepCost(), type=Sensitivity(), metric=EigMax()),
-        # eig_sens_likelihood =             SensitivityAnalysis(; wrt=StepLikelihood(), type=Sensitivity(), metric=EigMax()),
-        # eig_sens_costtolikelihood =       SensitivityAnalysis(; wrt=StepCostToLikelihood(), type=Sensitivity(), metric=EigMax()),
-        # eig_sens_likelihoodtocost =       SensitivityAnalysis(; wrt=StepLikelihoodToCost(), type=Sensitivity(), metric=EigMax()),
-        # eig_sens_quality =                SensitivityAnalysis(; wrt=Quality(), type=Sensitivity(), metric=EigMax()),
-        # eig_sens_source_quality =         SensitivityAnalysis(; wrt=SourceQuality(), type=Sensitivity(), metric=EigMax()),
-        # eig_sens_target_quality =         SensitivityAnalysis(; wrt=TargetQuality(), type=Sensitivity(), metric=EigMax()),
-        # eig_elast_cost =                  SensitivityAnalysis(; wrt=StepCost(), type=Elasticity(), metric=EigMax()),
-        # eig_elast_likelihood =            SensitivityAnalysis(; wrt=StepLikelihood(), type=Elasticity(), metric=EigMax()),
-        # eig_elast_costtolikelihood =      SensitivityAnalysis(; wrt=StepCostToLikelihood(), type=Elasticity(), metric=EigMax()),
-        # eig_elast_likelihoodtocost =      SensitivityAnalysis(; wrt=StepLikelihoodToCost(), type=Elasticity(), metric=EigMax()),
-        # eig_elast_quality =               SensitivityAnalysis(; wrt=Quality(), type=Elasticity(), metric=EigMax()),
-        # eig_elast_source_quality =        SensitivityAnalysis(; wrt=SourceQuality(), type=Elasticity(), metric=EigMax()),
-        # eig_elast_target_quality =        SensitivityAnalysis(; wrt=TargetQuality(), type=Elasticity(), metric=EigMax()),
-    # )
 
     thetas = (theta_one=1.0, theta_pointone=0.1)
     grains = (grain_two=2, no_grain=nothing)
@@ -61,7 +66,7 @@ end
         map(thetas) do theta
             map(proximity_measures) do proximity_measure
                 movement = RandomisedShortestPath(; 
-                    distance_transformation=ExpMinusAlpha(0.5),
+                    distance_transformation=ExpMinusAlpha(1/2000),
                     proximity_measure, 
                     theta, 
                 );
@@ -78,6 +83,7 @@ end
             qualities=parent(quality),
         )
         wrts = ["A", "C", "Q", "C&A=f(C)", "A&C=f(A)"]
+        landscape_measures = (sum="sum", eigen="eigenanalysis")
         cfs = (ec=OldConScape.expected_cost, pmp=OldConScape.power_mean_proximity)
         metric = (elasticity=true, sensitivity=false)
         map(grains) do grain
@@ -94,23 +100,25 @@ end
                 grsp = OldConScape.GridRSP(g_coarse; θ=theta)
                 map(cfs) do connectivity_function
                     map(metric) do unitless
-                        Dict(wrts .=> map(wrts) do wrt
-                            # OldConScape cant do non-square Q
-                            if !isnothing(grain) && wrt == "Q"
-                                nothing
-                            else
-                                OldConScape.sensitivity(grsp;
-                                    connectivity_function,
-                                    distance_transformation=OldConScape.ExpMinus(),
-                                    α=0.5,
-                                    wrt,
-                                    landscape_measure=["sum","eigenanalysis"][1],
-                                    unitless,
-                                    diagvalue=nothing,
-                                    target_equal_source=true
-                                )
-                            end
-                        end)
+                        map(landscape_measures) do landscape_measure
+                            Dict(wrts .=> map(wrts) do wrt
+                                # OldConScape cant do non-square Q
+                                if !isnothing(grain) && wrt == "Q"
+                                    nothing
+                                else
+                                    OldConScape.sensitivity(grsp;
+                                        connectivity_function,
+                                        distance_transformation=OldConScape.ExpMinus(),
+                                        α=1/2000,
+                                        wrt,
+                                        landscape_measure,
+                                        unitless,
+                                        diagvalue=nothing,
+                                        target_equal_source=true
+                                    )
+                                end
+                            end)
+                        end
                     end
                 end
             end
@@ -133,13 +141,14 @@ end
             affinities=affinities_sparse,
             qualities=parent(quality),
         )
-        grain = grains.grain_two
-        connectivity_function = OldConScape.power_mean_proximity
+        grain = grains.no_grain
+        connectivity_function = OldConScape.expected_cost
         wrt = "C"
-        theta = thetas.theta_pointone
+        theta = thetas.theta_one
         metric = (elasticity=true, sensitivity=false)
         unitless = metric.sensitivity
-        landscape_measure = "sum"
+        landscape_measure = "eigenanalysis"
+        # landscape_measure = "sum"
 
         g_coarse = if isnothing(grain)
             g
@@ -157,7 +166,7 @@ end
             OldConScape.sensitivity(grsp;
                 connectivity_function,
                 distance_transformation=OldConScape.ExpMinus(),
-                α=0.5,
+                α=1/2000,
                 wrt,
                 landscape_measure,
                 unitless,
@@ -166,68 +175,119 @@ end
             )
         end
     end;
-    @time new_x = solve((; sens=sensitivity_measures.sum_sens_cost), problems.grain_two.theta_pointone.pmp, rast)
-    cgi = init(problems.grain_two.theta_pointone.pmp, rast, 1)
+    @time new_x = solve((; sens=sensitivity_measures.sens_eigen_cost), problems.no_grain.theta_one.ec, rast)
 
-    # @assert OldConScape.store[].C == ConScape.store[].C
-    @assert OldConScape.store[].W == ConScape.store[].W
-    @assert OldConScape.store[].Z == ConScape.store[].Z
-    # @assert OldConScape.store[].Y == ConScape.store[].Y
-    @assert OldConScape.store[].Zrows == ConScape.store[].Zrows'
-    @assert OldConScape.store[].qᵗ == ConScape.store[].qᵗ
-    @assert OldConScape.store[].qˢ == ConScape.store[].qˢ
-    @assert isnanorapprox(OldConScape.store[].XdiagZⁱ, ConScape.store[].XdiagZⁱ)
-    @assert isnanorapprox(OldConScape.store[].XZⁱ, ConScape.store[].XZⁱ)
-    @assert isnanorapprox(OldConScape.store[].XᵀZ, ConScape.store[].XᵀZ')
-    @assert isnanorapprox(OldConScape.store[].node_output, ConScape.store[].node_output[ConScape.sourceids(cgi)])
-    @assert isnanorapprox(OldConScape.store[].edge_output, ConScape.store[].edge_output)
-    
-
-    @assert isnanorapprox(OldConScape.store[].K, ConScape.store[].K)
-    @assert isnanorapprox(OldConScape.store[].M, ConScape.store[].M)
-    @assert isnanorapprox(OldConScape.store[].diag, ConScape.store[].diag)
-    @assert isnanorapprox(OldConScape.store[].diagC, ConScape.store[].diagC)
-    @assert isnanorapprox(OldConScape.store[].MᵀZ, ConScape.store[].MᵀZ')
-    @assert isnanorapprox(OldConScape.store[].C̄ᵣ, ConScape.store[].C̄ᵣ)
-    @assert isnanorapprox(OldConScape.store[].X3, ConScape.store[].X3)
-    @assert isnanorapprox(OldConScape.store[].X5, ConScape.store[].X5')
-    @assert isnanorapprox(OldConScape.store[].kB, ConScape.store[].kB)
-    @assert isnanorapprox(OldConScape.store[].kΣ, ConScape.store[].kΣ)
-
-    using OldConScape.Plots
-    heatmap(old_x)
-    heatmap(parent(new_x.sens))
-    isnanorapprox(parent(new_x.sens), old_x)
+    @testset "old and new internals match" begin
+        @test isapprox(OldConScape.store[].Fps[1].eigenvalues, ConScape.store[].Fps[1].eigenvalues)
+        @test isapprox(OldConScape.store[].Fps[1].Q, ConScape.store[].Fps[1].Q)
+        @test isapprox(OldConScape.store[].Fps[1].R, ConScape.store[].Fps[1].R)
+        @test isapprox(OldConScape.store[].λ, ConScape.store[].λ)
+        @test isnanorapprox(OldConScape.store[].targetnodes, ConScape.store[].targetnodes)
+        @test isnanorapprox(OldConScape.store[].nontargetnodes, ConScape.store[].nontargetnodes)
+        @test isnanorapprox(OldConScape.store[].Mtarget, ConScape.store[].Mtarget)
+        @test isnanorapprox(OldConScape.store[].Mnontarget, ConScape.store[].Mnontarget)
+        @test isnanorapprox(OldConScape.store[].MλI, ConScape.store[].MλI)
+        @test isnanorapprox(OldConScape.store[].rhs, ConScape.store[].rhs)
+        @test isnanorapprox(OldConScape.store[].vʳ₀, ConScape.store[].vʳ₀; atol=1e-12)
+        @test isnanorapprox(OldConScape.store[].vʳ, ConScape.store[].vʳ; atol=1e-12)
+        @test isnanorapprox(ConScape.store[].vˡ, ConScape.store[].v)
+        @test isnanorapprox(ConScape.store[].vʳ, ConScape.store[].w)
+        # Only the correlation is approximately equal, not the values
+        @test isnanorapprox(cor(OldConScape.store[].vˡ, ConScape.store[].vˡ), 1)
+        @test isapprox(maximum(OldConScape.store[].vˡ), maximum(ConScape.store[].vˡ))
+        @test isapprox(maximum(OldConScape.store[].vˡ), 1)
+        @test isnanorapprox(OldConScape.store[].MλI, ConScape.store[].MλI; atol=1e-13)
+        @test isnanorapprox(OldConScape.store[].rhs, ConScape.store[].rhs; atol=1e-14)
+        @test OldConScape.store[].C == ConScape.store[].C
+        @test OldConScape.store[].W == ConScape.store[].W
+        @test OldConScape.store[].Z == ConScape.store[].Z
+        @test OldConScape.store[].Y == ConScape.store[].Y
+        @test OldConScape.store[].Zrows == ConScape.store[].Zrows
+        @test isapprox(OldConScape.store[].qˢ, ConScape.store[].qˢ)
+        # qᵗ is only highly correlated, not actually approximate
+        @test isapprox(cor(OldConScape.store[].qᵗ, ConScape.store[].qᵗ), 1)
+        # But scaled identically
+        @test isapprox(maximum(OldConScape.store[].qᵗ), maximum(ConScape.store[].qᵗ))
+        @test isapprox(OldConScape.store[].K, ConScape.store[].K)
+        @test isapprox(cor(vec(ConScape.store[].M), vec(OldConScape.store[].M)), 1)
+        @test isapprox(OldConScape.store[].diagC, ConScape.store[].diagC)
+        @test isapprox(OldConScape.store[].kB, ConScape.store[].kB)
+        @test isapprox(OldConScape.store[].kΣ, ConScape.store[].kΣ)
+        @test isapprox(OldConScape.store[].vTw, ConScape.store[].vTw)
+    end
 
     @testset "square Z, no coarse graining" begin
         @testset "theta $theta" for (old_by_theta, new_by_theta, theta) in zip(old_sens.no_grain, new_sens.no_grain, thetas)
             @testset "$pm" for (old, new, pm) in zip(old_by_theta, new_by_theta, proximity_measures)
-                @test isnanorapprox(old.sensitivity["C"],        new.sum_sens_cost)
-                @test isnanorapprox(old.sensitivity["A"],        new.sum_sens_likelihood)
-                @test isnanorapprox(old.sensitivity["C&A=f(C)"], new.sum_sens_likelihoodtocost)
-                @test isnanorapprox(old.sensitivity["A&C=f(A)"], new.sum_sens_costtolikelihood)
-                @test isnanorapprox(old.elasticity["C"],         new.sum_elast_cost)
-                @test isnanorapprox(old.elasticity["A"],         new.sum_elast_likelihood)
-                @test isnanorapprox(old.elasticity["C&A=f(C)"],  new.sum_elast_likelihoodtocost)
-                @test isnanorapprox(old.elasticity["A&C=f(A)"],  new.sum_elast_costtolikelihood)
-                @test isnanorapprox(old.elasticity["Q"],         new.sum_elast_quality)
-                @test isnanorapprox(old.sensitivity["Q"],        new.sum_sens_quality)
+                @testset "sum" begin
+                    @test isnanorapprox(old.sensitivity.sum["C"],          new.sens_sum_cost)
+                    @test isnanorapprox(old.sensitivity.sum["A"],          new.sens_sum_likelihood)
+                    @test isnanorapprox(old.sensitivity.sum["C&A=f(C)"],   new.sens_sum_likelihoodtocost)
+                    @test isnanorapprox(old.sensitivity.sum["A&C=f(A)"],   new.sens_sum_costtolikelihood)
+                    @test isnanorapprox(old.elasticity.sum["C"],           new.elast_sum_cost)
+                    @test isnanorapprox(old.elasticity.sum["A"],           new.elast_sum_likelihood)
+                    @test isnanorapprox(old.elasticity.sum["C&A=f(C)"],    new.elast_sum_likelihoodtocost)
+                    @test isnanorapprox(old.elasticity.sum["A&C=f(A)"],    new.elast_sum_costtolikelihood)
+                    @test isnanorapprox(old.elasticity.sum["Q"],           new.elast_sum_quality)
+                    @test isnanorapprox(old.sensitivity.sum["Q"],          new.sens_sum_quality)
+                end
+                @testset "eigen" begin
+                    @test cor(old.sensitivity.eigen["C"][I],        new.sens_eigen_cost[I]) ≈ 1
+                    @test cor(old.sensitivity.eigen["A"][I],        new.sens_eigen_likelihood[I]) ≈ 1
+                    @test cor(old.sensitivity.eigen["C&A=f(C)"][I], new.sens_eigen_likelihoodtocost[I]) ≈ 1
+                    @test cor(old.sensitivity.eigen["A&C=f(A)"][I], new.sens_eigen_costtolikelihood[I]) ≈ 1
+                    @test cor(old.elasticity.eigen["C"][I],         new.elast_eigen_cost[I]) ≈ 1
+                    @test cor(old.elasticity.eigen["A"][I],         new.elast_eigen_likelihood[I]) ≈ 1
+                    @test cor(old.elasticity.eigen["C&A=f(C)"][I],  new.elast_eigen_likelihoodtocost[I]) ≈ 1
+                    @test cor(old.elasticity.eigen["A&C=f(A)"][I],  new.elast_eigen_costtolikelihood[I]) ≈ 1
+                    @test maximum(abs, old.sensitivity.eigen["C"][I]) ≈        maximum(abs, new.sens_eigen_cost[I]) rtol=1e-5
+                    @test maximum(abs, old.sensitivity.eigen["A"][I]) ≈        maximum(abs,  new.sens_eigen_likelihood[I]) rtol=1e-5
+                    @test maximum(abs, old.sensitivity.eigen["C&A=f(C)"][I]) ≈ maximum(abs,  new.sens_eigen_likelihoodtocost[I]) rtol=1e-5
+                    @test maximum(abs, old.sensitivity.eigen["A&C=f(A)"][I]) ≈ maximum(abs,  new.sens_eigen_costtolikelihood[I]) rtol=1e-5
+                    @test maximum(abs, old.elasticity.eigen["C"][I]) ≈         maximum(abs,  new.elast_eigen_cost[I]) rtol=1e-5
+                    @test maximum(abs, old.elasticity.eigen["A"][I]) ≈         maximum(abs,  new.elast_eigen_likelihood[I]) rtol=1e-5
+                    @test maximum(abs, old.elasticity.eigen["C&A=f(C)"][I]) ≈  maximum(abs,  new.elast_eigen_likelihoodtocost[I]) rtol=1e-5
+                    @test maximum(abs, old.elasticity.eigen["A&C=f(A)"][I]) ≈  maximum(abs,  new.elast_eigen_costtolikelihood[I]) rtol=1e-5
+                end
             end
         end
     end
 
+    I = ConScape.sourceids(cgi)
+    old = old_sens.grain_two.theta_pointone.pmp
+    new = new_sens.grain_two.theta_pointone.pmp
     @testset "non-square, coarse graining of 2" begin
         @testset "theta $theta" for (old_by_theta, new_by_theta, theta) in zip(old_sens.grain_two, new_sens.grain_two, thetas)
             @testset "$pm" for (old, new, pm) in zip(old_by_theta, new_by_theta, proximity_measures)
                 # OldConScape cant do non-square Q
-                @test isnanorapprox(old.sensitivity["C"],        new.sum_sens_cost)
-                @test isnanorapprox(old.sensitivity["A"],        new.sum_sens_likelihood)
-                @test isnanorapprox(old.sensitivity["C&A=f(C)"], new.sum_sens_likelihoodtocost)
-                @test isnanorapprox(old.sensitivity["A&C=f(A)"], new.sum_sens_costtolikelihood)
-                @test isnanorapprox(old.elasticity["C"],         new.sum_elast_cost)
-                @test isnanorapprox(old.elasticity["A"],         new.sum_elast_likelihood)
-                @test isnanorapprox(old.elasticity["C&A=f(C)"],  new.sum_elast_likelihoodtocost)
-                @test isnanorapprox(old.elasticity["A&C=f(A)"],  new.sum_elast_costtolikelihood)
+                @testset "sum" begin
+                    @test isnanorapprox(old.sensitivity.sum["C"],          new.sens_sum_cost)
+                    @test isnanorapprox(old.sensitivity.sum["A"],          new.sens_sum_likelihood)
+                    @test isnanorapprox(old.sensitivity.sum["C&A=f(C)"],   new.sens_sum_likelihoodtocost)
+                    @test isnanorapprox(old.sensitivity.sum["A&C=f(A)"],   new.sens_sum_costtolikelihood)
+                    @test isnanorapprox(old.elasticity.sum["C"],           new.elast_sum_cost)
+                    @test isnanorapprox(old.elasticity.sum["A"],           new.elast_sum_likelihood)
+                    @test isnanorapprox(old.elasticity.sum["C&A=f(C)"],    new.elast_sum_likelihoodtocost)
+                    @test isnanorapprox(old.elasticity.sum["A&C=f(A)"],    new.elast_sum_costtolikelihood)
+                end
+                @testset "eigen" begin
+                    @test cor(old.sensitivity.eigen["C"][I],        new.sens_eigen_cost[I]) ≈ 1
+                    @test cor(old.sensitivity.eigen["A"][I],        new.sens_eigen_likelihood[I]) ≈ 1
+                    @test cor(old.sensitivity.eigen["C&A=f(C)"][I], new.sens_eigen_likelihoodtocost[I]) ≈ 1
+                    @test cor(old.sensitivity.eigen["A&C=f(A)"][I], new.sens_eigen_costtolikelihood[I]) ≈ 1
+                    @test cor(old.elasticity.eigen["C"][I],         new.elast_eigen_cost[I]) ≈ 1
+                    @test cor(old.elasticity.eigen["A"][I],         new.elast_eigen_likelihood[I]) ≈ 1
+                    @test cor(old.elasticity.eigen["C&A=f(C)"][I],  new.elast_eigen_likelihoodtocost[I]) ≈ 1
+                    @test cor(old.elasticity.eigen["A&C=f(A)"][I],  new.elast_eigen_costtolikelihood[I]) ≈ 1
+                    @test maximum(abs, old.sensitivity.eigen["C"][I]) ≈        maximum(abs, new.sens_eigen_cost[I]) rtol=1e-5
+                    @test maximum(abs, old.sensitivity.eigen["A"][I]) ≈        maximum(abs,  new.sens_eigen_likelihood[I]) rtol=1e-5
+                    @test maximum(abs, old.sensitivity.eigen["C&A=f(C)"][I]) ≈ maximum(abs,  new.sens_eigen_likelihoodtocost[I]) rtol=1e-5
+                    @test maximum(abs, old.sensitivity.eigen["A&C=f(A)"][I]) ≈ maximum(abs,  new.sens_eigen_costtolikelihood[I]) rtol=1e-5
+                    @test maximum(abs, old.elasticity.eigen["C"][I]) ≈         maximum(abs,  new.elast_eigen_cost[I]) rtol=1e-5
+                    @test maximum(abs, old.elasticity.eigen["A"][I]) ≈         maximum(abs,  new.elast_eigen_likelihood[I]) rtol=1e-5
+                    @test maximum(abs, old.elasticity.eigen["C&A=f(C)"][I]) ≈  maximum(abs,  new.elast_eigen_likelihoodtocost[I]) rtol=1e-5
+                    @test maximum(abs, old.elasticity.eigen["A&C=f(A)"][I]) ≈  maximum(abs,  new.elast_eigen_costtolikelihood[I]) rtol=1e-5
+                end
             end
         end
     end

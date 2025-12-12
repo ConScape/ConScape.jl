@@ -1,3 +1,5 @@
+const store = Ref{NamedTuple}((;))
+
 # Sensitivity
 
 # A metric, but not a measure like EigMax
@@ -55,8 +57,15 @@ needs_full_costdistancematrix(::SensitivityAnalysis, rsp::RSP) =
     proximity_measure(rsp) isa ExpectedCost
 # And EigMax
 needs_eigmax(m::SensitivityAnalysis, rsp::RSP) = metric(m) isa EigMax
-needs_sensitivity_precursors(::SensitivityAnalysis{<:Permeability}, rsp::RSP) = true
-needs_sensitivity_precursors(::Measure, rsp::MovementMode) = false
+
+# Sensitivity precursors
+# We compute most of Proximity sensitivitly for all metrics,
+# so the bulk of the calculations can be shared by multiple outputs
+# But we need to separate them by Summation / EigMax metric
+needs_sum_sensitivity_precursors(m::SensitivityAnalysis{<:Permeability}, rsp::RSP) = metric(m) isa Summation
+needs_sum_sensitivity_precursors(::Measure, rsp::MovementMode) = false
+needs_eigmax_sensitivity_precursors(m::SensitivityAnalysis{<:Permeability}, rsp::RSP) = metric(m) isa EigMax
+needs_eigmax_sensitivity_precursors(::Measure, rsp::MovementMode) = false
 
 # w.r.t Quality ############################################################################
 
@@ -74,8 +83,8 @@ function compute_target(
     We cant do that at the target level because the numbers are 
     too small and cause floating point error in the sum. =#
     if metric(m) isa EigMax
-       (v, λ, w) = ti.EigMax
-        workspace(ti) .= v .* M .* w[targetnode(ti)]
+        (v, λ, w) = ti.eigmax
+        workspace(ti) .= v .* M .* w[targetnode(ti)] ./ (v' * w)
     else
         M
     end
@@ -92,6 +101,12 @@ function finalize_connectedgraph_output!(
         output[sourceids(cgi)] ./= sourcequality(cgi)
     end
 
+    # Maybe scale by eigmax
+    if metric(m) isa EigMax
+        (v, λ, w) = cgi.eigmax
+        output[sourceids(cgi)] ./= (v' * w)
+    end
+
     return output
 end
 
@@ -102,14 +117,30 @@ function compute_connectedgraph!(
     m::SensitivityAnalysis{<:Permeability}, 
     cgi::ConnectedGraphInit
 )
-    compute_connectedgraph!(output, proximity_measure(cgi), m, cgi)
+    return compute_connectedgraph!(output, proximity_measure(cgi), m, cgi)
 end
 
 # ExpectedCost -----------------------------------------------------------------------------
 
+# EigMax metric modifies qˢ and qᵗ
+function _compute_eigmax_sensitivity_precursors(pm::ProximityMeasure, cgi::ConnectedGraphInit)
+    (v, λ, w) = cgi.eigmax
+    qˢ = cgi.qˢ .* v    
+    qᵗ = cgi.qᵗ .* w[map(id -> id.node, targetids(cgi))]
+
+    store[] = (; store[]..., map(copy, (; v, λ, w))...)
+    return _compute_sensitivity_precursors(pm, cgi, qˢ, qᵗ)
+end
+
+# Summation uses the standard qˢ and qᵗ
+function _compute_sum_sensitivity_precursors(pm::ProximityMeasure, cgi::ConnectedGraphInit)
+    (; qˢ, qᵗ) = cgi
+    return _compute_sensitivity_precursors(pm, cgi, qˢ, qᵗ)
+end
+
 # These are computed first ast they can be reused for all permeability_sensitivities
-function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit)
-    (; qˢ, W, C, CW, CW_t, A, Aⁱ, IW_adj_factorization, A_rowsums, Z_full, Y_full, Zrows_full) = cgi
+function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit, qˢ, qᵗ)
+    (; W, C, CW, CW_t, A, Aⁱ, IW_adj_factorization, A_rowsums, Z_full, Y_full, Zrows_full) = cgi
 
     # Sparse matrices. `mapnz` means we keep the sparse structure but 
     # initialise values to zero internally
@@ -122,18 +153,23 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
     # Allocate Z-size matrices
     MᵀZ_full::MDe = mworkspace(cgi)
     X5_full::MDe = mworkspace(cgi)
+    K_full::MDe = zeros(size(X5_full))
+    M_full::MDe = zeros(size(X5_full))
+
     
     # Loop to calculate diagonals mdiagZ and mdiagC̄Z
     for target::TargetID in targetids(cgi)
         # Precalculate for this target and graph measures
         ti = TargetInit(cgi, target)
-        (; K, qᵗ, Y, Z, Zⁱ) = ti
+        (; K, Y, Z, Zⁱ) = ti
         dt = distance_transformation(ti)
         node = target.node
         idx = target.connectedgraphidx
 
         Kd = workspace(ti) .= _diff_KD(dt).(K)
-        Md = workspace(ti) .= qˢ .* Kd .* qᵗ
+        Md = workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
+        K_full[:, idx] .= Kd
+        M_full[:, idx] .= Md
         x = sum(Md) * Zⁱ[node]
         mdiagZⁱ[idx] = x
         mdiagC̄Zⁱ[idx] = x * Zⁱ[node] * Y[node]
@@ -143,16 +179,16 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
     # Loop to calcualte MᵀZ and X5
     for target in targetids(cgi)
         ti = TargetInit(cgi, target)
-        node::Int = target.node
-        idx::Int = target.connectedgraphidx
+        node = target.node
+        idx = target.connectedgraphidx
 
         # We already precomputed Z and Y, 
         # so add them to storage early so they arent coputed elsewhere
-        (; Z::RVDe, Zⁱ::RVDe, K::RVDe, Y::RVDe, qˢ, qᵗ::Float64) = ti
+        (; Z::RVDe, Zⁱ::RVDe, K::RVDe, Y::RVDe) = ti
 
         C̄ᵣ::VDe = workspace(ti) .= Y .* Zⁱ
         Kd::VDe = workspace(ti) .= _diff_KD(distance_transformation(ti)).(K)
-        Md::VDe = workspace(ti) .= qˢ .* Kd .* qᵗ
+        Md::VDe = workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
         MZⁱ::VDe = workspace(ti) .= Md .* Zⁱ
         MᵀZ::VDe = ldiv!(ti, IW_adj_factorization, (workspace(ti) .= MZⁱ)) # MᵀZ = MZⁱ' / IW
         MᵀZ_full[:, idx] .= MᵀZ # Update the full matrix for later use
@@ -199,14 +235,20 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
     put!(mworkspaces(cgi), X5_full)
     put!(mworkspaces(cgi), MᵀZ_full)
 
+    store[] = (; store[]..., C, W, Z=Z_full, Zrows=Zrows_full, Y=Y_full, diag=copy(mdiagZⁱ), diagC=copy(mdiagC̄Zⁱ), X5=X5_full, kB, kΣ, K=K_full, M=M_full, qˢ, qᵗ)
+
     return (; kB, kΣ)
 end
 
 function compute_connectedgraph!(
     output, ::ExpectedCost, m::SensitivityAnalysis{<:Permeability}, cgi::ConnectedGraphInit
 )
-    (; Aⁱ::MSp, A_rowsums::RVDe, sensitivity_precursors) = cgi
-    (; kB::MSp, kΣ::MSp) = sensitivity_precursors
+    (; Aⁱ::MSp, A_rowsums::RVDe) = cgi
+    (; kB::MSp, kΣ::MSp) = if metric(m) isa EigMax
+        cgi.eigmax_sensitivity_precursors
+    else
+        cgi.sum_sensitivity_precursors
+    end
 
     kΣ_node = sum(kΣ; dims=2)
     # Calculate output from non-zero values  of W/Aⁱ/kB/kΣ
@@ -220,20 +262,29 @@ function compute_connectedgraph!(
         return nothing
     end
 
+    if metric(m) isa EigMax
+        @show "eigmaxing..."
+        (v, λ, w) = cgi.eigmax 
+        vTw = (v' * w)
+        store[] = (; store[]..., vTw)
+        output[sourceids(cgi)] ./= vTw
+    end
+
     return output
 end
 
 # PowerMeanProximity -----------------------------------------------------------------------
 
-function _compute_sensitivity_precursors(::PowerMeanProximity, cgi::ConnectedGraphInit)
+function _compute_sensitivity_precursors(::PowerMeanProximity, cgi::ConnectedGraphInit, qˢ, qᵗ)
     (; W, A, Aⁱ, A_rowsums, Z_full) = cgi
 
     # We use a custom weigth function as this is not the standard
     # betweenness weight - usually just K or M
     function weightfunc(ti)
-        (; qˢ, qᵗ, θ, Z, Zⁱ) = ti
+        (; θ, Z, Zⁱ) = ti
         node = targetnode(ti)
-        return readonlyarray(workspace(ti) .= (qˢ .* ((Z .* Zⁱ[node]) .^ θ) .* qᵗ))
+        idx = targetconnectedgraphidx(ti)
+        return readonlyarray(workspace(ti) .= (qˢ .* ((Z .* Zⁱ[node]) .^ θ) .* qᵗ[idx]))
     end
     custom_weighted = CustomWeighted(weightfunc) # We dont need the weights in the allocation phase, just the type
     finallevel = ConnectedGraphLevel()
@@ -260,13 +311,18 @@ function compute_connectedgraph!(
     m::SensitivityAnalysis{<:Permeability},
     cgi::ConnectedGraphInit
 )
-    (; A, Aⁱ, A_rowsums, sensitivity_precursors) = cgi
-    (; edge_output, node_output) = sensitivity_precursors::NamedTuple{<:Any,Tuple{MSp,MDe}}
+    (; A, Aⁱ, A_rowsums) = cgi
 
+    (; edge_output, node_output) = if metric(m) isa EigMax
+        cgi.eigmax_sensitivity_precursors
+    else
+        cgi.sum_sensitivity_precursors
+    end
+
+    node_sensitivity = fill!(workspace(cgi), 0.0)
     # Loop over non-zero values of Aⁱ/edge_output
     foreachnz(Aⁱ) do i, j, n
         I = sourceids(cgi)[i]
-        J = sourceids(cgi)[j]
         S_cost = -edge_output.nzval[n]
         S_likelihood = (edge_output.nzval[n] * Aⁱ.nzval[n] - 
                         node_output[I] / A_rowsums[i]) * (A.nzval[n] > 0) * theta(cgi)
@@ -274,10 +330,18 @@ function compute_connectedgraph!(
         S_e_likelihood_scaled = _maybe_scale(S_likelihood, sensitivitytype(m), wrt(m), cgi, n)
         S_e_cost_scaled = _maybe_scale(S_cost, sensitivitytype(m), wrt(m), cgi, n)
         # Combination of cost / likelihood depends on w.r.t. 
-        output[J] += _combine_sensitivity(wrt(m), S_e_likelihood_scaled, S_e_cost_scaled, cgi, n)
+        node_sensitivity[j] += _combine_sensitivity(wrt(m), S_e_likelihood_scaled, S_e_cost_scaled, cgi, n)
     end
 
-    return output
+    if metric(m) isa EigMax
+        @show "eigmaxing..."
+        (v, λ, w) = cgi.eigmax 
+        vTw = (v' * w)
+        store[] = (; store[]..., vTw)
+        node_sensitivity ./= vTw
+    end
+
+    return output[sourceids(cgi)] .= node_sensitivity 
 end
 
 

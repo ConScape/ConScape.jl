@@ -45,14 +45,6 @@ end
 #     end
 # end
 
-# Fill a vector with zeros, and one for the target node
-# If it was part of a square matrix this would be the diagonal
-function _diag_vec!(workspace, target::TargetID)
-    fill!(workspace, 0.0)
-    workspace[target.node] = 1.0
-    return workspace
-end
-
 # Reshape arrays to a new size dstructively
 # This only makes sense if arrays are sorted large to small
 function _reshape!(A::Array, size::Tuple{Vararg{Int}})

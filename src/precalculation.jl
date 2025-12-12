@@ -13,7 +13,8 @@ const RVDe = ReadOnlyArrays.ReadOnlyVector{Float64,Vector{Float64}}
 needs_full_fundamentalmatrix(::Measure, ::MovementMode) = false
 needs_full_fundamentalrowmatrix(::Measure, ::MovementMode) = false
 needs_full_costdistancematrix(::Measure, ::MovementMode) = false
-needs_sensitivity_precursors(::Measure, ::MovementMode) = false
+needs_sum_sensitivity_precursors(::Measure, ::MovementMode) = false
+needs_eigmax_sensitivity_precursors(::Measure, ::MovementMode) = false
 needs_eigmax(::Measure, ::MovementMode) = false
 
 anymeasure(f, measures::NamedTuple, mov::MovementMode) = 
@@ -104,7 +105,8 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
         needs_full_fundamentalrowmatrix(args...) ||
         needs_full_costdistancematrix(args...) ||
         needs_eigmax(args...) ||
-        needs_sensitivity_precursors(args...)
+        needs_sum_sensitivity_precursors(args...) ||
+        needs_eigmax_sensitivity_precursors(args...)
     end
 
     # If needed, allocated and precalculate some full size matrices
@@ -147,23 +149,35 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
             isnothing(Y_full) ? (;) : (; Y_full),
         )
 
+        # EigMax
         if anymeasure(needs_eigmax, mes, mov)
             cgi_part_precalc = ConnectedGraphInit(
                 problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), workspaces(cgi),
                 mworkspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
             )
             em = _get_eigmax(mes)::EigMax
-            solve!(cgi_part_precalc, em)
-            precalculation = (; precalculation..., EigMax)
+            eigmax = _compute_eigmax(em, cgi_part_precalc)
+            precalculation = (; precalculation..., eigmax)
         end
 
-        if anymeasure(needs_sensitivity_precursors, mes, mov)
+        # EigMax sensitivity precursors
+        if anymeasure(needs_sum_sensitivity_precursors, mes, mov)
             cgi_part_precalc = ConnectedGraphInit(
                 problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), workspaces(cgi), 
                 mworkspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
             )
-            sensitivity_precursors = _compute_sensitivity_precursors(proximity_measure(cgi), cgi_part_precalc)
-            precalculation = (; precalculation..., sensitivity_precursors)
+            sum_sensitivity_precursors = _compute_sum_sensitivity_precursors(proximity_measure(cgi), cgi_part_precalc)
+            precalculation = (; precalculation..., sum_sensitivity_precursors)
+        end
+
+        # Summation sensitivity precursors
+        if anymeasure(needs_eigmax_sensitivity_precursors, mes, mov)
+            cgi_part_precalc = ConnectedGraphInit(
+                problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), workspaces(cgi), 
+                mworkspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
+            )
+            eigmax_sensitivity_precursors = _compute_eigmax_sensitivity_precursors(proximity_measure(cgi), cgi_part_precalc)
+            precalculation = (; precalculation..., eigmax_sensitivity_precursors)
         end
 
         return precalculation
@@ -182,13 +196,14 @@ function _get_eigmax(measures::NamedTuple)::EigMax
     all_eigmax = map(_get_eigmax, values(measures))
     return reduce(all_eigmax; init=nothing) do out, cur
         if !(isnothing(out) || isnothing(cur))
-            out == cur || throw(ArgumenError("All EigMax must match exactly"))
+            out == cur || throw(ArgumentError("All EigMax must match exactly, got $out and $cur"))
         end
         isnothing(out) ? cur : out
     end
 end
 _get_eigmax(m::EigMax) = m
-_get_eigmax(m::SensitivityAnalysis) = metric(m)
+_get_eigmax(m::SensitivityAnalysis) = metric(m) isa EigMax ? metric(m) : nothing
+_get_eigmax(m::Measure) = nothing
 
 ###########################################################################################
 # Variable generation for ConnectedGraphInit
@@ -371,9 +386,11 @@ function _proximitymatrixcol(ti::TargetInit{<:Union{RSP,RandomWalk}})
 end
 
 function _fundamentalmatrixcol(ti::TargetInit{<:Union{RSP,RandomWalk}})
-    b = _diag_vec!(workspace(ti), target(ti))
-    b_copy = _diag_vec!(workspace(ti), target(ti))
-    Z = ldiv!(solver(ti), b, ti.IW_factorization, b_copy)
+    # `Z = (I - W) \ i` where b is column of the a diagonal matrix of 1s
+    # Solving `(I - W) * Z = i` for unknown `Z`
+    i = _identity_col!(workspace(ti), target(ti))
+    i_copy = _identity_col!(workspace(ti), target(ti))
+    Z = ldiv!(solver(ti), i, ti.IW_factorization, i_copy)
     return readonlyarray(Z)
 end
 
@@ -385,7 +402,7 @@ function _fundamentalrowmatrixrow(ti::TargetInit{<:Union{RSP,RandomWalk}})
     Zrows = if _issquare(ti)
         ti.Z
     else
-        b = _diag_vec!(workspace(ti), target(ti))
+        b = _identity_col!(workspace(ti), target(ti))
         Zrows = ldiv!(ti, ti.IW_adj_factorization, b)
         readonlyarray(Zrows)
     end
@@ -444,4 +461,12 @@ function _inv(x::T) where T<:Number
     return isfinite(i) ? i : floatmax(T)
 end
 
+
+# Fill a vector with zeros, and one for the target node
+# If this column it was part of a square matrix it would be an identity matrix
+function _identity_col!(workspace, target::TargetID)
+    fill!(workspace, 0.0)
+    workspace[target.node] = 1.0
+    return workspace
+end
 

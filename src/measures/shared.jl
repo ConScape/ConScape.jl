@@ -41,17 +41,23 @@ end
 
 @generated Base.Symbol(m::Measure) = QuoteNode(nameof(m))
 
-num_matrix_workspaces(::Measure, ::MovementMode) = 0
 function num_matrix_workspaces(problem::ConScapeProblem)
     mes = measures(problem)
     mov = movement(problem)
 
     max_workspaces =
-        mapreduce(m -> num_matrix_workspaces(m, mov), max, mes; init=0) +
+        # These workspaces need to persist between multiple measures.
+        # They will not be returned, so we sum them.
         anymeasure(needs_full_fundamentalmatrix, mes, mov) +
-        anymeasure(needs_full_fundamentalmatrix, mes, mov) +
+        anymeasure(needs_full_fundamentalrowmatrix, mes, mov) +
         anymeasure(needs_full_costdistancematrix, mes, mov) +
-        2 * anymeasure(needs_sensitivity_precursors, mes, mov)
+        # These workspaces are ephemeral and `put!` back within 
+        # the functions that use them, so we take the maximum.
+        max(
+            anymeasure(needs_eigmax, mes, mov),
+            2 * anymeasure(needs_sum_sensitivity_precursors, mes, mov),
+            2 * anymeasure(needs_eigmax_sensitivity_precursors, mes, mov),
+        )
 
     return max_workspaces
 end
