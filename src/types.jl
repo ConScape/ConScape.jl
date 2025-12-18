@@ -50,6 +50,7 @@ struct ReturnSpatialSourceSum <: ReturnSpatial end
 struct ReturnSpatialTargetSum <: ReturnSpatial end
 struct ReturnSpatialSourceAndTargetSum <: ReturnSpatial end
 struct ReturnAssignedSparse <: ReturnSparseGraph end
+struct ReturnAssignedDense <: ReturnTrait end
 struct ReturnScalarSum <: ReturnTrait end
 struct ReturnCustom <: ReturnTrait end
 

@@ -22,20 +22,21 @@ import CommonSolve: solve, solve!, init
 using WoodburyMatrices: Woodbury
 using SimpleWeightedGraphs: SimpleWeightedGraph, SimpleWeightedDiGraph
 using ReadOnlyArrays: ReadOnlyArray
-using Rasters: AbstractRaster, Raster, AbstractRasterStack, RasterStack, rebuild, dims, mosaic
+using Rasters: AbstractRaster, AbstractRasterStack, RasterStack, rebuild, dims, mosaic
+import Rasters: Raster
 
 
 export RandomisedShortestPath, LeastCostPath, RandomWalk, Euclidean, RSP, LCP
 
 export Distance, ExpectedCost, FreeEnergyDistance, SurvivalProbability, PowerMeanProximity, KullbackLeiblerDivergence
 
-export MovementFlow, Betweenness, EdgeBetweenness, FunctionalHabitat, Criticality, EigMax, SensitivityAnalysis
+export MovementFlow, Betweenness, EdgeBetweenness, FunctionalHabitat, EigMax, SensitivityAnalysis
 
 export QualityWeighted, QualityAndProximityWeighted, ProximityWeighted, Unweighted
 
 export Sensitivity, Elasticity
 
-export Summation, EigenAnalysis
+export Summation
 
 export Quality, SourceQuality, TargetQuality, StepCost, StepLikelihood, StepCostToLikelihood, StepLikelihoodToCost
 

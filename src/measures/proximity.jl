@@ -47,9 +47,9 @@ function compute_target(::ExpectedCost, ti::TargetInit{<:RSP})::RVDe
 end
 function compute_target(::FreeEnergyDistance, ti::TargetInit{<:RSP})::RVDe
     (; θ) = ti
-    sp = get_or_compute_target!(ti, SurvivalProbability)
+    sp = get_or_compute_target!(ti, SurvivalProbability())
     targetcol = workspace(ti) .= -log.(max.(0, sp)) ./ θ
-    return radonlyarray(targetcol)
+    return readonlyarray(targetcol)
 end
 function compute_target(::PowerMeanProximity, ti::TargetInit{<:RSP})::RVDe
     (; θ) = ti

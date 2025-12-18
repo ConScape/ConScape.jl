@@ -31,14 +31,12 @@ function allocate_connectedgraph_output(
     l::ConnectedGraphLevel,
     ::ReturnSparseGraph,
     m::EdgeBetweenness,
-    ::ConScapeProblem,
     ::GridGraph,
-    ::ConnectedGraph,
-    precalculation
+    cg::ConnectedGraph,
 )
     # Make a zeroed sparse matrix with the same pattern as W
     # This is faster than starting with an empty sparse matrix
-    o = mapnz(_ -> 0.0, precalculation.W)
+    o = mapnz(_ -> 0.0, cg.W)
     return MeasureOutput(m, o)
 end
 

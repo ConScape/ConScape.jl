@@ -6,28 +6,35 @@ function get_or_compute_target!(ti::TargetInit, m::Measure)
         val = store[x]
         return val
     else
-        val = readonlyarray(compute_target(m, ti))
-        store[x] = val
-        return val
+        val = compute_target(m, ti)
+        if val isa AbstractVector
+            store[x] = readonlyarray(val)
+            return readonlyarray(val)
+        else
+            return val
+        end
     end
 end
 function get_or_compute_target!(ti::TargetInit, x::Symbol)
     store = storage(ti)
-    local val::RVDe
     if haskey(store, x) 
         val = store[x]
         return val
     else
-        val = readonlyarray(target_precalculation!(ti, x))
-        store[x] = val
-        return val
+        val = target_precalculation!(ti, x)
+        if val isa AbstractVector
+            store[x] = readonlyarray(val)
+            return readonlyarray(val)
+        else
+            return val
+        end
     end
 end
 
 # Most measures dont need to deal with
 # `update_connectedgraph_output!` and just define `compute_target`
 function compute_target!(output, l::Level, m::Measure, ti::TargetInit)
-    val::RVDe = compute_target(m, ti)
+    val = compute_target(m, ti)
     update_connectedgraph_output!(output, l, m, ti, val)
     return output
 end

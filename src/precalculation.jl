@@ -106,7 +106,8 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
         needs_full_costdistancematrix(args...) ||
         needs_eigmax(args...) ||
         needs_sum_sensitivity_precursors(args...) ||
-        needs_eigmax_sensitivity_precursors(args...)
+        needs_eigmax_sensitivity_precursors(args...) ||
+        needs_eigmax(args...)
     end
 
     # If needed, allocated and precalculate some full size matrices

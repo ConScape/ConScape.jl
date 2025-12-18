@@ -194,7 +194,7 @@ function GridGraphInit(problem::ConScapeProblem, gridgraph::GridGraph;
     # Otherwise ConnectedGraphInit will do this further down.
     outputs = if finallevel isa GridGraphLevel
         allocate_gridgraph_output(
-            measures(problem), problem, gridgraph, connectedgraphs
+            measures(problem), gridgraph, connectedgraphs
         )
     end
     # Now create a GridGraphInit with outputs
@@ -323,7 +323,7 @@ function ConnectedGraphInit(ggi::GridGraphInit, connectedgraphid::Int;
     end
     sparse_precalc = sparse_precalculation(problem(ggi), connectedgraph)
     outputs = allocate_connectedgraph_output(
-        finallevel, problem(ggi), gridgraph(ggi), connectedgraph, sparse_precalc
+        finallevel, measures(ggi), gridgraph(ggi), connectedgraph, sparse_precalc
     )
 
     # Partially initialise so we can use this in dense precalculation

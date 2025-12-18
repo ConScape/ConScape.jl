@@ -61,9 +61,7 @@ needs_eigmax(m::SensitivityAnalysis, rsp::RSP) = metric(m) isa EigMax
 # so the bulk of the calculations can be shared by multiple outputs
 # But we need to separate them by Summation / EigMax metric
 needs_sum_sensitivity_precursors(m::SensitivityAnalysis{<:Permeability}, rsp::RSP) = metric(m) isa Summation
-needs_sum_sensitivity_precursors(::Measure, rsp::MovementMode) = false
 needs_eigmax_sensitivity_precursors(m::SensitivityAnalysis{<:Permeability}, rsp::RSP) = metric(m) isa EigMax
-needs_eigmax_sensitivity_precursors(::Measure, rsp::MovementMode) = false
 
 # w.r.t Quality ############################################################################
 

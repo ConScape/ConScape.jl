@@ -3,24 +3,25 @@ struct MeasureOutput{M,O}
     output::O
 end
 
+const ReturnAssigned = Union{ReturnAssignedSparse,ReturnAssignedDense}
+
 """
     allocate_gridgraph_output!(::ConnectedGraphInit)::Pair
 
 # Preallocate the output for a measure, depending on the output level and returntrait.
 """
 allocate_gridgraph_output(problem::ConScapeProblem, args...) =
-    allocate_gridgraph_output(measures(problem), problem, args...)
+    allocate_gridgraph_output(measures(problem), args...)
 allocate_gridgraph_output(measures::Union{Tuple,NamedTuple}, args...) =
     map(m -> allocate_gridgraph_output(m, args...)::MeasureOutput, measures)
 allocate_gridgraph_output(m::Measure, args...) =
     allocate_gridgraph_output(returntrait(m), m, args...)
 
 allocate_gridgraph_output(rt::ReturnTrait, m::Measure, ggi::GridGraphInit)::Pair =
-    allocate_gridgraph_output(rt, m, problem(ggi), gridgraph(ggi), connectedgraphs(ggi))
+    allocate_gridgraph_output(rt, m, gridgraph(ggi), connectedgraphs(ggi))
 function allocate_gridgraph_output(
     ::ReturnScalarSum,
     m::Measure,
-    ::ConScapeProblem,
     ::GridGraph,
     connectedgraphs::Vector
 )
@@ -30,7 +31,6 @@ end
 function allocate_gridgraph_output(
     ::ReturnSpatial,
     m::Measure,
-    ::ConScapeProblem,
     gridgraph::GridGraph,
     connectedgraphs::Vector
 )
@@ -38,9 +38,17 @@ function allocate_gridgraph_output(
     return MeasureOutput(m, o)
 end
 function allocate_gridgraph_output(
+    ::ReturnAssignedDense,
+    m::Measure,
+    gridgraph::GridGraph,
+    connectedgraphs::Vector
+)
+    o = Vector{Matrix{Float64}}(undef, length(connectedgraphs))
+    return MeasureOutput(m, o)
+end
+function allocate_gridgraph_output(
     ::ReturnSparseGraph,
     m::Measure,
-    ::ConScapeProblem,
     gridgraph::GridGraph,
     connectedgraphs::Vector
 )
@@ -49,18 +57,17 @@ function allocate_gridgraph_output(
 end
 
 allocate_connectedgraph_output(l::Level, problem::ConScapeProblem, args...) =
-    allocate_connectedgraph_output(l, measures(problem), problem, args...)
+    allocate_connectedgraph_output(l, measures(problem), args...)
 allocate_connectedgraph_output(l::Level, measures::Union{Tuple,NamedTuple}, args...) =
     map(m -> allocate_connectedgraph_output(l, m, args...)::MeasureOutput, measures)
 allocate_connectedgraph_output(l::Level, m::Measure, args...)::MeasureOutput =
     allocate_connectedgraph_output(l, returntrait(m), m, args...)
 allocate_connectedgraph_output(l::Level, m::Measure, cgi::ConnectedGraphInit)::MeasureOutput =
-    allocate_connectedgraph_output(l, returntrait(m), m, problem(cgi), gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
+    allocate_connectedgraph_output(l, returntrait(m), m, gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
 function allocate_connectedgraph_output(
     l::Union{ConnectedGraphLevel,TargetLevel},
     ::ReturnSpatial,
     m::Measure,
-    ::ConScapeProblem,
     gridgraph::GridGraph,
     connectedgraph::ConnectedGraph,
     precalculation,
@@ -74,7 +81,6 @@ function allocate_connectedgraph_output(
     l::Union{ConnectedGraphLevel,TargetLevel},
     ::ReturnScalarSum,
     m::Measure,
-    ::ConScapeProblem,
     ::GridGraph,
     ::ConnectedGraph,
     precalculation
@@ -82,12 +88,11 @@ function allocate_connectedgraph_output(
     o = Ref(0.0)
     return MeasureOutput(m, o)
 end
-# Use a zeroed out W matrix so the indices match
+# Return a sparse matrix for ReturnAssignedSparse at ConnectedGraphLevel
 function allocate_connectedgraph_output(
     l::ConnectedGraphLevel,
-    ::ReturnSparseGraph,
+    ::ReturnAssignedSparse,
     m::Measure,
-    ::ConScapeProblem,
     ::GridGraph,
     connectedgraph::ConnectedGraph,
     precalculation
@@ -95,16 +100,40 @@ function allocate_connectedgraph_output(
     o = spzeros(Float64, connectedgraph_size(connectedgraph))
     return MeasureOutput(m, o)
 end
+# Return a sparse vector for ReturnAssignedSparse at TargetLevel
 function allocate_connectedgraph_output(
     l::TargetLevel,
-    ::ReturnSparseGraph,
+    ::ReturnAssignedSparse,
     m::Measure,
-    ::ConScapeProblem,
-    gridgraph::GridGraph,
-    ::ConnectedGraph,
+    ::GridGraph,
+    connectedgraph::ConnectedGraph,
     precalculation
 )
-    o = fill(NaN, size(gridgraph))
+    o = spzeros(Float64, nsources(connectedgraph))
+    return MeasureOutput(m, o)
+end
+# Return a dense matrix for ReturnAssignedDense at ConnectedGraphLevel
+function allocate_connectedgraph_output(
+    l::ConnectedGraphLevel,
+    ::ReturnAssignedDense,
+    m::Measure,
+    ::GridGraph,
+    connectedgraph::ConnectedGraph,
+    precalculation
+)
+    o = fill(NaN, connectedgraph_size(connectedgraph))
+    return MeasureOutput(m, o)
+end
+# Return a dense vector for ReturnAssignedDense at TargetLevel
+function allocate_connectedgraph_output(
+    l::TargetLevel,
+    ::ReturnAssignedDense,
+    m::Measure,
+    ::GridGraph,
+    connectedgraph::ConnectedGraph,
+    precalculation
+)
+    o = fill(NaN, nsources(connectedgraph))
     return MeasureOutput(m, o)
 end
 
@@ -127,30 +156,42 @@ update_connectedgraph_output!(output::Pair, gm::Measure, init::Initialisation, v
 update_connectedgraph_output!(output, level::Level, gm::Measure, init::Initialisation, v) =
     update_connectedgraph_output!(output, level, returntrait(gm), init, v)
 # Spatial outputs are always the same shape, independent of Level
-function update_connectedgraph_output!(output::AbstractMatrix, ::Level, ::ReturnSpatialTargetSum, ti::TargetInit, v::AbstractVector)
+function update_connectedgraph_output!(
+    output::AbstractMatrix, ::Level, ::ReturnSpatialTargetSum, ti::TargetInit, v::AbstractVector
+)
     view(output, sourceids(ti)) .+= v
     return output
 end
-function update_connectedgraph_output!(output::AbstractMatrix, ::Level, ::ReturnSpatialSourceSum, ti::TargetInit, v::AbstractVector)
+function update_connectedgraph_output!(
+    output::AbstractMatrix, ::Level, ::ReturnSpatialSourceSum, ti::TargetInit, v::AbstractVector
+)
     output[targetspatialidx(ti)] += sum(v)
     return output
 end
-function update_connectedgraph_output!(output::AbstractMatrix, l::Level, ::ReturnSpatialSourceAndTargetSum, ti::TargetInit, v::AbstractVector)
+function update_connectedgraph_output!(
+    output::AbstractMatrix, l::Level, ::ReturnSpatialSourceAndTargetSum, ti::TargetInit, v::AbstractVector
+)
     update_connectedgraph_output!(output, l, ReturnSpatialSourceSum(), ti, v)
     update_connectedgraph_output!(output, l, ReturnSpatialTargetSum(), ti, v)
     return output
 end
 # SumScalar is always a single Ref, independent of Level
-function update_connectedgraph_output!(output::Ref, ::Level, ::ReturnScalarSum, ::Initialisation, v::Number)
+function update_connectedgraph_output!(
+    output::Ref, ::Level, ::ReturnScalarSum, ::Initialisation, v::Number
+)
     output[] += v
     return output
 end
 # AssignSparse varies by Level
-function update_connectedgraph_output!(output::AbstractMatrix, ::TargetLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector)
+function update_connectedgraph_output!(
+    output::AbstractVector, ::TargetLevel, ::ReturnAssigned, ti::TargetInit, v::AbstractVector
+)
     output[sourceids(ti)] .= v
     return output
 end
-function update_connectedgraph_output!(output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector)
+function update_connectedgraph_output!(
+    output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector
+)
     output[:, target(ti).connectedgraphidx] .= v
     # Return the output workspace
     put!(workspaces(ti), v)
@@ -227,11 +268,11 @@ function transfer_to_gridgraph_output!(
 end
 # Fallback: we just copy to a Vector for each connected graph
 function transfer_to_gridgraph_output!(
-    dest::Vector{<:SparseMatrixCSC},
-    source::SparseMatrixCSC,
+    dest::Vector{T},
+    source::T,
     m::ReturnTrait,
     cgi::ConnectedGraphInit
-)
+) where T
     dest[connectedgraphid(cgi)] = source
     return dest
 end

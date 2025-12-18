@@ -20,13 +20,12 @@ end
 
 computelevel(m::EigMax) = ConnectedGraphLevel()
 returntrait(::EigMax) = ReturnCustom()
-needs_eigmax(::EigMax) = true
+needs_eigmax(::EigMax, ::Union{RSP,RandomWalk}) = true
 
 # Allocate sqauare matrix of target * target size
 function allocate_gridgraph_output(
     ::ReturnCustom,
     m::EigMax,
-    ::ConScapeProblem,
     ::GridGraph,
     connectedgraphs::Vector
 )
@@ -38,7 +37,6 @@ function allocate_connectedgraph_output(
     ::ConnectedGraphLevel,
     ::ReturnCustom,
     m::EigMax,
-    ::ConScapeProblem,
     ::GridGraph,
     cg::ConnectedGraph,
     precalculation
@@ -125,4 +123,12 @@ function _compute_eigmax(em::EigMax, cgi::ConnectedGraphInit)
 end
 
 # The actual compute_connectedgraph! call is trivial as its fully precomputed above
-compute_connectedgraph!(::EigMax, cgi::ConnectedGraphInit) = cgi.EigMax
+function compute_connectedgraph!(output::Tuple, ::EigMax, cgi::ConnectedGraphInit) 
+    (vˡ, λ, vʳ) = cgi.eigmax
+
+    output[1] .= vˡ
+    output[2][] = λ
+    output[3] .= vʳ
+
+    return output
+end

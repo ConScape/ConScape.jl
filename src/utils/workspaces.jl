@@ -45,7 +45,8 @@ function Base.take!(ws::Workspaces{T})::T where T
     # Return the workspace
     return ws.workspaces[i]
 end
-function Base.put!(ws::Workspaces, w)
+Base.put!(ws::Workspaces, w::AbstractArray) = put!(ws, parent(w))
+function Base.put!(ws::Workspaces, w::Array)
     # Find the which workspace `w` was
     i = findfirst(x -> x === w, ws.workspaces)
     # Error if its not actually a workspace
