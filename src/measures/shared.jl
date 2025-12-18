@@ -54,6 +54,7 @@ function num_matrix_workspaces(problem::ConScapeProblem)
         # These workspaces are ephemeral and `put!` back within
         # the functions that use them, so we take the maximum.
         max(
+            anymeasure(needs_edgebetweenness_workspace, mes, mov),
             2 * anymeasure(needs_eigmax, mes, mov),
             2 * anymeasure(needs_sum_sensitivity_precursors, mes, mov),
             2 * anymeasure(needs_eigmax_sensitivity_precursors, mes, mov),

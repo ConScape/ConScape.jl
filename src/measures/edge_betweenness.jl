@@ -22,6 +22,7 @@ returntrait(::EdgeBetweenness) = ReturnAssignedSparse()
 num_vector_workspaces(::EdgeBetweenness, ::LandscapeMovement) = 4
 needs_full_fundamentalmatrix(::EdgeBetweenness, ::RSP) = true
 needs_full_fundamentalrowmatrix(::EdgeBetweenness, ::RSP) = true
+needs_edgebetweenness_workspace(::EdgeBetweenness, ::RSP) = true
 
 @generated Base.Symbol(m::EdgeBetweenness{W}) where W = 
     QuoteNode(Symbol(nameof(m), :_, nameof(W)))

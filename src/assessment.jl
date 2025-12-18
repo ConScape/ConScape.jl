@@ -1,4 +1,111 @@
 
+"""
+    estimate_memory(problem::ConScapeProblem, sources::Int, targets::Int)
+
+Estimate memory usage in bytes for a problem with given source and target counts.
+
+Returns a NamedTuple with detailed breakdown and total.
+"""
+function estimate_memory(problem::ConScapeProblem, sources::Int, targets::Int)
+    mes = measures(problem)
+    mov = movement(problem)
+
+    # Vector workspaces: count × sources × 8 bytes (Float64)
+    n_vec = num_vector_workspaces(problem)
+    vec_workspace_mem = n_vec * sources * 8
+
+    # Matrix workspaces: count × sources × targets × 8 bytes
+    n_mat = num_matrix_workspaces(problem)
+    mat_workspace_mem = n_mat * sources * targets * 8
+
+    # Dense precalculation matrices that persist (sources × targets × 8 bytes each)
+    dense_matrix_size = sources * targets * 8
+    n_dense_persist = (
+        anymeasure(needs_full_fundamentalmatrix, mes, mov) +
+        anymeasure(needs_full_fundamentalrowmatrix, mes, mov) +
+        anymeasure(needs_full_costdistancematrix, mes, mov)
+    )
+    dense_precalc_mem = n_dense_persist * dense_matrix_size
+
+    # Sparse matrix memory for RSP movement mode
+    # Estimate ~8 neighbors per node for grid connectivity
+    n_neighbors = 8
+    sparse_nnz = sources * n_neighbors
+
+    # SparseMatrixCSC storage: nzval (8 bytes) + rowval (4 bytes) + colptr ((n+1) * 8 bytes)
+    sparse_matrix_mem = sparse_nnz * 12 + (sources + 1) * 8
+
+    # Sparse matrices created in sparse_precalculation for RSP:
+    # P, W, IW, Aⁱ, CW, CW_t = 6 matrices
+    # Plus the original stepcost and steplikelihood from ConnectedGraph = 2 matrices
+    n_sparse_matrices = 8
+    sparse_mem = n_sparse_matrices * sparse_matrix_mem
+
+    # LU factorization memory (roughly 3-5x the sparse matrix due to fill-in)
+    # Two LU factorizations: F_IW and F_IW_adj
+    lu_fill_factor = 4
+    lu_mem = 2 * lu_fill_factor * sparse_matrix_mem
+
+    # SimpleWeightedDiGraph created in split_connected_graphs
+    # Uses adjacency list representation
+    graph_mem = sources * n_neighbors * 16  # edges with weights
+
+    # Quality vectors: sourcequality, targetquality, A_rowsums
+    quality_mem = (2 * sources + targets) * 8
+
+    # Output arrays: typically sources × 8 bytes per spatial measure
+    n_measures = length(mes)
+    output_mem = n_measures * sources * 8
+
+    # GridGraph raster data (views, minimal allocation)
+    # But we still need the sparse targetquality matrix
+    gridgraph_mem = sources * 8  # sparse target quality
+
+    total = (
+        vec_workspace_mem +
+        mat_workspace_mem +
+        dense_precalc_mem +
+        sparse_mem +
+        lu_mem +
+        graph_mem +
+        quality_mem +
+        output_mem +
+        gridgraph_mem
+    )
+
+    return total
+end
+
+"""
+    estimate_memory_detailed(problem::ConScapeProblem, sources::Int, targets::Int)
+
+Detailed memory breakdown for debugging.
+"""
+function estimate_memory_detailed(problem::ConScapeProblem, sources::Int, targets::Int)
+    mes = measures(problem)
+    mov = movement(problem)
+    n_neighbors = 8
+    sparse_nnz = sources * n_neighbors
+    sparse_matrix_mem = sparse_nnz * 12 + (sources + 1) * 8
+    dense_matrix_size = sources * targets * 8
+
+    return (
+        vec_workspaces = num_vector_workspaces(problem) * sources * 8,
+        mat_workspaces = num_matrix_workspaces(problem) * sources * targets * 8,
+        dense_precalc = (
+            anymeasure(needs_full_fundamentalmatrix, mes, mov) +
+            anymeasure(needs_full_fundamentalrowmatrix, mes, mov) +
+            anymeasure(needs_full_costdistancematrix, mes, mov)
+        ) * dense_matrix_size,
+        sparse_matrices = 8 * sparse_matrix_mem,
+        lu_factorization = 2 * 4 * sparse_matrix_mem,
+        graph = sources * n_neighbors * 16,
+        quality_vectors = (2 * sources + targets) * 8,
+        outputs = length(mes) * sources * 8,
+        gridgraph = sources * 8,
+    )
+end
+
 struct AssessmentWarnings
     sourcequality_nan_found::Bool
     targetquality_nan_found::Bool
@@ -61,6 +168,7 @@ a `ConScapeProblem`.
 - `sparse_sizes::Vector{Tuple{Int,Int}}`: the sizes of each window
 - `mask::Vector{Bool}`: Vector{Bool} where `true` values are jobs that need to be run.
 - `indices::Vector{Int}`: the indices of `mask` that are `true`.
+- `memory_estimate::Float64`: estimated peak memory usage in MB.
 """
 @kwdef struct WindowAssessment <: ProblemAssessment
     size::Tuple{Int,Int}
@@ -70,6 +178,7 @@ a `ConScapeProblem`.
     indices::Vector{Int}
     warnings::AssessmentWarnings
     sparse_sizes::Vector{Tuple{Int,Int}}
+    memory_estimate::Float64
 end
 
 """
@@ -100,8 +209,11 @@ function Base.show(io::IO, mime::MIME"text/plain", a::ProblemAssessment)
     println(io, typeof(a))
     println(io, "Shape: $(a.shape)")
     println(io, "Number of jobs: $(a.njobs)")
+    if hasproperty(a, :memory_estimate) && a.memory_estimate > 0
+        println(io, "Memory estimate: $(round(a.memory_estimate, digits=1)) MB")
+    end
     # Use SparseArrays nice matrix printing for the mask
-    if any(a.warnings) 
+    if any(a.warnings)
         println(io, "Warnings: $(a.warnings)")
     end
     println(io, "Job mask: ")
@@ -151,7 +263,16 @@ function assess(p::AbstractWindowedProblem{<:ConScapeProblem}, rast::AbstractRas
     njobs = count(window_mask)
     shape = size(window_ranges)
 
-    WindowAssessment(size(rast), shape, njobs, window_mask, non_empty_indices, warnings, sparse_sizes)
+    # Calculate memory estimate based on max window size
+    memory_estimate = if njobs > 0
+        _, max_idx = findmax(prod, sparse_sizes)
+        max_sources, max_targets = sparse_sizes[max_idx]
+        estimate_memory(problem(p), max_sources, max_targets) / 1024^2  # Convert to MB
+    else
+        0.0
+    end
+
+    WindowAssessment(size(rast), shape, njobs, window_mask, non_empty_indices, warnings, sparse_sizes, memory_estimate)
 end
 function assess(
     p::AbstractWindowedProblem{<:AbstractWindowedProblem},
@@ -180,6 +301,7 @@ function assess(
                 indices=Int[],
                 warnings=AssessmentWarnings(false, false),
                 sparse_sizes=Tuple{Int,Int}[],
+                memory_estimate=0.0,
             )
         end
         # We only need qualities for the assessment
@@ -273,3 +395,55 @@ function _assessment_keywords(p::BatchProblem, rast, a::NestedAssessment)
 end
 
 batch_paths(p::BatchProblem, a::NestedAssessment) = batch_paths(p, size(a))[a.indices]
+
+"""
+    estimate_memory_for_centersize(problem::ConScapeProblem, assessment::WindowAssessment, centersize::Int)
+
+Quickly estimate memory requirements for a different `centersize` without re-running
+the full assessment. This is approximate - it assumes the worst case where all
+`centersize²` target cells in the center are valid.
+
+This is useful for tuning `centersize` to fit memory constraints after running
+an expensive `assess()` call on a large raster.
+
+# Arguments
+- `problem`: The ConScapeProblem (needed for workspace counts)
+- `assessment`: An existing WindowAssessment from `assess()`
+- `centersize`: The new centersize to estimate memory for
+
+# Returns
+Memory estimate in MB for the new centersize.
+
+# Example
+```julia
+# Run assessment once (expensive for large rasters)
+assessment = assess(wp, rast)
+
+# Quickly test different centersize values
+for cs in [10, 15, 20, 25, 30]
+    mem = estimate_memory_for_centersize(problem, assessment, cs)
+    println("centersize=\$cs: \$(round(mem, digits=1)) MB")
+end
+```
+
+# Memory scaling
+For measures with dense matrices (EigMax, SensitivityAnalysis), memory scales as
+`O(sources × targets)` where `targets = centersize²`. Halving centersize reduces
+dense matrix memory by ~4x.
+
+See also: [`assess`](@ref), [`estimate_memory`](@ref)
+"""
+function estimate_memory_for_centersize(
+    problem::ConScapeProblem,
+    assessment::WindowAssessment,
+    centersize::Int
+)
+    # Get max sources from existing assessment (window size doesn't change much)
+    max_sources = maximum(first, assessment.sparse_sizes; init=0)
+
+    # New targets = centersize² (worst case: all center cells valid)
+    new_targets = centersize^2
+
+    # Recalculate memory estimate
+    estimate_memory(problem, max_sources, new_targets) / 1024^2
+end

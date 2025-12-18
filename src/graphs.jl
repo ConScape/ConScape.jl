@@ -56,14 +56,16 @@ function GridGraph(;
         targetquality
     end::AbstractMatrix
 
-    isnothing(stepcost) && isnothing(steplikelihood) && 
-        isnothing(cost) && isnothing(likelihood) && 
+    isnothing(stepcost) && isnothing(steplikelihood) &&
+        isnothing(cost) && isnothing(likelihood) &&
             throw(ArgumentError("At least one of `cost` and `likelihood` must be specified"))
-    if !isnothing(likelihood) 
-        steplikelihood = graph_matrix_from_raster(likelihood; input_type=StepLikelihood(), kw...)
+    # Filter kw to only include keywords accepted by graph_matrix_from_raster
+    raster_kw = Base.pairs(NamedTuple{filter(k -> k in (:neighbors, :stepweight, :sparse_builders), keys(kw))}(values(kw)))
+    if !isnothing(likelihood)
+        steplikelihood = graph_matrix_from_raster(likelihood; input_type=StepLikelihood(), raster_kw...)
     end
     if !isnothing(cost)
-        stepcost = graph_matrix_from_raster(cost; input_type=StepCost(), kw...) 
+        stepcost = graph_matrix_from_raster(cost; input_type=StepCost(), raster_kw...)
     end
     if isnothing(steplikelihood) && !isnothing(stepcost) && !isnothing(likelihoodfunction)
         steplikelihood = mapnz(likelihoodfunction, stepcost)
@@ -342,6 +344,35 @@ weightedval(::AverageWeight, ::StepLikelihood, baseval, targetval, distance) =
     2 / ((inv(baseval) + inv(targetval)) * distance)
 
 """
+    SparseBuilders
+
+Reusable buffers for building sparse matrices, avoiding repeated allocations.
+
+Used by `graph_matrix_from_raster` to accumulate indices and values before
+calling `sparse()`.
+"""
+struct SparseBuilders
+    is::Vector{Int}
+    js::Vector{Int}
+    vals::Vector{Float64}
+end
+SparseBuilders() = SparseBuilders(Int[], Int[], Float64[])
+
+function Base.empty!(sb::SparseBuilders)
+    empty!(sb.is)
+    empty!(sb.js)
+    empty!(sb.vals)
+    return sb
+end
+
+function Base.sizehint!(sb::SparseBuilders, len::Int)
+    sizehint!(sb.is, len)
+    sizehint!(sb.js, len)
+    sizehint!(sb.vals, len)
+    return sb
+end
+
+"""
     graph_matrix_from_raster(R::Matrix; kw...) -> SparseMatrixCSC
 
 Compute a graph matrix, i.e. an affinity or cost matrix of the raster image `R` 
@@ -361,14 +392,14 @@ function graph_matrix_from_raster(R::AbstractMatrix;
     neighbors::Tuple=N8,
     stepweight=TargetWeight(),
     input_type,
+    sparse_builders::SparseBuilders=SparseBuilders(),
 )
     m, n = size(R)
     len = count(x -> !isnan(x) && !iszero(x), R) * 7
-    # Initialize the buffers of the SparseMatrixCSC
-    is, js, vals = Int[], Int[], Float64[]
-    sizehint!(is, len)
-    sizehint!(js, len)
-    sizehint!(vals, len)
+    # Reuse or initialize the buffers
+    empty!(sparse_builders)
+    sizehint!(sparse_builders, len)
+    (; is, js, vals) = sparse_builders
 
     for j in 1:n, i in 1:m
         # Base node
@@ -391,10 +422,12 @@ function graph_matrix_from_raster(R::AbstractArray{<:Any,3};
     neighbors::Tuple=N8,
     stepweight=TargetWeight(),
     input_type,
+    sparse_builders::SparseBuilders=SparseBuilders(),
 )
     nneighbors, m, n = size(R)
-    # Initialize the buffers of the SparseMatrixCSC
-    is, js, vals = Int[], Int[], Float64[]
+    # Reuse or initialize the buffers
+    empty!(sparse_builders)
+    (; is, js, vals) = sparse_builders
 
     for j in 1:n, i in 1:m
         if nneighbors == 4

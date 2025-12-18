@@ -23,6 +23,26 @@ TODO: should Euclidean be outside the Spatial heterogeneity branch.
 LeastCostPath   RSP   RandomWalk    AbsorbingRandomWalk    Euclidean   
  (θ → ∞)    ,    (θ)       (θ → 0)
 ```
+
+It is important to note that not all `MovemtentMode`s implement all `Measure`.
+Some due to logical incompatibility, and other simply have not been completed.
+
+| Measure                   | RSP | LCP | RandomWalk | Euclidean |
+|---------------------------|-----|-----|------------|-----------|
+| Distance                  |  ✓  |  ✓  |     ✗      |     ✓     |
+| ExpectedCost              |  ✓  |  ✓  |     ✓      |     ✗     |
+| FreeEnergyDistance        |  ✓  |  ✗  |     ✓      |     ✗     |
+| PowerMeanProximity        |  ✓  |  ✗  |     ✗      |     ✗     |
+| SurvivalProbability       |  ✓  |  ✗  |     ✗      |     ✗     |
+| FunctionalHabitat         |  ✓  |  ✓  |     ✓      |     ✗     |
+| Betweenness               |  ✓  |  ✓  |     ✓      |     ✗     |
+| SensitivityAnalysis       |  ✓  |  ✗  |     ✓*     |     ✗     |
+| EdgeBetweenness           |  ✓  |  ✗  |     ✗      |     ✗     |
+| LandscapeMatrix           |  ✓  |  ✓  |     ✓      |     ✗     |
+| KullbackLeiblerDivergence |  ✓  |  ✓  |     ✓      |     ✗     |
+| EigMax                    |  ✓  |  ✗  |     ✗      |     ✗     |
+
+* Only for sensitivity with respect to quality
 """
 abstract type MovementMode end
 

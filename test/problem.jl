@@ -90,10 +90,10 @@ solver = VectorSolver()
         @test all(isapprox.(target_i.Q, Q[:, i]))
         @test all(isapprox.(target_i.K, K[:, i]))
         @test all(isapprox.(target_i.M, M[:, i]))
-        @test all(isapprox.(ConScape.compute(FreeEnergyDistance(), target_i), fed[:, i]; atol=1e-10))
-        @test all(isapprox.(ConScape.compute(SurvivalProbability(), target_i), sp[:, i]; atol=1e-10))
-        @test all(isapprox.(ConScape.compute(PowerMeanProximity(), target_i), pmp[:, i]; atol=1e-10))
-        @test all(isapprox.(ConScape.compute(ExpectedCost(), target_i), ec[:, i]; atol=1e-10))
+        @test all(isapprox.(ConScape.compute_target(FreeEnergyDistance(), target_i), fed[:, i]; atol=1e-10))
+        @test all(isapprox.(ConScape.compute_target(SurvivalProbability(), target_i), sp[:, i]; atol=1e-10))
+        @test all(isapprox.(ConScape.compute_target(PowerMeanProximity(), target_i), pmp[:, i]; atol=1e-10))
+        @test all(isapprox.(ConScape.compute_target(ExpectedCost(), target_i), ec[:, i]; atol=1e-10))
         @test target_i.qˢ == qs 
         @test target_i.qᵗ == qt[i]
     end

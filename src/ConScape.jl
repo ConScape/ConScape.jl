@@ -48,7 +48,7 @@ export MinusLog, MinusLogAlpha, Inv, OddsFor, OddsAgainst, ExpMinus, ExpMinusAlp
 
 export ConScapeProblem, WindowedProblem, BatchProblem
 
-export solve, solve!, init, assess, reassess
+export solve, solve!, init, assess, reassess, estimate_memory_for_centersize
 
 
 include("types.jl")

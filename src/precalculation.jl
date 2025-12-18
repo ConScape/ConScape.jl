@@ -16,6 +16,7 @@ needs_full_costdistancematrix(::Measure, ::MovementMode) = false
 needs_sum_sensitivity_precursors(::Measure, ::MovementMode) = false
 needs_eigmax_sensitivity_precursors(::Measure, ::MovementMode) = false
 needs_eigmax(::Measure, ::MovementMode) = false
+needs_edgebetweenness_workspace(::Measure, ::MovementMode) = false
 num_vector_workspaces(::Measure, ::MovementMode) = 0
 
 anymeasure(f, measures::NamedTuple, mov::MovementMode) =
