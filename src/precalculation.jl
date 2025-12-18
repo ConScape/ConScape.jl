@@ -16,10 +16,11 @@ needs_full_costdistancematrix(::Measure, ::MovementMode) = false
 needs_sum_sensitivity_precursors(::Measure, ::MovementMode) = false
 needs_eigmax_sensitivity_precursors(::Measure, ::MovementMode) = false
 needs_eigmax(::Measure, ::MovementMode) = false
+num_vector_workspaces(::Measure, ::MovementMode) = 0
 
-anymeasure(f, measures::NamedTuple, mov::MovementMode) = 
+anymeasure(f, measures::NamedTuple, mov::MovementMode) =
     anymeasure(f, values(measures), mov)
-anymeasure(f, measures::Tuple{Vararg{Measure}}, mov::MovementMode) = 
+anymeasure(f, measures::Tuple{Vararg{Measure}}, mov::MovementMode) =
     any(map(m -> f(m, mov), measures)) 
 
 # TODO: Move these to a precalculation.jl file with the computation precalculations
@@ -28,18 +29,18 @@ function sparse_precalculation(problem::ConScapeProblem{<:RSP}, graph::Connected
     P, A_rowsums = _transitionprobability(steplikelihood(graph)::AbstractMatrix)
     W = _substochasticmatrix(movement(problem), P, stepcost(graph)::AbstractMatrix)
     IW = I - W
-    IW_factorization = init(solver(problem), IW)
+    F_IW = init(solver(problem), IW)
     A = steplikelihood(graph)::AbstractMatrix
     Aⁱ = mapnz(inv, A)
     if solver(problem) isa VectorSolver
         IW_adj = IW'
         # Use adjoint factorization of A rather than recalculating for A'
-        IW_adj_factorization = IW_factorization'
+        F_IW_adj = F_IW'
     else # LinearSolver
         # LinearSolve.jl cant handle the adjoint 
         # so we duplicate work and allocations
         IW_adj = sparse(IW')
-        IW_adj_factorization = init(solver(problem), IW_adj)
+        F_IW_adj = init(solver(problem), IW_adj)
     end
     C = stepcost(graph)
     CW = C .* W
@@ -50,7 +51,7 @@ function sparse_precalculation(problem::ConScapeProblem{<:RSP}, graph::Connected
     qᵗ = targetquality(graph)
     qˢ = sourcequality(graph)
 
-    return (; P, W, IW, IW_adj, C, CW, CW_t, IW_factorization, IW_adj_factorization, A, Aⁱ, A_rowsums, θ, qᵗ, qˢ)
+    return (; P, W, IW, IW_adj, C, CW, CW_t, F_IW, F_IW_adj, A, Aⁱ, A_rowsums, θ, qᵗ, qˢ)
 end
 function sparse_precalculation(p::ConScapeProblem{<:LCP}, graph::ConnectedGraph)
     _check_inputs(p, graph)
@@ -76,13 +77,13 @@ function sparse_precalculation(problem::ConScapeProblem{<:RandomWalk}, graph::Co
     PC = P .* stepcost(graph)::AbstractMatrix
     PC_rowsums = sum(PC; dims=2)
     IP = I - P
-    IP_factorization = init(solver(problem), IP)
+    F_IP = init(solver(problem), IP)
 
     # For completeness we also move these to precalculations
     qᵗ = targetquality(graph)
     qˢ = sourcequality(graph)
 
-    return (; Lⁱ, L_rowsums, P, PC, PC_rowsums, IP, IP_factorization, qᵗ, qˢ)
+    return (; Lⁱ, L_rowsums, P, PC, PC_rowsums, IP, F_IP, qᵗ, qˢ)
 end
 function sparse_precalculation(::ConScapeProblem{<:Euclidean}, ::ConnectedGraph)
     (;)
@@ -231,12 +232,12 @@ function _stationary_distribution(solver::Solver, P::SparseMatrixCSC)
     # Output: the stationary distribution of the random walk
     n = LinearAlgebra.checksquare(P)
     PI = P' - I
-    PI_factorization = init(solver, PI)
+    F_PI = init(solver, PI)
     PI[1, :] .= 1
     v = zeros(n)
     v1 = zeros(n)
     v[1] = v1[1] = 1
-    return ldiv!(solver, v, PI_factorization, v1)
+    return ldiv!(solver, v, F_PI, v1)
 end
 
 # function _check_z(ti::TargetInit{<:RSP})
@@ -294,6 +295,7 @@ end
 
     # Either retrieve from storage
     haskey(st, x) && return st[x]
+    pre = precalculation(ti)
 
     # Or compute and store
     st[x] = output = if x === :Z
@@ -310,13 +312,13 @@ end
                                        1.0,
                                        size(W, 1),
                                        length(targetnodes))))'
-    elseif x === :IW_factorization
+    elseif x === :F_IW
         # For RandomWalk these have to be updated per-target
         # using Woodbury matrices, rather than being defined
         # only at the ConnectedGraph level.
-        _woodburysubtochasticmatrixcol(ti)
-    elseif x === :IW_adj_factorization
-        ti.IW_factorization'
+        _woodburysubtochasticmatrix(ti)
+    elseif x === :F_IW_adj
+        ti.F_IW'
     elseif x === :W
         # TODO do with less allcations at the target level
         W = copy(ti.P)
@@ -390,7 +392,7 @@ function _fundamentalmatrixcol(ti::TargetInit{<:Union{RSP,RandomWalk}})
     # Solving `(I - W) * Z = i` for unknown `Z`
     i = _identity_col!(workspace(ti), target(ti))
     i_copy = _identity_col!(workspace(ti), target(ti))
-    Z = ldiv!(solver(ti), i, ti.IW_factorization, i_copy)
+    Z = ldiv!(solver(ti), i, ti.F_IW, i_copy)
     return readonlyarray(Z)
 end
 
@@ -403,7 +405,7 @@ function _fundamentalrowmatrixrow(ti::TargetInit{<:Union{RSP,RandomWalk}})
         ti.Z
     else
         b = _identity_col!(workspace(ti), target(ti))
-        Zrows = ldiv!(ti, ti.IW_adj_factorization, b)
+        Zrows = ldiv!(ti, ti.F_IW_adj, b)
         readonlyarray(Zrows)
     end
 
@@ -412,7 +414,7 @@ end
 
 # TODO: is this the most correct name for Y ?
 function _costdistancematrixcol(ti)
-    (; CW, Z, IW_factorization) = ti
+    (; CW, Z, F_IW) = ti
     # Solve: (I - W) \ (C .* W) * Z ./ Z
     # Manual matmul is *much* faster with sparse/dense.
     # Otherwise this is 99% of the run time.
@@ -421,7 +423,7 @@ function _costdistancematrixcol(ti)
         RHS[i] += CW.nzval[n] * Z[j] 
     end
 
-    Y = ldiv!(ti, IW_factorization, RHS)
+    Y = ldiv!(ti, F_IW, RHS)
 
     return readonlyarray(Y)
 end
@@ -437,7 +439,7 @@ function _qualitymatrixcol(ti::TargetInit)
 end
 
 function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
-    (; P, IP, IP_factorization) = ti
+    (; P, IP, F_IP) = ti
     t = target(ti).node
     n = LinearAlgebra.checksquare(IP)
 
@@ -450,7 +452,7 @@ function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
     C = 1 # Identity
 
     # @assert IP + U * C * V .- (I - W)
-    return Woodbury(IP_factorization, U, C, V)
+    return Woodbury(F_IP, U, C, V)
 end
 
 # Custom `inv` broadcast that avoids Inf

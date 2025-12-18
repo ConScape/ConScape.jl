@@ -84,7 +84,12 @@ grid size when not needed.
 """
 abstract type Initialisation end
 
-const TargetID = @NamedTuple{spatialidx::CartesianIndex{2},gridgraphidx::Int,connectedgraphidx::Int,node::Int}
+struct TargetID
+    spatialidx::CartesianIndex{2}
+    gridgraphidx::Int
+    connectedgraphidx::Int
+    node::Int
+end
 const SourceID = CartesianIndex{2}
 
 # Generic methods that forward to the ConScapeProblem
@@ -211,6 +216,10 @@ workspaces(ggi::GridGraphInit) = ggi.workspaces
 mworkspaces(ggi::GridGraphInit) = ggi.mworkspaces
 storage(ggi::GridGraphInit) = ggi.storage
 measures_outputs(ggi::GridGraphInit) = ggi.outputs
+function measures(ggi::GridGraphInit)
+    mo = measures_outputs(ggi)
+    isnothing(mo) ? measures(problem(ggi)) : map(mol -> mol.measure, mo)
+end
 
 # Methods that forward to the ConnectedGraph
 nconnectedgraphs(ggi::GridGraphInit) = length(connectedgraphs(ggi))
@@ -226,12 +235,15 @@ _check_inputs(x, init) = _check_inputs(movement(x), init)
 function _check_inputs(::RSP, g)
     isnothing(stepcost(g)) && throw(ArgumentError("GridGraph has no stepcost for RSP"))
     isnothing(steplikelihood(g)) && throw(ArgumentError("GridGraph has no steplikelihood for RSP"))
+    return nothing
 end
 function _check_inputs(::LCP, g)
     isnothing(stepcost(g)) && throw(ArgumentError("GridGraph has no stepcost for LCP"))
+    return nothing
 end
 function _check_inputs(::RandomWalk, g)
-    isnothing(steplikelihood(g)) && throw(ArgumentError("GridGraph has no steplikelihood for LCP"))
+    isnothing(steplikelihood(g)) && throw(ArgumentError("GridGraph has no steplikelihood for RandomWalk"))
+    return nothing
 end
 _check_inputs(::Euclidean, g) = nothing
 
@@ -414,7 +426,7 @@ From the parent `ConnectedGraph`, the available variables are:
 
 From the parent `ConnectedGraphInit`, the available variables are:
 
-`P`, `W`, `IW`, `CW`, `IW_factorization`, `IW_adj`, `IW_adj_factorization`,
+`P`, `W`, `IW`, `CW`, `F_IW`, `IW_adj`, `F_IW_adj`,
 
 For target dense vectors:
 
@@ -584,7 +596,7 @@ function init(
     target::Union{Int,CartesianIndex,TargetID};
     kw...
 )
-    ggi = GridGraphInit(problem, x; outputs=nothing, kw...)
+    ggi = GridGraphInit(problem, x; finallevel=TargetLevel(), kw...)
     init(ggi, connectedgraph, target; finallevel=TargetLevel())
 end
 init(ggi::GridGraphInit, connectedgraph::Int; kw...) = 
@@ -606,9 +618,6 @@ function init(
 )
     init(setmeasures(p, m), args...; kw...)
 end
-function init(
-    m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation; 
-    finallevel=defaultfinallevel(i)
-)
-    setmeasures(i, m; finallevel)
+function init(m::Union{Measure,MeasureTuple,MeasureNamedTuple}, i::Initialisation)
+    setmeasures(i, m)
 end

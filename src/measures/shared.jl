@@ -51,7 +51,7 @@ function num_matrix_workspaces(problem::ConScapeProblem)
         anymeasure(needs_full_fundamentalmatrix, mes, mov) +
         anymeasure(needs_full_fundamentalrowmatrix, mes, mov) +
         anymeasure(needs_full_costdistancematrix, mes, mov) +
-        # These workspaces are ephemeral and `put!` back within 
+        # These workspaces are ephemeral and `put!` back within
         # the functions that use them, so we take the maximum.
         max(
             2 * anymeasure(needs_eigmax, mes, mov),
@@ -60,6 +60,17 @@ function num_matrix_workspaces(problem::ConScapeProblem)
         )
 
     return max_workspaces
+end
+
+function num_vector_workspaces(problem::ConScapeProblem)
+    mes = measures(problem)
+    mov = movement(problem)
+    # Vector workspaces accumulate during computation and are only freed
+    # at the end with free!(), so we sum across all measures.
+    # Base of 10 covers target_precalculation needs:
+    # Z (2), Zⁱ (1), Y (1), K (2 with proximity measure), M (1), plus buffer
+    base = 10
+    return base + sum(m -> num_vector_workspaces(m, mov), values(mes); init=0)
 end
 
 # Define the default output Level for that initialisation object

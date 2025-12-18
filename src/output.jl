@@ -17,7 +17,7 @@ allocate_gridgraph_output(measures::Union{Tuple,NamedTuple}, args...) =
 allocate_gridgraph_output(m::Measure, args...) =
     allocate_gridgraph_output(returntrait(m), m, args...)
 
-allocate_gridgraph_output(rt::ReturnTrait, m::Measure, ggi::GridGraphInit)::Pair =
+allocate_gridgraph_output(rt::ReturnTrait, m::Measure, ggi::GridGraphInit) =
     allocate_gridgraph_output(rt, m, gridgraph(ggi), connectedgraphs(ggi))
 function allocate_gridgraph_output(
     ::ReturnScalarSum,

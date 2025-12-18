@@ -20,7 +20,7 @@ end
 
 computelevel(m::EigMax) = ConnectedGraphLevel()
 returntrait(::EigMax) = ReturnCustom()
-needs_eigmax(::EigMax, ::Union{RSP,RandomWalk}) = true
+needs_eigmax(::EigMax, ::RSP) = true
 
 # Allocate sqauare matrix of target * target size
 function allocate_gridgraph_output(

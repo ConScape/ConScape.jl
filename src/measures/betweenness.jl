@@ -79,7 +79,7 @@ weighting(gm::Betweenness) = gm.weighting
 computelevel(::Betweenness) = TargetLevel()
 returntrait(::Betweenness) = ReturnSpatialTargetSum()
 
-needs_workspaces(::Betweenness) = 3 # Z, Zⁱ, workspace
+num_vector_workspaces(::Betweenness, ::LandscapeMovement) = 3 # Z, Zⁱ, workspace
 
 Base.Symbol(m::Betweenness) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))
 
@@ -107,7 +107,7 @@ function compute_target(m::Betweenness, ti::TargetInit{<:LCP})
 end
 # RandomShortestPath / RandomWalk (differences are only in IW and weights)
 function compute_target(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
-    (; Z, Zⁱ, IW_adj_factorization) = ti
+    (; Z, Zⁱ, F_IW_adj) = ti
     weight = _weight(m, ti)
     node = targetnode(ti)
     isnothing(weight) && error("Betweenness weight is `nothing`")
@@ -119,7 +119,7 @@ function compute_target(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
     # Scale MZⁱ with λ
     XZⁱtλ = XZⁱt .*= inv(λ)
     # Solve (I - W)' \ MZⁱλ, then multiply by Z and λ scaling
-    targetcol = ldiv!(ti, IW_adj_factorization, XZⁱtλ) .*= λ .* Z
+    targetcol = ldiv!(ti, F_IW_adj, XZⁱtλ) .*= λ .* Z
 
     return readonlyarray(targetcol)
 end

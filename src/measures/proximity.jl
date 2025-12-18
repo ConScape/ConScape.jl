@@ -1,10 +1,12 @@
 
 # All ProximityMeasure are grouped here as they are relatively trivial
 
-# All ProximityMeasure compute at target level, 
+# All ProximityMeasure compute at target level,
 # and return a SparseArray of single s/t values
 computelevel(::ProximityMeasure) = TargetLevel()
 returntrait(::ProximityMeasure) = ReturnAssignedSparse()
+# Most proximity measures use 1 workspace
+num_vector_workspaces(::ProximityMeasure, ::LandscapeMovement) = 1
 
 # TODO: docs
 struct Distance <: DistanceMeasure end
@@ -16,6 +18,10 @@ struct HittingTime <: DistanceMeasure end
 struct PowerMeanProximity <: ProximityMeasure end
 struct SurvivalProbability <: ProximityMeasure end
 
+# These call SurvivalProbability internally, so need 1 + 1 = 2
+num_vector_workspaces(::FreeEnergyDistance, ::RSP) = 2
+num_vector_workspaces(::PowerMeanProximity, ::RSP) = 2
+
 function compute_target(::Distance, ti::TargetInit{<:Euclidean})::RVDe
     _hypot(a::CartesianIndex, b::CartesianIndex) = _hypot(Tuple(a), Tuple(b))
     _hypot((a1, a2)::Tuple, (b1, b2)::Tuple) = hypot((b1 - a1), (b2 - a2))
@@ -25,17 +31,17 @@ function compute_target(::Distance, ti::TargetInit{<:Euclidean})::RVDe
 end
 compute_target(::Distance, ti::TargetInit{<:LCP})::RVDe = readonlyarray(ti.shortest_paths.dists)
 
-# function compute_target(
-#     ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}
-# )::VDe
-#     (; IW_factorization, PC_rowsums) = ti
-#     node = targetnode(ti)
-#     # Set target rowsum of PC to zero
-#     PC_rowsums = workspace(ti) .= ti.
-#     PC_rowsums[node] = 0
-#     # Solve (I - W) \ PC_rowsums
-#     return ldiv!(ti, IW_factorization, PC_rowsums)
-# end
+function compute_target(
+    ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}
+)::RVDe
+    (; F_IW) = ti
+    node = targetnode(ti)
+    # Set target rowsum of PC to zero
+    PC_rowsums = workspace(ti) .= ti.PC_rowsums
+    PC_rowsums[node] = 0
+    # Solve (I - W) \ PC_rowsums
+    return readonlyarray(ldiv!(ti, F_IW, PC_rowsums))
+end
 
 # RSP
 function compute_target(::ExpectedCost, ti::TargetInit{<:RSP})::RVDe

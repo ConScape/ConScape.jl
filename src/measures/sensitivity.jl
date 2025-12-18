@@ -63,6 +63,16 @@ needs_eigmax(m::SensitivityAnalysis, rsp::RSP) = metric(m) isa EigMax
 needs_sum_sensitivity_precursors(m::SensitivityAnalysis{<:Permeability}, rsp::RSP) = metric(m) isa Summation
 needs_eigmax_sensitivity_precursors(m::SensitivityAnalysis{<:Permeability}, rsp::RSP) = metric(m) isa EigMax
 
+# Vector workspace requirements
+# Quality with Summation returns M directly (0 workspaces)
+# Quality with EigMax uses 1 workspace
+num_vector_workspaces(m::SensitivityAnalysis{<:AbstractQuality}, ::RSP) = metric(m) isa EigMax ? 1 : 0
+# Permeability precursors need workspaces:
+# - ExpectedCost precursors: ~7 workspaces (2 persistent + 5 in target loop)
+# - PowerMeanProximity precursors: uses EdgeBetweenness (4) + Betweenness (3) + weightfunc (1)
+# - compute_connectedgraph! for PowerMeanProximity: 1 workspace
+num_vector_workspaces(::SensitivityAnalysis{<:Permeability}, ::RSP) = 8
+
 # w.r.t Quality ############################################################################
 
 function compute_target(
@@ -136,7 +146,7 @@ end
 
 # These are computed first ast they can be reused for all permeability_sensitivities
 function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit, qˢ, qᵗ)
-    (; W, C, CW, CW_t, A, Aⁱ, IW_adj_factorization, A_rowsums, Z_full, Y_full, Zrows_full) = cgi
+    (; W, C, CW, CW_t, A, Aⁱ, F_IW_adj, A_rowsums, Z_full, Y_full, Zrows_full) = cgi
 
     # Sparse matrices. `mapnz` means we keep the sparse structure but 
     # initialise values to zero internally
@@ -184,7 +194,7 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         Kd::VDe = workspace(ti) .= _diff_KD(distance_transformation(ti)).(K)
         Md::VDe = workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
         MZⁱ::VDe = workspace(ti) .= Md .* Zⁱ
-        MᵀZ::VDe = ldiv!(ti, IW_adj_factorization, (workspace(ti) .= MZⁱ)) # MᵀZ = MZⁱ' / IW
+        MᵀZ::VDe = ldiv!(ti, F_IW_adj, (workspace(ti) .= MZⁱ)) # MᵀZ = MZⁱ' / IW
         MᵀZ_full[:, idx] .= MᵀZ # Update the full matrix for later use
 
         # Here we do unrolled matrix multiplications to reduce memory use.
@@ -208,7 +218,7 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
     for j in axes(X5_full, 2)
         rhs = view(X5_full, :, j)
         rhs_copy .= rhs
-        ldiv!(solver(cgi), rhs, IW_adj_factorization, rhs_copy)
+        ldiv!(solver(cgi), rhs, F_IW_adj, rhs_copy)
     end
 
     # Use smaller workspaces 

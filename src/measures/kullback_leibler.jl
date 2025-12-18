@@ -4,6 +4,10 @@ struct KullbackLeiblerDivergence <: PathDistributionMeasure end
 
 computelevel(::KullbackLeiblerDivergence) = TargetLevel()
 returntrait(::KullbackLeiblerDivergence) = ReturnScalarSum()
+num_vector_workspaces(::KullbackLeiblerDivergence, ::LCP) = 1
+num_vector_workspaces(::KullbackLeiblerDivergence, ::RandomWalk) = 0
+# RSP: calls FreeEnergyDistance (2) + ExpectedCost (1) + 1 for itself = 4
+num_vector_workspaces(::KullbackLeiblerDivergence, ::RSP) = 4
 
 # LeastCostPath
 function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:LCP})

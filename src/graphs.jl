@@ -262,7 +262,7 @@ function _target_ids(
     target_graph_ids = _find_all_sorted(all_spatial_ids, target_spatial_ids)
     # Return Vector{NamedTuple} each with target.spatial and target.node
     return map(target_spatial_ids, target_graph_ids, eachindex(target_nodes), target_nodes) do spatialidx, gridgraphidx, connectedgraphidx, node
-        (; spatialidx, gridgraphidx, connectedgraphidx, node)
+        TargetID(spatialidx, gridgraphidx, connectedgraphidx, node)
     end
 end
 

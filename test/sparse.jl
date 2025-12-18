@@ -14,31 +14,26 @@ using Test
     @test X == 2Y
 end
 
-# @testset "columnwise iterative matmul" begin
-#     function iterative_matmul(X::AbstractMatrix{T}, W::SparseMatrixCSC{T}) where T
-#        rows_X, cols_X = size(X)
-#        rows_W, cols_W = size(W)
-#        # Initialize the final result matrix that will be accumulated into.
-#        Y = zeros(T, size(X))
-#        W_t = sparse(transpose(W))
-#
-#        # This loop simulates processing one column of X at a time.
-#        for k in 1:cols_X
-#            x_col_k_view = view(X, k, :)
-#            # Update the result matrix Y with the contribution from this column.
-#            ConScape.matmul_by_row!(+, Y, x_col_k_view, k, W_t)
-#        end
-#
-#        return Y
-#     end
-#     X_matrix = rand(10, 3)
-#     W_sparse_matrix = sprand(10, 10, 0.2)
-#
-#     result = iterative_matmul(X_matrix, W_sparse_matrix)
-#     @test result == 
-#     X_matrix
-#     W_sparse_matrix
-#     X_matrix' 
-# end
-#
-#
+@testset "rowwise iterative matmul" begin
+    function iterative_matmul(X::AbstractMatrix{T}, W_t::SparseMatrixCSC{T}) where T
+       rows_X, cols_X = size(X)
+       # Initialize the final result matrix that will be accumulated into.
+       Y = zeros(T, size(X))
+
+       # This loop processes one row of X at a time.
+       for k in 1:rows_X
+           x_row_k = view(X, k, :)
+           # Update the result matrix Y with the contribution from row k.
+           ConScape.matmul_by_row!(+, Y, x_row_k, k, W_t)
+       end
+
+       return Y
+    end
+    X_matrix = rand(10, 3)
+    W_t = sprand(10, 10, 0.2)
+
+    result = iterative_matmul(X_matrix, W_t)
+    @test result ≈ W_t * X_matrix
+end
+
+

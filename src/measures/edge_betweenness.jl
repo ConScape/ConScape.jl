@@ -19,7 +19,7 @@ weighting(gm::EdgeBetweenness) = gm.weighting
 computelevel(::EdgeBetweenness) = ConnectedGraphLevel()
 returntrait(::EdgeBetweenness) = ReturnAssignedSparse()
 
-needs_workspaces(::EdgeBetweenness) = 4
+num_vector_workspaces(::EdgeBetweenness, ::LandscapeMovement) = 4
 needs_full_fundamentalmatrix(::EdgeBetweenness, ::RSP) = true
 needs_full_fundamentalrowmatrix(::EdgeBetweenness, ::RSP) = true
 
@@ -50,14 +50,14 @@ function compute_connectedgraph!(output, m::EdgeBetweenness, cgi::ConnectedGraph
     for target in targetids(cgi)
         ti = TargetInit(cgi, target)
         idx = target.connectedgraphidx
-        (; IW_adj_factorization, Z, Zⁱ) = ti
+        (; F_IW_adj, Z, Zⁱ) = ti
         node = targetnode(ti)
         idx = targetconnectedgraphidx(ti)
 
         weights = _weight(m, ti)
         XdiagZⁱ[idx] = sum(weights) * Zⁱ[node]
         XZⁱ = workspace(ti) .= weights .* Zⁱ
-        XᵀZ = ldiv!(ti, IW_adj_factorization, XZⁱ)
+        XᵀZ = ldiv!(ti, F_IW_adj, XZⁱ)
         @views XᵀZ_full[:, idx] .= XᵀZ
     end
 

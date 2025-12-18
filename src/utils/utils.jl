@@ -62,7 +62,7 @@ end
 _allocate_workspaces!(workspaces, problem::ConScapeProblem, graph::ConnectedGraph) =
     _allocate_workspaces!(workspaces, problem, nsources(graph))
 _allocate_workspaces!(workspaces::Nothing, problem::ConScapeProblem, length::Int) =
-    Workspaces(length, 30)
+    Workspaces(length, num_vector_workspaces(problem))
 _allocate_workspaces!(workspaces::Workspaces, ::ConScapeProblem, length::Int) =
     free!(resize!(workspaces, length))
 
@@ -158,12 +158,12 @@ function setmeasures(ggi::GridGraphInit, m::NamedTuple{<:Any,Tuple{Vararg{Measur
     problem = setmeasures(ConScape.problem(ggi), m)
     return ConstructionBase.setproperties(ggi, (; problem, outputs))
 end
-function setmeasures(ggi::GridGraphInit, m::MeasureNamedTuple;
-    finallevel=defaultfinallevel(ggi)
-)
+setmeasures(ggi::GridGraphInit, m::Measure) =
+    setmeasures(ggi, NamedTuple{(Symbol(m),)}((m,)))
+function setmeasures(ggi::GridGraphInit, m::MeasureNamedTuple)
     problem = setmeasures(ConScape.problem(ggi), m)
     outputs = map(measures(problem)) do m
-        allocate_gridgraph_output(finallevel, m, ggi)
+        allocate_gridgraph_output(m, ggi)
     end
     return ConstructionBase.setproperties(ggi, (; problem, outputs))
 end
