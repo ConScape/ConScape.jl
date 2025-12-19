@@ -1,108 +1,48 @@
-
 """
     estimate_memory(problem::ConScapeProblem, sources::Int, targets::Int)
 
 Estimate memory usage in bytes for a problem with given source and target counts.
 
-Returns a NamedTuple with detailed breakdown and total.
+Returns a NamedTuple with breakdown by component and total.
+
+# Example
+
+```julia
+est = estimate_memory(problem, 1600, 400)
+est.total          # Total bytes
+est.mat_workspaces # Dense matrix vec_workspace bytes
+```
 """
 function estimate_memory(problem::ConScapeProblem, sources::Int, targets::Int)
     mes = measures(problem)
     mov = movement(problem)
-
-    # Vector workspaces: count × sources × 8 bytes (Float64)
-    n_vec = num_vector_workspaces(problem)
-    vec_workspace_mem = n_vec * sources * 8
-
-    # Matrix workspaces: count × sources × targets × 8 bytes
-    n_mat = num_matrix_workspaces(problem)
-    mat_workspace_mem = n_mat * sources * targets * 8
-
-    # Dense precalculation matrices that persist (sources × targets × 8 bytes each)
+    n_neighbors = 8
+    sparse_nnz = sources * n_neighbors
+    sparse_matrix_mem = sparse_nnz * 12 + (sources + 1) * 8
     dense_matrix_size = sources * targets * 8
-    n_dense_persist = (
+
+    vec_workspaces = num_vector_workspaces(problem) * sources * 8
+    mat_workspaces = num_matrix_workspaces(problem) * sources * targets * 8
+    dense_precalc = (
         anymeasure(needs_full_fundamentalmatrix, mes, mov) +
         anymeasure(needs_full_fundamentalrowmatrix, mes, mov) +
         anymeasure(needs_full_costdistancematrix, mes, mov)
-    )
-    dense_precalc_mem = n_dense_persist * dense_matrix_size
-
-    # Sparse matrix memory for RSP movement mode
-    # Estimate ~8 neighbors per node for grid connectivity
-    n_neighbors = 8
-    sparse_nnz = sources * n_neighbors
-
-    # SparseMatrixCSC storage: nzval (8 bytes) + rowval (4 bytes) + colptr ((n+1) * 8 bytes)
-    sparse_matrix_mem = sparse_nnz * 12 + (sources + 1) * 8
-
-    # Sparse matrices created in sparse_precalculation for RSP:
-    # P, W, IW, Aⁱ, CW, CW_t = 6 matrices
-    # Plus the original stepcost and steplikelihood from ConnectedGraph = 2 matrices
-    n_sparse_matrices = 8
-    sparse_mem = n_sparse_matrices * sparse_matrix_mem
-
-    # LU factorization memory (roughly 3-5x the sparse matrix due to fill-in)
-    # Two LU factorizations: F_IW and F_IW_adj
-    lu_fill_factor = 4
-    lu_mem = 2 * lu_fill_factor * sparse_matrix_mem
-
-    # SimpleWeightedDiGraph created in split_connected_graphs
-    # Uses adjacency list representation
-    graph_mem = sources * n_neighbors * 16  # edges with weights
-
-    # Quality vectors: sourcequality, targetquality, A_rowsums
-    quality_mem = (2 * sources + targets) * 8
-
-    # Output arrays: typically sources × 8 bytes per spatial measure
-    n_measures = length(mes)
-    output_mem = n_measures * sources * 8
-
-    # GridGraph raster data (views, minimal allocation)
-    # But we still need the sparse targetquality matrix
-    gridgraph_mem = sources * 8  # sparse target quality
+    ) * dense_matrix_size
+    sparse_matrices = 8 * sparse_matrix_mem
+    lu_factorization = 2 * 4 * sparse_matrix_mem
+    graph = sources * n_neighbors * 16
+    quality_vectors = (2 * sources + targets) * 8
+    outputs = length(mes) * sources * 8
+    gridgraph = sources * 8
 
     total = (
-        vec_workspace_mem +
-        mat_workspace_mem +
-        dense_precalc_mem +
-        sparse_mem +
-        lu_mem +
-        graph_mem +
-        quality_mem +
-        output_mem +
-        gridgraph_mem
+        vec_workspaces + mat_workspaces + dense_precalc + sparse_matrices +
+        lu_factorization + graph + quality_vectors + outputs + gridgraph
     )
 
-    return total
-end
-
-"""
-    estimate_memory_detailed(problem::ConScapeProblem, sources::Int, targets::Int)
-
-Detailed memory breakdown for debugging.
-"""
-function estimate_memory_detailed(problem::ConScapeProblem, sources::Int, targets::Int)
-    mes = measures(problem)
-    mov = movement(problem)
-    n_neighbors = 8
-    sparse_nnz = sources * n_neighbors
-    sparse_matrix_mem = sparse_nnz * 12 + (sources + 1) * 8
-    dense_matrix_size = sources * targets * 8
-
-    return (
-        vec_workspaces = num_vector_workspaces(problem) * sources * 8,
-        mat_workspaces = num_matrix_workspaces(problem) * sources * targets * 8,
-        dense_precalc = (
-            anymeasure(needs_full_fundamentalmatrix, mes, mov) +
-            anymeasure(needs_full_fundamentalrowmatrix, mes, mov) +
-            anymeasure(needs_full_costdistancematrix, mes, mov)
-        ) * dense_matrix_size,
-        sparse_matrices = 8 * sparse_matrix_mem,
-        lu_factorization = 2 * 4 * sparse_matrix_mem,
-        graph = sources * n_neighbors * 16,
-        quality_vectors = (2 * sources + targets) * 8,
-        outputs = length(mes) * sources * 8,
-        gridgraph = sources * 8,
+    return (;
+        vec_workspaces, mat_workspaces, dense_precalc, sparse_matrices,
+        lu_factorization, graph, quality_vectors, outputs, gridgraph, total
     )
 end
 
@@ -267,7 +207,7 @@ function assess(p::AbstractWindowedProblem{<:ConScapeProblem}, rast::AbstractRas
     memory_estimate = if njobs > 0
         _, max_idx = findmax(prod, sparse_sizes)
         max_sources, max_targets = sparse_sizes[max_idx]
-        estimate_memory(problem(p), max_sources, max_targets) / 1024^2  # Convert to MB
+        estimate_memory(problem(p), max_sources, max_targets).total / 1024^2  # Convert to MB
     else
         0.0
     end
@@ -407,7 +347,7 @@ This is useful for tuning `centersize` to fit memory constraints after running
 an expensive `assess()` call on a large raster.
 
 # Arguments
-- `problem`: The ConScapeProblem (needed for workspace counts)
+- `problem`: The ConScapeProblem (needed for vec_workspace counts)
 - `assessment`: An existing WindowAssessment from `assess()`
 - `centersize`: The new centersize to estimate memory for
 
@@ -445,5 +385,5 @@ function estimate_memory_for_centersize(
     new_targets = centersize^2
 
     # Recalculate memory estimate
-    estimate_memory(problem, max_sources, new_targets) / 1024^2
+    estimate_memory(problem, max_sources, new_targets).total / 1024^2
 end
