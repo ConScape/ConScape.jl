@@ -63,15 +63,15 @@ needs_eigmax(m::SensitivityAnalysis, rsp::RSP) = metric(m) isa EigMax
 needs_sum_sensitivity_precursors(m::SensitivityAnalysis{<:Permeability}, rsp::RSP) = metric(m) isa Summation
 needs_eigmax_sensitivity_precursors(m::SensitivityAnalysis{<:Permeability}, rsp::RSP) = metric(m) isa EigMax
 
-# Vector workspace requirements
-# Quality with Summation returns M directly (0 workspaces)
-# Quality with EigMax uses 1 workspace
-num_vector_workspaces(m::SensitivityAnalysis{<:AbstractQuality}, ::RSP) = metric(m) isa EigMax ? 1 : 0
-# Permeability precursors need workspaces:
-# - ExpectedCost precursors: ~7 workspaces (2 persistent + 5 in target loop)
+# Vector vec_workspace requirements
+# Quality with Summation returns M directly (0 vec_workspaces)
+# Quality with EigMax uses 1 vec_workspace
+num_vec_workspaces(m::SensitivityAnalysis{<:AbstractQuality}, ::RSP) = metric(m) isa EigMax ? 1 : 0
+# Permeability precursors need vec_workspaces:
+# - ExpectedCost precursors: ~7 vec_workspaces (2 persistent + 5 in target loop)
 # - PowerMeanProximity precursors: uses EdgeBetweenness (4) + Betweenness (3) + weightfunc (1)
-# - compute_connectedgraph! for PowerMeanProximity: 1 workspace
-num_vector_workspaces(::SensitivityAnalysis{<:Permeability}, ::RSP) = 8
+# - compute_connectedgraph! for PowerMeanProximity: 1 vec_workspace
+num_vec_workspaces(::SensitivityAnalysis{<:Permeability}, ::RSP) = 8
 
 # w.r.t Quality ############################################################################
 
@@ -90,7 +90,7 @@ function compute_target(
     too small and cause floating point error in the sum. =#
     if metric(m) isa EigMax
         (v, λ, w) = ti.eigmax
-        targetcol = workspace(ti) .= v .* M .* w[targetnode(ti)] ./ (v' * w)
+        targetcol = vec_workspace(ti) .= v .* M .* w[targetnode(ti)] ./ (v' * w)
         return readonlyarray(targetcol)
     else
         return M
@@ -154,13 +154,13 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
     kB::MSp = mapnz(_ -> 0.0, W)
     kΣ::MSp = mapnz(_ -> 0.0, W)
     # Diagonal vectors
-    mdiagZⁱ::VDe = fill!(view(workspace(cgi), 1:ntargets(cgi)), 0.0)
-    mdiagC̄Zⁱ::VDe = fill!(view(workspace(cgi), 1:ntargets(cgi)), 0.0)
+    mdiagZⁱ::VDe = fill!(view(vec_workspace(cgi), 1:ntargets(cgi)), 0.0)
+    mdiagC̄Zⁱ::VDe = fill!(view(vec_workspace(cgi), 1:ntargets(cgi)), 0.0)
     # Allocate Z-size matrices
     # These can't be used split into column vectors unless we calculate them twice. 
     # This is a serious option if RAM turns out to be more limiting than CPU time.
-    MᵀZ_full::MDe = mworkspace(cgi)
-    X5_full::MDe = mworkspace(cgi)
+    MᵀZ_full::MDe = mat_workspace(cgi)
+    X5_full::MDe = mat_workspace(cgi)
 
     
     # Loop to calculate diagonals mdiagZ and mdiagC̄Z
@@ -172,8 +172,8 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         node = target.node
         idx = target.connectedgraphidx
 
-        Kd = workspace(ti) .= _diff_KD(dt).(K)
-        Md = workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
+        Kd = vec_workspace(ti) .= _diff_KD(dt).(K)
+        Md = vec_workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
         x = sum(Md) * Zⁱ[node]
         mdiagZⁱ[idx] = x
         mdiagC̄Zⁱ[idx] = x * Zⁱ[node] * Y[node]
@@ -190,11 +190,11 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         # so add them to storage early so they arent coputed elsewhere
         (; Z::RVDe, Zⁱ::RVDe, K::RVDe, Y::RVDe) = ti
 
-        C̄ᵣ::VDe = workspace(ti) .= Y .* Zⁱ
-        Kd::VDe = workspace(ti) .= _diff_KD(distance_transformation(ti)).(K)
-        Md::VDe = workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
-        MZⁱ::VDe = workspace(ti) .= Md .* Zⁱ
-        MᵀZ::VDe = ldiv!(ti, F_IW_adj, (workspace(ti) .= MZⁱ)) # MᵀZ = MZⁱ' / IW
+        C̄ᵣ::VDe = vec_workspace(ti) .= Y .* Zⁱ
+        Kd::VDe = vec_workspace(ti) .= _diff_KD(distance_transformation(ti)).(K)
+        Md::VDe = vec_workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
+        MZⁱ::VDe = vec_workspace(ti) .= Md .* Zⁱ
+        MᵀZ::VDe = ldiv!(ti, F_IW_adj, (vec_workspace(ti) .= MZⁱ)) # MᵀZ = MZⁱ' / IW
         MᵀZ_full[:, idx] .= MᵀZ # Update the full matrix for later use
 
         # Here we do unrolled matrix multiplications to reduce memory use.
@@ -206,7 +206,7 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         matmul_by_col!(-, X5_full, MᵀZ, idx, CW)
     end
         
-    X3 = view(workspace(cgi), 1:ntargets(cgi))
+    X3 = view(vec_workspace(cgi), 1:ntargets(cgi))
     # Last we add X3 by source
     for node in 1:nsources(cgi)
         X3 .= mdiagZⁱ .* view(Zrows_full, :, node)
@@ -214,16 +214,16 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         matmul_by_row!(+, X5_full, X3, node, CW_t)
     end
 
-    rhs_copy = workspace(cgi) 
+    rhs_copy = vec_workspace(cgi) 
     for j in axes(X5_full, 2)
         rhs = view(X5_full, :, j)
         rhs_copy .= rhs
         ldiv!(solver(cgi), rhs, F_IW_adj, rhs_copy)
     end
 
-    # Use smaller workspaces 
-    X5 = view(workspace(cgi), 1:ntargets(cgi))
-    X6 = view(workspace(cgi), 1:ntargets(cgi))
+    # Use smaller vec_workspaces 
+    X5 = view(vec_workspace(cgi), 1:ntargets(cgi))
+    X6 = view(vec_workspace(cgi), 1:ntargets(cgi))
 
     foreachnz(W) do i, j, n
         Z = view(Z_full, j, :)
@@ -235,9 +235,9 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         kΣ.nzval[n] = W.nzval[n] * ((Z' * X5)[] - (Y' * X6)[] - (C.nzval[n] * kBn / W.nzval[n]))
     end
     
-    # Put back the matrix workspaces we used
-    put!(mworkspaces(cgi), X5_full)
-    put!(mworkspaces(cgi), MᵀZ_full)
+    # Put back the matrix vec_workspaces we used
+    put!(mat_workspaces(cgi), X5_full)
+    put!(mat_workspaces(cgi), MᵀZ_full)
 
     return (; kB, kΣ)
 end
@@ -284,7 +284,7 @@ function _compute_sensitivity_precursors(::PowerMeanProximity, cgi::ConnectedGra
         (; θ, Z, Zⁱ) = ti
         node = targetnode(ti)
         idx = targetconnectedgraphidx(ti)
-        return readonlyarray(workspace(ti) .= (qˢ .* ((Z .* Zⁱ[node]) .^ θ) .* qᵗ[idx]))
+        return readonlyarray(vec_workspace(ti) .= (qˢ .* ((Z .* Zⁱ[node]) .^ θ) .* qᵗ[idx]))
     end
     custom_weighted = CustomWeighted(weightfunc) # We dont need the weights in the allocation phase, just the type
     finallevel = ConnectedGraphLevel()
@@ -319,7 +319,7 @@ function compute_connectedgraph!(
         cgi.sum_sensitivity_precursors
     end
 
-    node_sensitivity = fill!(workspace(cgi), 0.0)
+    node_sensitivity = fill!(vec_workspace(cgi), 0.0)
     # Loop over non-zero values of Aⁱ/edge_output
     foreachnz(Aⁱ) do i, j, n
         I = sourceids(cgi)[i]

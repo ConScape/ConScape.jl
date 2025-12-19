@@ -21,8 +21,8 @@ function estimate_memory(problem::ConScapeProblem, sources::Int, targets::Int)
     sparse_matrix_mem = sparse_nnz * 12 + (sources + 1) * 8
     dense_matrix_size = sources * targets * 8
 
-    vec_workspaces = num_vector_workspaces(problem) * sources * 8
-    mat_workspaces = num_matrix_workspaces(problem) * sources * targets * 8
+    vec_workspaces = num_vec_workspaces(problem) * sources * 8
+    mat_workspaces = num_mat_workspaces(problem) * sources * targets * 8
     dense_precalc = (
         anymeasure(needs_full_fundamentalmatrix, mes, mov) +
         anymeasure(needs_full_fundamentalrowmatrix, mes, mov) +

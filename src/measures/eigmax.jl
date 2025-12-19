@@ -55,9 +55,9 @@ function _compute_eigmax(em::EigMax, cgi::ConnectedGraphInit)
     targetnodes = map(x -> x.node, targetids(cgi))
     nontargetnodes = setdiff(1:nsources(cgi), targetnodes)
 
-    # We use views into one matrix workspace for both M matrices
-    M_all = mworkspace(cgi)
-    MλI_all = mworkspace(cgi)
+    # We use views into one matrix vec_workspace for both M matrices
+    M_all = mat_workspace(cgi)
+    MλI_all = mat_workspace(cgi)
     MλI = view(MλI_all, 1:m, :)
     Mtarget = view(M_all, 1:m, :)
     Mnontarget = view(M_all, m+1:size(M_all, 1), :)
@@ -115,9 +115,9 @@ function _compute_eigmax(em::EigMax, cgi::ConnectedGraphInit)
     # map!(x -> x < zero(x) ? zero(x) : x, vˡ)
     # map!(x -> x < zero(x) ? zero(x) : x, vʳ)
 
-    # Put back the matrix workspace
-    put!(mworkspaces(cgi), M_all)
-    put!(mworkspaces(cgi), MλI_all)
+    # Put back the matrix vec_workspace
+    put!(mat_workspaces(cgi), M_all)
+    put!(mat_workspaces(cgi), MλI_all)
 
     return (vˡ, λ, vʳ)
 end

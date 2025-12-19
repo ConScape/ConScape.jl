@@ -17,7 +17,7 @@ needs_sum_sensitivity_precursors(::Measure, ::MovementMode) = false
 needs_eigmax_sensitivity_precursors(::Measure, ::MovementMode) = false
 needs_eigmax(::Measure, ::MovementMode) = false
 needs_edgebetweenness_workspace(::Measure, ::MovementMode) = false
-num_vector_workspaces(::Measure, ::MovementMode) = 0
+num_vec_workspaces(::Measure, ::MovementMode) = 0
 
 anymeasure(f, measures::NamedTuple, mov::MovementMode) =
     anymeasure(f, values(measures), mov)
@@ -116,13 +116,13 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
     if anymeasure(needs_full_matrix, mes, movement(cgi))
         # Allocate required matrices
         Z_full = if anymeasure(needs_full_fundamentalmatrix, mes, mov)
-            mworkspace(cgi) 
+            mat_workspace(cgi) 
         end
         Zrows_full = if anymeasure(needs_full_fundamentalrowmatrix, mes, mov)
-            _issquare(cgi) ? Z_full : transpose(mworkspace(cgi))
+            _issquare(cgi) ? Z_full : transpose(mat_workspace(cgi))
         end
         Y_full = if anymeasure(needs_full_costdistancematrix, mes, mov)
-            mworkspace(cgi) 
+            mat_workspace(cgi) 
         end
 
         # Precalculate required matrices column by column
@@ -155,8 +155,8 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
         # EigMax
         if anymeasure(needs_eigmax, mes, mov)
             cgi_part_precalc = ConnectedGraphInit(
-                problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), workspaces(cgi),
-                mworkspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
+                problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), vec_workspaces(cgi),
+                mat_workspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
             )
             em = _get_eigmax(mes)::EigMax
             eigmax = _compute_eigmax(em, cgi_part_precalc)
@@ -166,8 +166,8 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
         # EigMax sensitivity precursors
         if anymeasure(needs_sum_sensitivity_precursors, mes, mov)
             cgi_part_precalc = ConnectedGraphInit(
-                problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), workspaces(cgi), 
-                mworkspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
+                problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), vec_workspaces(cgi), 
+                mat_workspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
             )
             sum_sensitivity_precursors = _compute_sum_sensitivity_precursors(proximity_measure(cgi), cgi_part_precalc)
             precalculation = (; precalculation..., sum_sensitivity_precursors)
@@ -176,8 +176,8 @@ function dense_precalculation(cgi::ConnectedGraphInit{<:Union{<:RSP,<:RandomWalk
         # Summation sensitivity precursors
         if anymeasure(needs_eigmax_sensitivity_precursors, mes, mov)
             cgi_part_precalc = ConnectedGraphInit(
-                problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), workspaces(cgi), 
-                mworkspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
+                problem(cgi), gridgraph(cgi), connectedgraph(cgi), measures_outputs(cgi), vec_workspaces(cgi), 
+                mat_workspaces(cgi), storage(cgi), precalculation, connectedgraphid(cgi),
             )
             eigmax_sensitivity_precursors = _compute_eigmax_sensitivity_precursors(proximity_measure(cgi), cgi_part_precalc)
             precalculation = (; precalculation..., eigmax_sensitivity_precursors)
@@ -355,7 +355,7 @@ end
     elseif x == :K # "proximity vector"
         (; shortest_paths) = ti
         # TODO this should error earlier
-        readonlyarray(workspace(ti) .= distance_transformation(ti).(shortest_paths.dists))
+        readonlyarray(vec_workspace(ti) .= distance_transformation(ti).(shortest_paths.dists))
     elseif x === :M # "landscape vector"
         _landscapematrixcol(ti)
     elseif x === :Q
@@ -371,17 +371,17 @@ end
 # Variable generation for TargetInit
 
 # Copy a column  from a precalculated full matrix
-_copyrow(A, ti) = readonlyarray(workspace(ti) .= view(A, targetconnectedgraphidx(ti), :))
-_copycol(A, ti) = readonlyarray(workspace(ti) .= view(A, :, targetconnectedgraphidx(ti)))
+_copyrow(A, ti) = readonlyarray(vec_workspace(ti) .= view(A, targetconnectedgraphidx(ti), :))
+_copycol(A, ti) = readonlyarray(vec_workspace(ti) .= view(A, :, targetconnectedgraphidx(ti)))
 
 function _proximitymatrixcol(ti::TargetInit{<:Union{RSP,RandomWalk}})::RVDe
     pm = proximity_measure(ti)
     dt = distance_transformation(ti)
     distances = get_or_compute_target!(ti, pm)
     proximities = if pm isa DistanceMeasure && !isnothing(dt)
-        workspace(ti) .= dt.(distances)
+        vec_workspace(ti) .= dt.(distances)
     else
-        workspace(ti) .= distances
+        vec_workspace(ti) .= distances
     end
     _maybe_set_diagonal!(proximities, ti)
 
@@ -391,21 +391,21 @@ end
 function _fundamentalmatrixcol(ti::TargetInit{<:Union{RSP,RandomWalk}})
     # `Z = (I - W) \ i` where b is column of the a diagonal matrix of 1s
     # Solving `(I - W) * Z = i` for unknown `Z`
-    i = _identity_col!(workspace(ti), target(ti))
-    i_copy = _identity_col!(workspace(ti), target(ti))
+    i = _identity_col!(vec_workspace(ti), target(ti))
+    i_copy = _identity_col!(vec_workspace(ti), target(ti))
     Z = ldiv!(solver(ti), i, ti.F_IW, i_copy)
     return readonlyarray(Z)
 end
 
 function _inversefundamentalmatrixcol(ti)
-    readonlyarray(_inv!(workspace(ti), ti.Z))
+    readonlyarray(_inv!(vec_workspace(ti), ti.Z))
 end
 
 function _fundamentalrowmatrixrow(ti::TargetInit{<:Union{RSP,RandomWalk}})
     Zrows = if _issquare(ti)
         ti.Z
     else
-        b = _identity_col!(workspace(ti), target(ti))
+        b = _identity_col!(vec_workspace(ti), target(ti))
         Zrows = ldiv!(ti, ti.F_IW_adj, b)
         readonlyarray(Zrows)
     end
@@ -419,7 +419,7 @@ function _costdistancematrixcol(ti)
     # Solve: (I - W) \ (C .* W) * Z ./ Z
     # Manual matmul is *much* faster with sparse/dense.
     # Otherwise this is 99% of the run time.
-    RHS = fill!(workspace(ti), 0.0)
+    RHS = fill!(vec_workspace(ti), 0.0)
     foreachnz(CW) do i, j, n
         RHS[i] += CW.nzval[n] * Z[j] 
     end
@@ -431,12 +431,12 @@ end
 
 function _landscapematrixcol(ti::TargetInit)
     (; qˢ, K::RVDe, qᵗ::Float64) = ti
-    return readonlyarray(workspace(ti) .= qˢ .* K .* qᵗ)
+    return readonlyarray(vec_workspace(ti) .= qˢ .* K .* qᵗ)
 end
 
 function _qualitymatrixcol(ti::TargetInit)
     (; qˢ, qᵗ) = ti
-    return readonlyarray(workspace(ti) .= qˢ .* qᵗ)
+    return readonlyarray(vec_workspace(ti) .= qˢ .* qᵗ)
 end
 
 function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
@@ -445,8 +445,8 @@ function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
     n = LinearAlgebra.checksquare(IP)
 
     # Prepare a Woodbury matrix to cheaply zero out row t, without factorization
-    U = fill!(reshape(workspace(ti), (n, 1)), 0.0)
-    V = fill!(reshape(workspace(ti), (1, n)), 0.0)
+    U = fill!(reshape(vec_workspace(ti), (n, 1)), 0.0)
+    V = fill!(reshape(vec_workspace(ti), (1, n)), 0.0)
     U[t] = 1             # Identity
     V .= .- (IP[t:t, :]) # So that IP[t, :] + UCV[t, :] .== 0
     V[t] = -P[t, t]      # So that IP[t, t] + UCV[t, t] = 1
@@ -467,9 +467,9 @@ end
 
 # Fill a vector with zeros, and one for the target node
 # If this column it was part of a square matrix it would be an identity matrix
-function _identity_col!(workspace, target::TargetID)
-    fill!(workspace, 0.0)
-    workspace[target.node] = 1.0
-    return workspace
+function _identity_col!(vec_workspace, target::TargetID)
+    fill!(vec_workspace, 0.0)
+    vec_workspace[target.node] = 1.0
+    return vec_workspace
 end
 

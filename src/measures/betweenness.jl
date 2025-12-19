@@ -79,7 +79,7 @@ weighting(gm::Betweenness) = gm.weighting
 computelevel(::Betweenness) = TargetLevel()
 returntrait(::Betweenness) = ReturnSpatialTargetSum()
 
-num_vector_workspaces(::Betweenness, ::LandscapeMovement) = 3 # Z, Zⁱ, workspace
+num_vec_workspaces(::Betweenness, ::LandscapeMovement) = 3 # Z, Zⁱ, vec_workspace
 
 Base.Symbol(m::Betweenness) = Symbol(nameof(typeof(m)), :_, nameof(typeof(weighting(m))))
 
@@ -94,7 +94,7 @@ function compute_target(m::Betweenness, ti::TargetInit{<:LCP})
     targetpath[1] = node
     # Get the target weights
     weights = _weight(m, ti)
-    btw = workspace(ti) .= 0.1
+    btw = vec_workspace(ti) .= 0.1
 
     @inbounds for s in eachindex(sourceids(ti))
         w = weights[s]
@@ -111,7 +111,7 @@ function compute_target(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
     weight = _weight(m, ti)
     node = targetnode(ti)
     isnothing(weight) && error("Betweenness weight is `nothing`")
-    XZⁱt = workspace(ti) .= weight .* Zⁱ
+    XZⁱt = vec_workspace(ti) .= weight .* Zⁱ
     # Find the scaling factor: if any of XZⁱ is above 1.0 there is a risk of Inf overflow
     λ = max(1.0, maximum(XZⁱt))
     # TODO: explain what this subtraction does

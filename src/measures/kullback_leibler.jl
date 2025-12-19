@@ -4,16 +4,16 @@ struct KullbackLeiblerDivergence <: PathDistributionMeasure end
 
 computelevel(::KullbackLeiblerDivergence) = TargetLevel()
 returntrait(::KullbackLeiblerDivergence) = ReturnScalarSum()
-num_vector_workspaces(::KullbackLeiblerDivergence, ::LCP) = 1
-num_vector_workspaces(::KullbackLeiblerDivergence, ::RandomWalk) = 0
+num_vec_workspaces(::KullbackLeiblerDivergence, ::LCP) = 1
+num_vec_workspaces(::KullbackLeiblerDivergence, ::RandomWalk) = 0
 # RSP: calls FreeEnergyDistance (2) + ExpectedCost (1) + 1 for itself = 4
-num_vector_workspaces(::KullbackLeiblerDivergence, ::RSP) = 4
+num_vec_workspaces(::KullbackLeiblerDivergence, ::RSP) = 4
 
 # LeastCostPath
 function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:LCP})
     (; cost_weighted_digraph, P, qˢ, qᵗ) = ti
     node = targetnode(ti)
-    output = workspace(ti)
+    output = vec_workspace(ti)
     from = Vector{Int}(undef, length(output))
     to = Vector{Int}(undef, length(output))
 
@@ -54,6 +54,6 @@ function compute_target(::KullbackLeiblerDivergence, ti::TargetInit{<:RSP})
     (; θ, qˢ, qᵗ) = ti
     fed = get_or_compute_target!(ti, FreeEnergyDistance())
     ec = get_or_compute_target!(ti, ExpectedCost())
-    diff = workspace(ti) .= fed .- ec
+    diff = vec_workspace(ti) .= fed .- ec
     return sum(diff .*= qˢ) * qᵗ * θ # qˢ' * diff * qᵗ * θ
 end

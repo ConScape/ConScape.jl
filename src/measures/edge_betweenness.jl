@@ -19,7 +19,7 @@ weighting(gm::EdgeBetweenness) = gm.weighting
 computelevel(::EdgeBetweenness) = ConnectedGraphLevel()
 returntrait(::EdgeBetweenness) = ReturnAssignedSparse()
 
-num_vector_workspaces(::EdgeBetweenness, ::LandscapeMovement) = 4
+num_vec_workspaces(::EdgeBetweenness, ::LandscapeMovement) = 4
 needs_full_fundamentalmatrix(::EdgeBetweenness, ::RSP) = true
 needs_full_fundamentalrowmatrix(::EdgeBetweenness, ::RSP) = true
 needs_edgebetweenness_workspace(::EdgeBetweenness, ::RSP) = true
@@ -44,8 +44,8 @@ end
 function compute_connectedgraph!(output, m::EdgeBetweenness, cgi::ConnectedGraphInit)
     (; W, Z_full, Zrows_full) = cgi # This Z is the full graph size
 
-    XᵀZ_full = mworkspace(cgi)
-    XdiagZⁱ::VDe = fill!(view(workspace(cgi), 1:ntargets(cgi)), 0.0)
+    XᵀZ_full = mat_workspace(cgi)
+    XdiagZⁱ::VDe = fill!(view(vec_workspace(cgi), 1:ntargets(cgi)), 0.0)
 
     # Loop over targets to calculate the diagonal
     for target in targetids(cgi)
@@ -57,7 +57,7 @@ function compute_connectedgraph!(output, m::EdgeBetweenness, cgi::ConnectedGraph
 
         weights = _weight(m, ti)
         XdiagZⁱ[idx] = sum(weights) * Zⁱ[node]
-        XZⁱ = workspace(ti) .= weights .* Zⁱ
+        XZⁱ = vec_workspace(ti) .= weights .* Zⁱ
         XᵀZ = ldiv!(ti, F_IW_adj, XZⁱ)
         @views XᵀZ_full[:, idx] .= XᵀZ
     end
@@ -72,7 +72,7 @@ function compute_connectedgraph!(output, m::EdgeBetweenness, cgi::ConnectedGraph
             # TODO: is j in the right place?
             W.nzval[n] * only(view(Z_full, j, :)' * view(XᵀZ_full, i, :))
     end
-    put!(mworkspaces(cgi), XᵀZ_full)
+    put!(mat_workspaces(cgi), XᵀZ_full)
 
     return output
 end

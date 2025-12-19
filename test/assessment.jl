@@ -344,12 +344,12 @@ end
     @test a1.sparse_sizes == a2.sparse_sizes
 end
 
-# Test measures that use matrix workspaces (mworkspace)
+# Test measures that use matrix vec_workspaces (mat_workspace)
 # These require accurate sparse_sizes for pre-allocation
 # Note: These tests are skipped on Julia 1.12 due to compiler segfaults during type inference
 if VERSION < v"1.12"
-    @testset "assess with mworkspace measures" begin
-        # EdgeBetweenness uses mworkspace
+    @testset "assess with mat_workspace measures" begin
+        # EdgeBetweenness uses mat_workspace
         measures_ebet = (;
             ebetm=EdgeBetweenness(QualityAndProximityWeighted()),
         )
@@ -367,7 +367,7 @@ if VERSION < v"1.12"
     end
 
     @testset "assess with EigMax measure" begin
-        # EigMax uses mworkspace
+        # EigMax uses mat_workspace
         measures_eigmax = (;
             eigmax=ConScape.EigMax(),
             ch=FunctionalHabitat(),  # Need at least one regular measure
@@ -386,7 +386,7 @@ if VERSION < v"1.12"
     end
 
     @testset "assess with SensitivityAnalysis measure" begin
-        # SensitivityAnalysis uses mworkspace
+        # SensitivityAnalysis uses mat_workspace
         measures_sens = (;
             sens=SensitivityAnalysis(; wrt=Quality(), metric=Summation()),
             ch=FunctionalHabitat(),
@@ -503,7 +503,7 @@ end
     println("  solve!/predicted ratio: $(round(solve_alloc / predicted_bytes, digits=2))x")
 
     # solve!() allocations should be predictable from sparse_sizes
-    # Current ratio is ~25x (includes sparse matrices, workspaces, etc.)
+    # Current ratio is ~25x (includes sparse matrices, vec_workspaces, etc.)
     # Target: understand the multiplier to give users accurate memory estimates
     @test solve_alloc < predicted_bytes * 50
 end

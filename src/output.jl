@@ -193,8 +193,8 @@ function update_connectedgraph_output!(
     output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector
 )
     output[:, target(ti).connectedgraphidx] .= v
-    # Return the output workspace
-    put!(workspaces(ti), v)
+    # Return the output vec_workspace
+    put!(vec_workspaces(ti), v)
     return output
 end
 

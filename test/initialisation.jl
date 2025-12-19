@@ -26,8 +26,8 @@ problem = ConScapeProblem(; movement=rsp, measures)
         @test ConScape.problem(ggi) === problem
         @test ConScape.gridgraph(ggi) isa ConScape.GridGraph
         @test ConScape.connectedgraphs(ggi) isa Vector{<:ConScape.ConnectedGraph}
-        @test ConScape.workspaces(ggi) isa ConScape.Workspaces{<:Vector{Float64}}
-        @test ConScape.mworkspaces(ggi) isa ConScape.Workspaces{<:Matrix{Float64}}
+        @test ConScape.vec_workspaces(ggi) isa ConScape.Workspaces{<:Vector{Float64}}
+        @test ConScape.mat_workspaces(ggi) isa ConScape.Workspaces{<:Matrix{Float64}}
         @test ConScape.storage(ggi) isa Dict
         @test ConScape.measures_outputs(ggi) isa NamedTuple
     end
@@ -63,8 +63,8 @@ end
         @test ConScape.problem(cgi) === problem
         @test ConScape.gridgraph(cgi) === ConScape.gridgraph(ggi)
         @test ConScape.connectedgraph(cgi) isa ConScape.ConnectedGraph
-        @test ConScape.workspaces(cgi) isa ConScape.Workspaces{<:Vector{Float64}}
-        @test ConScape.mworkspaces(cgi) isa ConScape.Workspaces{<:Matrix{Float64}}
+        @test ConScape.vec_workspaces(cgi) isa ConScape.Workspaces{<:Vector{Float64}}
+        @test ConScape.mat_workspaces(cgi) isa ConScape.Workspaces{<:Matrix{Float64}}
         @test ConScape.storage(cgi) isa Dict
         @test ConScape.precalculation(cgi) isa NamedTuple
     end
@@ -114,7 +114,7 @@ end
         @test ConScape.gridgraph(ti) === ConScape.gridgraph(cgi)
         @test ConScape.connectedgraph(ti) === ConScape.connectedgraph(cgi)
         @test ConScape.storage(ti) === ConScape.storage(cgi)
-        @test ConScape.workspaces(ti) === ConScape.workspaces(cgi)
+        @test ConScape.vec_workspaces(ti) === ConScape.vec_workspaces(cgi)
     end
 
     @testset "ConnectedGraph forwarding" begin

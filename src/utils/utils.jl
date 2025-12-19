@@ -59,19 +59,19 @@ function _reshape!(A::Array, size::Tuple{Vararg{Int}})
     end
 end
 
-_allocate_workspaces!(workspaces, problem::ConScapeProblem, graph::ConnectedGraph) =
-    _allocate_workspaces!(workspaces, problem, nsources(graph))
-_allocate_workspaces!(workspaces::Nothing, problem::ConScapeProblem, length::Int) =
-    Workspaces(length, num_vector_workspaces(problem))
-_allocate_workspaces!(workspaces::Workspaces, ::ConScapeProblem, length::Int) =
-    free!(resize!(workspaces, length))
+_allocate_workspaces!(vec_workspaces, problem::ConScapeProblem, graph::ConnectedGraph) =
+    _allocate_workspaces!(vec_workspaces, problem, nsources(graph))
+_allocate_workspaces!(vec_workspaces::Nothing, problem::ConScapeProblem, length::Int) =
+    Workspaces(length, num_vec_workspaces(problem))
+_allocate_workspaces!(vec_workspaces::Workspaces, ::ConScapeProblem, length::Int) =
+    free!(resize!(vec_workspaces, length))
 
-_allocate_mworkspaces!(ws, problem::ConScapeProblem, graph::ConnectedGraph) =
-    _allocate_mworkspaces!(ws, problem, connectedgraph_size(graph))
-_allocate_mworkspaces!(::Nothing, problem::ConScapeProblem, size::Tuple) =
-    Workspaces(size, num_matrix_workspaces(problem))
-_allocate_mworkspaces!(mworkspaces::Workspaces, ::ConScapeProblem, size::Tuple) =
-    free!(resize!(mworkspaces, size))
+_allocate_mat_workspaces!(ws, problem::ConScapeProblem, graph::ConnectedGraph) =
+    _allocate_mat_workspaces!(ws, problem, connectedgraph_size(graph))
+_allocate_mat_workspaces!(::Nothing, problem::ConScapeProblem, size::Tuple) =
+    Workspaces(size, num_mat_workspaces(problem))
+_allocate_mat_workspaces!(mat_workspaces::Workspaces, ::ConScapeProblem, size::Tuple) =
+    free!(resize!(mat_workspaces, size))
 
 # Get layers from a RasterStack or return nothing
 _get_sourcequality(rast::RasterStack) = _keys_or_nothing(rast, (:sourcequality, :quality))
@@ -179,8 +179,8 @@ function setmeasures(cgi::ConnectedGraphInit, m::MeasureNamedTuple;
         gridgraph(cgi),
         connectedgraph(cgi),
         outputs,
-        workspaces(cgi),
-        mworkspaces(cgi),
+        vec_workspaces(cgi),
+        mat_workspaces(cgi),
         storage(cgi),
         precalculation(cgi),
         connectedgraphid(cgi),
@@ -194,8 +194,8 @@ function setmeasures(cgi::ConnectedGraphInit, mos::MeasureOutputNamedTuple;
         gridgraph(cgi),
         connectedgraph(cgi),
         mos,
-        workspaces(cgi),
-        mworkspaces(cgi),
+        vec_workspaces(cgi),
+        mat_workspaces(cgi),
         storage(cgi),
         precalculation(cgi),
         connectedgraphid(cgi),

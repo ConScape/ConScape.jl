@@ -136,14 +136,14 @@ struct WindowedInit{P,R,W,M} <: Initialisation
     ranges::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
     indices::Vector{Int}
     sorted_indices::Vector{Int}
-    workspaces::W
-    mworkspaces::M
+    vec_workspaces::W
+    mat_workspaces::M
     sparse_builders::SparseBuilders
 end
 
 problem(wi::WindowedInit) = wi.problem
-workspaces(wi::WindowedInit) = wi.workspaces
-mworkspaces(wi::WindowedInit) = wi.mworkspaces
+vec_workspaces(wi::WindowedInit) = wi.vec_workspaces
+mat_workspaces(wi::WindowedInit) = wi.mat_workspaces
 sparse_builders(wi::WindowedInit) = wi.sparse_builders
 
 function init(p::WindowedProblem, rast::RasterStack;
@@ -162,29 +162,29 @@ function init(p::WindowedProblem, rast::RasterStack;
     indices = isnothing(indices) ? _select_indices(p, rast; window_ranges, sparse_sizes) : indices
     sorted_indices = last.(sort!(first.(sparse_sizes[indices]) .=> indices; rev=true))
 
-    # Pre-allocate workspaces sized for the largest window
+    # Pre-allocate vec_workspaces sized for the largest window
     # These will be resized as needed for each window, avoiding repeated allocations
     # Use already-computed sparse_sizes to find max (avoids re-scanning raster)
     _, max_idx = findmax(prod, sparse_sizes)
     max_size = sparse_sizes[max_idx]
     inner_problem = problem(p)
-    workspaces = Workspaces(max_size[1], num_vector_workspaces(inner_problem))
-    mworkspaces = Workspaces(max_size, num_matrix_workspaces(inner_problem))
+    vec_workspaces = Workspaces(max_size[1], num_vec_workspaces(inner_problem))
+    mat_workspaces = Workspaces(max_size, num_mat_workspaces(inner_problem))
     sparse_builders = SparseBuilders()
 
     return WindowedInit(
-        p, rast, sparse_sizes, window_ranges, indices, sorted_indices, workspaces, mworkspaces, sparse_builders
+        p, rast, sparse_sizes, window_ranges, indices, sorted_indices, vec_workspaces, mat_workspaces, sparse_builders
     )
 end
 function init(wi::WindowedInit, i::Int; verbose=false)
     ranges = wi.ranges[i]
     verbose && println("Initialising window from ranges $ranges...")
     rast = _get_window_with_zeroed_buffer(wi, ranges)
-    # Pass pre-allocated workspaces to avoid repeated allocations
+    # Pass pre-allocated vec_workspaces to avoid repeated allocations
     init(problem(problem(wi)), rast;
         verbose,
-        workspaces=workspaces(wi),
-        mworkspaces=mworkspaces(wi),
+        vec_workspaces=vec_workspaces(wi),
+        mat_workspaces=mat_workspaces(wi),
         sparse_builders=sparse_builders(wi),
     )
 end
