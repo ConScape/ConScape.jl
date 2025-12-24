@@ -23,7 +23,7 @@ WoodburyMatrices = "efce3f68-66dc-5838-9240-27a6d6f5f9b6"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 
 [sources]
-OldConScape = {path = "/home/raf/.julia/dev/OldConScape"}
+OldConScape = {url = "https://github.com/ConScape/ConScape.jl/", rev="old"}
 
 [extensions]
 ConScapeLinearSolveExt = "LinearSolve"
