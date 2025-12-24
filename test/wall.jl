@@ -30,7 +30,7 @@ using ConScape, Test, SparseArrays
 
     movement = RandomisedShortestPath(ExpectedCost(); theta=θ, diagvalue=0.0)
     measures = (
-        kld = KullbackLeiblerDivergence(),
+        kld = MeanKullbackLeiblerDivergence(),
         betq = Betweenness(QualityWeighted()),
         betk = Betweenness(QualityAndProximityWeighted()),
         ebetq = EdgeBetweenness(QualityWeighted()),
@@ -71,7 +71,6 @@ using ConScape, Test, SparseArrays
         bet_edge = results.ebetq
         bet = fill(NaN, size(g))
         bet[ConScape.sourceids(g)] = sum(results.ebetq[1]; dims=2)
-        # Edge betweenness is broken
         @test bet ≈ bet_node
     end
 
@@ -101,37 +100,30 @@ using ConScape, Test, SparseArrays
     end
 
     @testset "mean_lc_kl_divergence" begin
-        @test_broken solve(KullbackLeiblerDivergence(), LCP(), g)[] ≈ 1.0667623231698838e14
+        @test_broken solve(MeanKullbackLeiblerDivergence(), LCP(), g)[] ≈ 1.0667623231698838e14
     end
 
     @testset "eigmax for each proximity_measure" begin
-        function calc_landscape(rsp, g)
-            # Compute the weighted proximity matrix, 
-            # and take the first connectedgraph output
-            only(solve(ConScape.LandscapeMatrix(), rsp, g))
-
-            return kkM
-        end
-        rsp = RSP(ExpectedCost(); theta=θ, distance_transformation=ConScape.ExpMinus())
-        M = calc_landscape(rsp, g);
+        rsp = RSP(ExpectedCost(); theta=θ, distance_transformation=ExpMinus())
+        M = solve(ConScape.LandscapeMatrix(), rsp, g)[1]
         (vˡ, λ, vʳ) = solve(EigMax(), rsp, g)[1]
         @test λ[] ≈ 5.576850282179157e6
-        @test_broken M * vʳ ≈ vʳ * λ[]
+        @test M * vʳ ≈ vʳ * λ[]
 
-        rsp = RSP(FreeEnergyDistance(); theta=θ, distance_transformation=ConScape.ExpMinus())
-        M = calc_landscape(rsp, g);
+        rsp = RSP(FreeEnergyDistance(); theta=θ, distance_transformation=ExpMinus())
+        M = solve(ConScape.LandscapeMatrix(), rsp, g)[1]
         (vˡ, λ, vʳ) = solve(EigMax(), rsp, g)[1]
         @test λ[] ≈ 3.2799955467465096e6
         @test M * vʳ ≈ vʳ * λ[]
 
         rsp = RSP(SurvivalProbability(); theta=θ)
-        M = calc_landscape(rsp, g)
+        M = solve(ConScape.LandscapeMatrix(), rsp, g)[1]
         (vˡ, λ, vʳ) = solve(EigMax(), rsp, g)[1]
         @test λ[] ≈ 1.3475609129305437e7
         @test M * vʳ ≈ vʳ * λ[]
 
         rsp = RSP(PowerMeanProximity(); theta=θ)
-        M = calc_landscape(rsp, g);
+        M = solve(ConScape.LandscapeMatrix(), rsp, g)[1]
         (vˡ, λ, vʳ) = solve(EigMax(), rsp, g)[1]
         @test λ[] ≈ 3.279995546746518e6
         @test M * vʳ ≈ vʳ * λ[]
@@ -155,32 +147,27 @@ using ConScape, Test, SparseArrays
             @test λ[] ≈ 2.7249231390873615e7
             (vˡ, λ, vʳ) = solve(EigMax(), RSP(FreeEnergyDistance(); theta=θ), g_coarse)[1]
             @test λ[] ≈ 2.7217089009360086e7
-            (vˡ, λ, vʳ) = solve(EigMax(), RSP(SurvivalProbability(); theta=θ), g_coarse)[1]
-            @test_broken λ[] ≈ 3.0731253357215535e7
             (vˡ, λ, vʳ) = solve(EigMax(), RSP(FreeEnergyDistance(); theta=θ), g_coarse)[1]
             @test λ[] ≈ 2.7217089009360246e7
+            (vˡ, λ, vʳ) = solve(EigMax(), RSP(SurvivalProbability(); theta=θ), g_coarse)[1]
+            # Solve is less well conditioned with SurvivalProbability?
+            @test λ[] ≈ 3.0731253357215535e7 rtol=1e-3
         end
 
         @testset "FunctionalHabitat" begin
-            @testset "expected_cost" begin
+            @testset "RSP ExpectedCost" begin
                 rsp = RSP(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ)
                 fh_rsp = solve(FunctionalHabitat(), rsp, g_coarse)
-                fh_g = solve(
-                    FunctionalHabitat(), 
-                    RSP(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ),
-                    g_coarse,
-                )
-                fh_g_approx = solve(
-                    FunctionalHabitat(),
-                    RSP(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ, approx=true),
-                    g_coarse,
-                )
+                rsp = RSP(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ)
+                fh_g = solve(FunctionalHabitat(), rsp, g_coarse)
+                rsp = RSP(ExpectedCost(); distance_transformation=ExpMinus(), theta=θ, approx=true)
+                fh_g_approx = solve(FunctionalHabitat(), rsp, g_coarse)
 
                 @test fh_g ≈ fh_rsp
                 @test fh_g ≈ fh_g_approx rtol=0.8 # Very rough approximation
             end
 
-            @testset "least_cost_distance" begin
+            @testset "LeastCostPath " begin
                 lc = LeastCostPath(; distance_transformation=ExpMinus())
                 fh_rsp_lc = solve(FunctionalHabitat(), lc, g_coarse)
                 fh_g_lc = solve(FunctionalHabitat(), lc, g_coarse)

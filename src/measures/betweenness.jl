@@ -28,10 +28,12 @@ struct ProximityWeighted <: BetweennessWeighting end
 
     QualityAndProximityWeighted()
 
-Compute betweenness of nodes or edges weighted by source qualities s 
-and target qualities t, and the proximity between s and t.
+Compute betweenness of nodes or edges weighted by both the source 
+qualities s and target qualities t, and by the proximity between s and t.
 """
 struct QualityAndProximityWeighted <: BetweennessWeighting end
+
+const FunctionalHabitatWeighted = QualityAndProximityWeighted
 
 """
     CustomWeighted <: BetweennessWeighting

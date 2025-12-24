@@ -1,51 +1,3 @@
-"""
-    estimate_memory(problem::ConScapeProblem, sources::Int, targets::Int)
-
-Estimate memory usage in bytes for a problem with given source and target counts.
-
-Returns a NamedTuple with breakdown by component and total.
-
-# Example
-
-```julia
-est = estimate_memory(problem, 1600, 400)
-est.total          # Total bytes
-est.mat_workspaces # Dense matrix vec_workspace bytes
-```
-"""
-function estimate_memory(problem::ConScapeProblem, sources::Int, targets::Int)
-    mes = measures(problem)
-    mov = movement(problem)
-    n_neighbors = 8
-    sparse_nnz = sources * n_neighbors
-    sparse_matrix_mem = sparse_nnz * 12 + (sources + 1) * 8
-    dense_matrix_size = sources * targets * 8
-
-    vec_workspaces = num_vec_workspaces(problem) * sources * 8
-    mat_workspaces = num_mat_workspaces(problem) * sources * targets * 8
-    dense_precalc = (
-        anymeasure(needs_full_fundamentalmatrix, mes, mov) +
-        anymeasure(needs_full_fundamentalrowmatrix, mes, mov) +
-        anymeasure(needs_full_costdistancematrix, mes, mov)
-    ) * dense_matrix_size
-    sparse_matrices = 8 * sparse_matrix_mem
-    lu_factorization = 2 * 4 * sparse_matrix_mem
-    graph = sources * n_neighbors * 16
-    quality_vectors = (2 * sources + targets) * 8
-    outputs = length(mes) * sources * 8
-    gridgraph = sources * 8
-
-    total = (
-        vec_workspaces + mat_workspaces + dense_precalc + sparse_matrices +
-        lu_factorization + graph + quality_vectors + outputs + gridgraph
-    )
-
-    return (;
-        vec_workspaces, mat_workspaces, dense_precalc, sparse_matrices,
-        lu_factorization, graph, quality_vectors, outputs, gridgraph, total
-    )
-end
-
 struct AssessmentWarnings
     sourcequality_nan_found::Bool
     targetquality_nan_found::Bool
@@ -65,6 +17,24 @@ function Base.:(&)(aw1::AssessmentWarnings, aw2::AssessmentWarnings)
 end
 Base.any(aw::AssessmentWarnings) = aw.sourcequality_nan_found | aw.targetquality_nan_found
 Base.all(aw::AssessmentWarnings) = aw.sourcequality_nan_found & aw.targetquality_nan_found
+
+
+struct MemoryEstimate
+    vec_workspaces::Int
+    mat_workspaces::Int
+    sparse_matrices::Int
+    lu_factorization::Int
+    graph::Int
+    quality_vectors::Int
+    outputs::Int
+    gridgraph::Int
+    total::Int
+end
+function MemoryEstimate(a1, a2, a3, a4, a5, a6, a7, a8)
+    total = a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8
+    MemoryEstimate(a1, a2, a3, a4, a5, a6, a7, a8, total)
+end
+MemoryEstimate() = MemoryEstimate(0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 """
     ProblemAssessment
@@ -118,7 +88,7 @@ a `ConScapeProblem`.
     indices::Vector{Int}
     warnings::AssessmentWarnings
     sparse_sizes::Vector{Tuple{Int,Int}}
-    memory_estimate::Float64
+    memory_estimate::MemoryEstimate
 end
 
 """
@@ -149,9 +119,7 @@ function Base.show(io::IO, mime::MIME"text/plain", a::ProblemAssessment)
     println(io, typeof(a))
     println(io, "Shape: $(a.shape)")
     println(io, "Number of jobs: $(a.njobs)")
-    if hasproperty(a, :memory_estimate) && a.memory_estimate > 0
-        println(io, "Memory estimate: $(round(a.memory_estimate, digits=1)) MB")
-    end
+    println(io, "Memory estimate: $(round(a.memory_estimate.total / 2^20)) MB")  # Convert to MB
     # Use SparseArrays nice matrix printing for the mask
     if any(a.warnings)
         println(io, "Warnings: $(a.warnings)")
@@ -207,9 +175,9 @@ function assess(p::AbstractWindowedProblem{<:ConScapeProblem}, rast::AbstractRas
     memory_estimate = if njobs > 0
         _, max_idx = findmax(prod, sparse_sizes)
         max_sources, max_targets = sparse_sizes[max_idx]
-        estimate_memory(problem(p), max_sources, max_targets).total / 1024^2  # Convert to MB
+        estimate_memory(problem(p), max_sources, max_targets)
     else
-        0.0
+        MemoryEstimate(0, 0, 0, 0, 0, 0, 0, 0, 0)
     end
 
     WindowAssessment(size(rast), shape, njobs, window_mask, non_empty_indices, warnings, sparse_sizes, memory_estimate)
@@ -227,6 +195,7 @@ function assess(
 
     # Define a vector for all assessment data
     assessments = Vector{WindowAssessment}(undef, length(window_ranges))
+
     # Run assessments threaded as they can take a long time for large rasters
     Threads.@threads for i in eachindex(vec(window_ranges))
         rs = window_ranges[i]
@@ -241,7 +210,7 @@ function assess(
                 indices=Int[],
                 warnings=AssessmentWarnings(false, false),
                 sparse_sizes=Tuple{Int,Int}[],
-                memory_estimate=0.0,
+                memory_estimate=MemoryEstimate(),
             )
         end
         # We only need qualities for the assessment
@@ -259,13 +228,16 @@ function assess(
             empty_assesment(size(window_rast))
         end
     end
+
     # Get mask and indices
     mask = map(a -> any(a.mask), assessments)
     non_empty_indices = eachindex(vec(mask))[mask]
+
     # Calculate global stats
     njobs = count(mask)
     shape = size(window_ranges)
     warnings = reduce(|, (a.warnings for a in assessments))
+
     return NestedAssessment(size(rast), shape, njobs, mask, non_empty_indices, warnings, assessments)
 end
 
@@ -336,6 +308,62 @@ end
 
 batch_paths(p::BatchProblem, a::NestedAssessment) = batch_paths(p, size(a))[a.indices]
 
+
+# Estimation tools #########################################################################
+
+"""
+    estimate_memory(problem::ConScapeProblem, sources::Int, targets::Int)
+
+Estimate memory usage in bytes for a problem with given source and target counts.
+
+Returns a NamedTuple with breakdown by component and total.
+
+# Example
+
+```julia
+est = estimate_memory(problem, 1600, 400)
+est.total          # Total bytes
+est.mat_workspaces # Dense matrix vec_workspace bytes
+```
+"""
+function estimate_memory(problem::ConScapeProblem, n_sources::Int, n_targets::Int)
+    mes = measures(problem)
+    mov = movement(problem)
+    n_neighbors = length(neighbors(problem))
+
+    sparse_matrix_bytes = _sizeofsparse(n_sources, n_sources, n_neighbors)
+    dense_matrix_bytes = n_sources * n_targets * sizeof(Float64)
+
+    vec_workspaces = num_vec_workspaces(problem) * n_sources * sizeof(Float64)
+    mat_workspaces = num_mat_workspaces(problem) * n_sources * n_targets * sizeof(Float64)
+
+    sparse_matrices = 8 * sparse_matrix_bytes
+    lu_factorization = 2 * 4 * sparse_matrix_bytes
+    graph = n_sources * n_neighbors * 2 * sizeof(Float64)
+    quality_vectors = (2 * n_sources + n_targets) * sizeof(Float64)
+    outputs = length(mes) * n_sources * sizeof(Float64)
+    gridgraph = 2sparse_matrix_bytes
+
+    return MemoryEstimate( 
+        vec_workspaces,
+        mat_workspaces,
+        sparse_matrices,
+        lu_factorization,
+        graph,
+        quality_vectors,
+        outputs,
+        gridgraph,
+    )
+end
+
+function _sizeofsparse(n_rows::Int, n_cols::Int, n_neighbors::Int)
+    n_cols * n_neighbors * sizeof(Float64) + # nzval
+    n_cols * n_neighbors * sizeof(Int64) +   # rowval 
+    (n_rows + 1) * sizeof(Int64) +           # colptr 
+    sizeof(Int64) +                          # m
+    sizeof(Int64)                            # n
+end
+
 """
     estimate_memory_for_centersize(problem::ConScapeProblem, assessment::WindowAssessment, centersize::Int)
 
@@ -386,4 +414,28 @@ function estimate_memory_for_centersize(
 
     # Recalculate memory estimate
     estimate_memory(problem, max_sources, new_targets).total / 1024^2
+end
+
+
+function _max_estimated_sparse_sizes(p::AbstractWindowedProblem, rast; kw...)
+    sizes = _estimate_sparse_sizes(p, rast; kw...)
+    _, i = findmax(prod, sizes)
+    return sizes[i]
+end
+
+# Calculate the maximum number of source and target values in any window
+function _estimate_sparse_sizes(p::AbstractWindowedProblem, rast;
+    window_ranges=window_ranges(p, rast)
+)
+    # Calculate the maximum number of source and target values in any window
+    return map(r -> _estimate_sparse_sizes(p, rast, r), window_ranges)
+end
+
+# This function extimates problem size without actually constructing grids.
+# It cant be too small, but may be too large
+_estimate_sparse_sizes(p::AbstractProblem, rast) = _estimate_sparse_sizes(p, rast, axes(rast))
+function _estimate_sparse_sizes(p::AbstractProblem, rast, ranges::Tuple)
+    source_count = _valid_sources(count, p, rast, ranges)
+    target_count = _valid_targets(count, p, rast, ranges)
+    return source_count, target_count
 end

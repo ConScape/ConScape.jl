@@ -15,4 +15,4 @@ computelevel(::FunctionalHabitat) = TargetLevel()
 returntrait(::FunctionalHabitat) = ReturnSpatialTargetSum()
 
 # Its just M
-compute_target(::FunctionalHabitat, ti::TargetInit{<:Union{RSP,RandomWalk,LCP}})::RVDe = ti.M
+compute_target(::FunctionalHabitat, ti::TargetInit{<:Union{RSP,RandomWalk,LCP}}) = ti.M

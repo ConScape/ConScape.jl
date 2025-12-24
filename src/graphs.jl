@@ -19,10 +19,10 @@ It is possible to also supply matrices of `source_qualities` and `target_qualiti
 Alternatively, it is possible to supply a matrix to `costs` directly.
 """
 struct GridGraph{
-    C<:Union{AbstractMatrix,Nothing},
-    L<:Union{AbstractMatrix,Nothing},
-    SQ<:AbstractMatrix,
-    TQ<:AbstractMatrix,
+    C<:Union{SparseMatrixCSC{Float64,Int64},Nothing},
+    L<:Union{SparseMatrixCSC{Float64,Int64},Nothing},
+    SQ<:AbstractMatrix{Float64},
+    TQ<:AbstractMatrix{Float64},
     D<:Union{Tuple,Nothing}
 }
     stepcost::C
@@ -50,6 +50,7 @@ function GridGraph(;
     else
         sourcequality
     end::AbstractMatrix
+
     targetquality = if isnothing(targetquality)
         isnothing(quality) ? sourcequality : quality
     else
@@ -59,8 +60,12 @@ function GridGraph(;
     isnothing(stepcost) && isnothing(steplikelihood) &&
         isnothing(cost) && isnothing(likelihood) &&
             throw(ArgumentError("At least one of `cost` and `likelihood` must be specified"))
+
     # Filter kw to only include keywords accepted by graph_matrix_from_raster
-    raster_kw = Base.pairs(NamedTuple{filter(k -> k in (:neighbors, :stepweight, :sparse_builders), keys(kw))}(values(kw)))
+    raster_kw_names = filter(k -> k in (:neighbors, :stepweight, :sparse_builders), keys(kw))
+    raster_kw = Base.pairs(NamedTuple{raster_kw_names}(values(kw)))
+
+    # Compute whichever sparse arrays were not passed in
     if !isnothing(likelihood)
         steplikelihood = graph_matrix_from_raster(likelihood; input_type=StepLikelihood(), raster_kw...)
     end
@@ -87,6 +92,7 @@ function GridGraph(;
     #     end
     # end
 
+    # Check matrix sizes
     if !isnothing(steplikelihood) && prod(size(sourcequality)) != (n = LinearAlgebra.checksquare(steplikelihood))
         throw(ArgumentError("quality size $(length(sourcequality)) is incompatible with size of steplikelihood matrix ($n, $n)"))
     end
@@ -100,6 +106,9 @@ function GridGraph(;
     if !isnothing(grain)
         targetquality = coarse_graining(targetquality, grain)
     end
+
+    gridgraph_size = 
+
     return GridGraph(
         stepcost,
         steplikelihood,
@@ -141,8 +150,15 @@ sourcequality(g::GridGraph) = g.sourcequality
 targetquality(g::GridGraph) = g.targetquality
 sourceids(g::GridGraph) = vec(CartesianIndices(sourcequality(g)))
 nsources(g::GridGraph) = length(g)
-# TODO is this a memory problem for custom use?
-ntargets(g::GridGraph) = nsources(g) 
+function ntargets(g::GridGraph) 
+    if issparse(targetquality(g))
+        # If targets are sparse count them
+        length(nonzeros(targetquality(g)))
+    else
+        # Otherwise all sources are targets
+        nsources(g)
+    end
+end
 gridgraph_size(gg::GridGraph) = (nsources(gg), ntargets(gg))
 
 Base.size(g::GridGraph, args...) = size(sourcequality(g), args...)
@@ -386,7 +402,7 @@ The values can be computed with respect to eight `neighbors`` (`N8`) or four nei
 
 - `stepweight`: `TargetWeight` or `AverageWeight`, TargetWeight by default.
 - `neighbors` : `N4` or `N8`, `N8` by default.
-- `input_type`: `Likelyhood()` or `Cost()`, `Likelyhood()` by default
+- `input_type`: `Likelihood()` or `Cost()`.
 """
 function graph_matrix_from_raster(R::AbstractMatrix;
     neighbors::Tuple=N8,
@@ -465,7 +481,7 @@ Compute a graph matrix, i.e. an affinity or cost matrix from the geometies `geom
 
 # Keywords
 
-- `input_type`: `StepLikelyhood()` or `StepCost()`.
+- `input_type`: `StepLikelihood()` or `StepCost()`.
 - `stepweight`: `TargetWeight()` or `AverageWeight()`, `TargetWeight()` by default.
 - `cutoff_distance`: the distance at which to stop computing affinities.
     Should be in the same units as the geometry projection.

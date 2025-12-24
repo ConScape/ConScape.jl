@@ -73,12 +73,16 @@ num_vec_workspaces(m::SensitivityAnalysis{<:AbstractQuality}, ::RSP) = metric(m)
 # - compute_connectedgraph! for PowerMeanProximity: 1 vec_workspace
 num_vec_workspaces(::SensitivityAnalysis{<:Permeability}, ::RSP) = 8
 
+# Sparse sp_workspace requirements
+# Permeability precursors need kB and kΣ sparse matrices
+num_sp_workspaces(::SensitivityAnalysis{<:Permeability}, ::RSP) = 2
+
 # w.r.t Quality ############################################################################
 
 function compute_target(
     m::SensitivityAnalysis{<:AbstractQuality}, 
     ti::TargetInit{<:Union{RSP,RandomWalk}}
-)::RVDe
+)
     (; M) = ti
     
     #= Sensitivity w.r.t. Quality is essentially just the landscape matrix, 
@@ -148,19 +152,22 @@ end
 function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit, qˢ, qᵗ)
     (; W, C, CW, CW_t, A, Aⁱ, F_IW_adj, A_rowsums, Z_full, Y_full, Zrows_full) = cgi
 
-    # Sparse matrices. `mapnz` means we keep the sparse structure but 
-    # initialise values to zero internally
-    # kB and kΣ are zeroed-out W matrices
-    kB::MSp = mapnz(_ -> 0.0, W)
-    kΣ::MSp = mapnz(_ -> 0.0, W)
-    # Diagonal vectors
-    mdiagZⁱ::VDe = fill!(view(vec_workspace(cgi), 1:ntargets(cgi)), 0.0)
-    mdiagC̄Zⁱ::VDe = fill!(view(vec_workspace(cgi), 1:ntargets(cgi)), 0.0)
+    # Sparse matrices with same structure as W, initialized to zero
+    kB = sp_workspace(cgi)
+    kΣ = sp_workspace(cgi)
+    fill!(kB.nzval, 0.0)
+    fill!(kΣ.nzval, 0.0)
+
+    # Diagonal vectors - these persist across the target loop so cannot use workspaces
+    # (TargetInit constructor calls free! on vec_workspaces)
+    mdiagZⁱ = zeros(ntargets(cgi))
+    mdiagC̄Zⁱ = zeros(ntargets(cgi))
+
     # Allocate Z-size matrices
     # These can't be used split into column vectors unless we calculate them twice. 
     # This is a serious option if RAM turns out to be more limiting than CPU time.
-    MᵀZ_full::MDe = mat_workspace(cgi)
-    X5_full::MDe = mat_workspace(cgi)
+    MᵀZ_full = mat_workspace(cgi)
+    X5_full = mat_workspace(cgi)
 
     
     # Loop to calculate diagonals mdiagZ and mdiagC̄Z
@@ -190,11 +197,11 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         # so add them to storage early so they arent coputed elsewhere
         (; Z::RVDe, Zⁱ::RVDe, K::RVDe, Y::RVDe) = ti
 
-        C̄ᵣ::VDe = vec_workspace(ti) .= Y .* Zⁱ
-        Kd::VDe = vec_workspace(ti) .= _diff_KD(distance_transformation(ti)).(K)
-        Md::VDe = vec_workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
-        MZⁱ::VDe = vec_workspace(ti) .= Md .* Zⁱ
-        MᵀZ::VDe = ldiv!(ti, F_IW_adj, (vec_workspace(ti) .= MZⁱ)) # MᵀZ = MZⁱ' / IW
+        C̄ᵣ = vec_workspace(ti) .= Y .* Zⁱ
+        Kd = vec_workspace(ti) .= _diff_KD(distance_transformation(ti)).(K)
+        Md = vec_workspace(ti) .= qˢ .* Kd .* qᵗ[idx]
+        MZⁱ = vec_workspace(ti) .= Md .* Zⁱ
+        MᵀZ = ldiv!(ti, F_IW_adj, (vec_workspace(ti) .= MZⁱ)) # MᵀZ = MZⁱ' / IW
         MᵀZ_full[:, idx] .= MᵀZ # Update the full matrix for later use
 
         # Here we do unrolled matrix multiplications to reduce memory use.
@@ -235,7 +242,7 @@ function _compute_sensitivity_precursors(::ExpectedCost, cgi::ConnectedGraphInit
         kΣ.nzval[n] = W.nzval[n] * ((Z' * X5)[] - (Y' * X6)[] - (C.nzval[n] * kBn / W.nzval[n]))
     end
     
-    # Put back the matrix vec_workspaces we used
+    # Put back the matrix workspaces we used
     put!(mat_workspaces(cgi), X5_full)
     put!(mat_workspaces(cgi), MᵀZ_full)
 

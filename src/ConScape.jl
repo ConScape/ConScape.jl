@@ -13,6 +13,7 @@ import GeometryOps.GeoInterface as GI
 import SortTileRecursiveTree as STR
 import ReadOnlyArrays
 import Random
+using DispatchDoctor
 
 import Rasters.Extents
 import Rasters.DimensionalData
@@ -28,7 +29,7 @@ import Rasters: Raster
 
 export RandomisedShortestPath, LeastCostPath, RandomWalk, Euclidean, RSP, LCP
 
-export Distance, ExpectedCost, FreeEnergyDistance, SurvivalProbability, PowerMeanProximity, KullbackLeiblerDivergence
+export Distance, ExpectedCost, FreeEnergyDistance, SurvivalProbability, PowerMeanProximity, MeanKullbackLeiblerDivergence
 
 export MovementFlow, Betweenness, EdgeBetweenness, FunctionalHabitat, EigMax, SensitivityAnalysis
 

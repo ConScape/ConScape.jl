@@ -49,6 +49,7 @@ abstract type ReturnSparseGraph <: ReturnTrait end
 struct ReturnSpatialSourceSum <: ReturnSpatial end
 struct ReturnSpatialTargetSum <: ReturnSpatial end
 struct ReturnSpatialSourceAndTargetSum <: ReturnSpatial end
+struct ReturnCustomSparse <: ReturnSparseGraph end
 struct ReturnAssignedSparse <: ReturnSparseGraph end
 struct ReturnAssignedDense <: ReturnTrait end
 struct ReturnScalarSum <: ReturnTrait end

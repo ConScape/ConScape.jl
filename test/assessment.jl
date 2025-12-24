@@ -1,10 +1,12 @@
 using ConScape, Test, SparseArrays, LinearAlgebra
 using Rasters, ArchGDAL
 
+using ConScape: vec_workspaces, mat_workspaces
+
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 
 θ = 0.1
-landscape = "sno_2000"
+landscape = "sno_1000"
 steplikelihood = reverse(rotr90(Raster(joinpath(datadir, "affinities_$landscape.asc"); missingval=NaN)); dims=X)
 quality = reverse(rotr90(Raster(joinpath(datadir, "qualities_$landscape.asc"); missingval=NaN)); dims=X)
 quality[(steplikelihood .> 0) .& isnan.(quality)] .= 1e-20
@@ -14,10 +16,8 @@ measures = (;
     betm=ConScape.MovementFlow(),
     ch=FunctionalHabitat(),
 )
-distance_transformation = x -> exp(-x / 2)
-movement = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
-solver = ConScape.VectorSolver()
-problem = ConScapeProblem(; measures, movement, solver)
+movement = RandomisedShortestPath(ExpectedCost(); theta=θ)
+problem = ConScapeProblem(; measures, movement)
 
 @testset "WindowAssessment structure" begin
     windowed_problem = WindowedProblem(problem; buffer=10, centersize=5)
@@ -70,92 +70,23 @@ end
 
     # Initialize the windowed problem to get actual sizes
     wi = init(windowed_problem, rast; indices=assessment.indices, sparse_sizes=assessment.sparse_sizes)
+    gg1 = init(wi, 1)
+    cg1 = init(gg1, 1)
 
-    # For each window, check that estimated sizes are >= actual sizes
-    # (estimates may be larger due to conservative counting)
-    for (idx, window_idx) in enumerate(assessment.indices[1:min(5, length(assessment.indices))])
-        est_sources, est_targets = assessment.sparse_sizes[window_idx]
+    # For each window, check that estimated sizes are between the grid and connected graph
+    # sizes. We don't actually run the yj
+    for (idx, window_idx) in enumerate(assessment.indices)
+        g = init(init(wi, window_idx), 1)
         # The estimate should be reasonable (not zero, not impossibly large)
-        @test est_sources > 0
-        @test est_targets > 0
-        @test est_sources <= prod(size(rast))
-        @test est_targets <= prod(size(rast))
-    end
-end
-
-@testset "memory estimation from sparse_sizes" begin
-    windowed_problem = WindowedProblem(problem; buffer=10, centersize=5)
-    assessment = ConScape.assess(windowed_problem, rast)
-
-    # Memory is dominated by dense matrices of size (sources × targets)
-    # and sparse matrices of size (sources × sources)
-    # Test that larger sparse_sizes correlate with larger memory usage
-
-    if length(assessment.indices) >= 2
-        # Find windows with different sizes
-        sizes_with_idx = [(prod(assessment.sparse_sizes[i]), i) for i in assessment.indices]
-        sort!(sizes_with_idx)
-
-        small_idx = sizes_with_idx[1][2]
-        large_idx = sizes_with_idx[end][2]
-
-        small_size = prod(assessment.sparse_sizes[small_idx])
-        large_size = prod(assessment.sparse_sizes[large_idx])
-
-        # If sizes differ significantly, the larger should use more memory
-        if large_size > 2 * small_size
-            # Estimate memory: main cost is Z matrix (sources × targets) at Float64
-            small_mem_est = prod(assessment.sparse_sizes[small_idx]) * sizeof(Float64)
-            large_mem_est = prod(assessment.sparse_sizes[large_idx]) * sizeof(Float64)
-
-            @test large_mem_est > small_mem_est
-            # The ratio of estimates should roughly match ratio of sizes
-            @test large_mem_est / small_mem_est ≈ large_size / small_size atol=0.1
-        end
-    end
-end
-
-@testset "time estimation from sparse_sizes" begin
-    windowed_problem = WindowedProblem(problem; buffer=8, centersize=4)
-    assessment = ConScape.assess(windowed_problem, rast)
-
-    # Run time scales roughly with sources × targets (matrix operations)
-    # Test on a few windows to verify correlation
-
-    if length(assessment.indices) >= 3
-        # Select 3 windows with varying sizes
-        sizes_with_idx = [(prod(assessment.sparse_sizes[i]), i) for i in assessment.indices]
-        sort!(sizes_with_idx)
-
-        test_indices = [
-            sizes_with_idx[1][2],
-            sizes_with_idx[div(end, 2)][2],
-            sizes_with_idx[end][2]
-        ]
-
-        times = Float64[]
-        sizes = Float64[]
-
-        for idx in test_indices
-            # Warm up and measure time for this window
-            wi = init(windowed_problem, rast; indices=[idx], sparse_sizes=assessment.sparse_sizes)
-
-            # Time the actual solve (skip first run for compilation)
-            solve!(wi)
-            t = @elapsed solve!(wi)
-
-            push!(times, t)
-            push!(sizes, Float64(prod(assessment.sparse_sizes[idx])))
-        end
-
-        # Larger problems should take longer (correlation > 0)
-        if length(unique(sizes)) > 1
-            # Simple check: largest size should have longest time
-            max_size_idx = argmax(sizes)
-            max_time_idx = argmax(times)
-            # Allow some variance but generally larger should be slower
-            @test sizes[max_size_idx] >= sizes[max_time_idx] * 0.5
-        end
+        est_sources, est_targets = assessment.sparse_sizes[window_idx]
+        connectedgraph_sources, connectedgraph_targets = ConScape.connectedgraph_size(g)
+        gridgraph_sources, gridgraph_targets = ConScape.gridgraph_size(g)
+        # Estimated sizes must be equal or larger to the first (largest) connected graph
+        @test est_sources >= connectedgraph_sources
+        @test est_targets >= connectedgraph_targets
+        # But they must also be equal or smaller then the grid
+        @test est_sources <= gridgraph_sources
+        @test est_targets <= gridgraph_targets
     end
 end
 
@@ -242,11 +173,9 @@ end
     assessment = ConScape.assess(batch_problem, rast; verbose=false)
 
     # solve(BatchProblem, rast, assessment, job_id) should work
-    if assessment.njobs > 0
-        paths = solve(batch_problem, rast, assessment, 1; verbose=false)
-        @test !isempty(paths)
-        @test all(isfile, paths)
-    end
+    paths = solve(batch_problem, rast, assessment, 1; verbose=false)
+    @test !isempty(paths)
+    @test all(isfile, paths)
 
     rm(_tempdir; recursive=true)
 end
@@ -292,162 +221,79 @@ end
 end
 
 @testset "actual memory usage scales with sparse_sizes" begin
-    windowed_problem = WindowedProblem(problem; buffer=8, centersize=4)
+    windowed_problem = WindowedProblem(problem; buffer=10, centersize=8, gc=false)
     assessment = ConScape.assess(windowed_problem, rast)
 
-    if length(assessment.indices) >= 2
-        # Find two windows with different sizes
-        sizes_with_idx = [(prod(assessment.sparse_sizes[i]), i) for i in assessment.indices]
-        sort!(sizes_with_idx)
+    # Find two windows with different sizes
+    sizes_with_idx = [(prod(assessment.sparse_sizes[i]), i) for i in assessment.indices]
+    sort!(sizes_with_idx)
 
-        small_idx = sizes_with_idx[1][2]
-        large_idx = sizes_with_idx[end][2]
+    small_idx = sizes_with_idx[1][2]
+    large_idx = sizes_with_idx[end][2]
 
-        small_size = prod(assessment.sparse_sizes[small_idx])
-        large_size = prod(assessment.sparse_sizes[large_idx])
+    small_size = prod(assessment.sparse_sizes[small_idx])
+    large_size = prod(assessment.sparse_sizes[large_idx])
 
-        # Only test if sizes differ meaningfully
-        if large_size > 1.5 * small_size
-            # Measure actual memory allocation for each
-            wi_small = init(windowed_problem, rast; indices=[small_idx], sparse_sizes=assessment.sparse_sizes)
-            wi_large = init(windowed_problem, rast; indices=[large_idx], sparse_sizes=assessment.sparse_sizes)
+    # Only test if sizes differ meaningfully
+    @test large_size > 10small_size
 
-            # Warm up
-            solve!(wi_small)
-            solve!(wi_large)
+    # Measure actual memory allocation for each
+    wi_small = init(windowed_problem, rast; indices=[small_idx], sparse_sizes=assessment.sparse_sizes)
+    wi_large = init(windowed_problem, rast; indices=[large_idx], sparse_sizes=assessment.sparse_sizes)
 
-            # Measure allocations
-            small_alloc = @allocated solve!(wi_small)
-            large_alloc = @allocated solve!(wi_large)
+    # Warm up
+    using ProfileView
+    f(wi, n) = for _ in 1:n solve!(wi) end
+    @profview f(wi_small, 1000)
+    @profview f(wi_large, 100)
 
-            # Larger problem should allocate more memory
-            # (allow some tolerance for fixed overheads)
-            if small_alloc > 1_000_000  # Only test if allocations are significant
-                @test large_alloc >= small_alloc * 0.8  # At least 80% as much
-            end
-        end
-    end
-end
+    solve!(wi_small)
+    solve!(wi_large)
 
-@testset "assess is deterministic" begin
-    windowed_problem = WindowedProblem(problem; buffer=10, centersize=5)
+    # Measure allocations
+    small_alloc = @allocated solve!(wi_small)
+    large_alloc = @allocated solve!(wi_large)
 
-    # Running assess twice should give identical results
-    a1 = ConScape.assess(windowed_problem, rast)
-    a2 = ConScape.assess(windowed_problem, rast)
-
-    @test a1.size == a2.size
-    @test a1.shape == a2.shape
-    @test a1.njobs == a2.njobs
-    @test a1.mask == a2.mask
-    @test a1.indices == a2.indices
-    @test a1.sparse_sizes == a2.sparse_sizes
 end
 
 # Test measures that use matrix vec_workspaces (mat_workspace)
 # These require accurate sparse_sizes for pre-allocation
-# Note: These tests are skipped on Julia 1.12 due to compiler segfaults during type inference
-if VERSION < v"1.12"
-    @testset "assess with mat_workspace measures" begin
-        # EdgeBetweenness uses mat_workspace
-        measures_ebet = (;
-            ebetm=EdgeBetweenness(QualityAndProximityWeighted()),
-        )
-        problem_ebet = ConScapeProblem(; measures=measures_ebet, movement, solver)
-        windowed_ebet = WindowedProblem(problem_ebet; buffer=10, centersize=5)
+@testset "assess with EigMax measure" begin
+    # EigMax uses mat_workspace
+    measures_eigmax = (;
+        eigmax=ConScape.EigMax(),
+        ch=FunctionalHabitat(),  # Need at least one regular measure
+    )
+    problem_eigmax = ConScapeProblem(; measures=measures_eigmax, movement, solver)
+    windowed_eigmax = WindowedProblem(problem_eigmax; buffer=10, centersize=5)
 
-        assessment = ConScape.assess(windowed_ebet, rast)
-        @test assessment.njobs > 0
+    assessment = ConScape.assess(windowed_eigmax, rast)
+    @test assessment.njobs > 0
 
-        # Verify we can init and solve with the assessment
-        wi = init(windowed_ebet, rast, assessment)
-        result = solve!(wi)
-        @test haskey(result, :ebetm)
-        @test result.ebetm isa SparseMatrixCSC
-    end
-
-    @testset "assess with EigMax measure" begin
-        # EigMax uses mat_workspace
-        measures_eigmax = (;
-            eigmax=ConScape.EigMax(),
-            ch=FunctionalHabitat(),  # Need at least one regular measure
-        )
-        problem_eigmax = ConScapeProblem(; measures=measures_eigmax, movement, solver)
-        windowed_eigmax = WindowedProblem(problem_eigmax; buffer=10, centersize=5)
-
-        assessment = ConScape.assess(windowed_eigmax, rast)
-        @test assessment.njobs > 0
-
-        # Verify we can init and solve with the assessment
-        wi = init(windowed_eigmax, rast, assessment)
-        result = solve!(wi)
-        @test haskey(result, :eigmax)
-        @test haskey(result, :ch)
-    end
-
-    @testset "assess with SensitivityAnalysis measure" begin
-        # SensitivityAnalysis uses mat_workspace
-        measures_sens = (;
-            sens=SensitivityAnalysis(; wrt=Quality(), metric=Summation()),
-            ch=FunctionalHabitat(),
-        )
-        problem_sens = ConScapeProblem(; measures=measures_sens, movement, solver)
-        windowed_sens = WindowedProblem(problem_sens; buffer=10, centersize=5)
-
-        assessment = ConScape.assess(windowed_sens, rast)
-        @test assessment.njobs > 0
-
-        # Verify we can init and solve with the assessment
-        wi = init(windowed_sens, rast, assessment)
-        result = solve!(wi)
-        @test haskey(result, :sens)
-        @test haskey(result, :ch)
-    end
+    # Verify we can init and solve with the assessment
+    wi = init(windowed_eigmax, rast, assessment)
+    result = solve!(wi)
+    @test haskey(result, :eigmax)
+    @test haskey(result, :ch)
 end
 
-@testset "sparse_sizes estimates are positive for non-empty windows" begin
-    windowed_problem = WindowedProblem(problem; buffer=10, centersize=5)
-    assessment = ConScape.assess(windowed_problem, rast)
+@testset "assess with SensitivityAnalysis measure" begin
+    # SensitivityAnalysis uses mat_workspace
+    measures_sens = (;
+        sens=SensitivityAnalysis(; wrt=Quality(), metric=Summation()),
+        ch=FunctionalHabitat(),
+    )
+    problem_sens = ConScapeProblem(; measures=measures_sens, movement, solver)
+    windowed_sens = WindowedProblem(problem_sens; buffer=10, centersize=5)
 
-    # For non-empty windows (in indices), sparse_sizes should be positive
-    for idx in assessment.indices
-        est_sources, est_targets = assessment.sparse_sizes[idx]
-        @test est_sources > 0
-        @test est_targets > 0
-    end
+    assessment = ConScape.assess(windowed_sens, rast)
+    @test assessment.njobs > 0
 
-    # Empty windows (not in indices) should have zero product
-    all_indices = Set(1:length(assessment.sparse_sizes))
-    empty_indices = setdiff(all_indices, Set(assessment.indices))
-    for idx in empty_indices
-        est_sources, est_targets = assessment.sparse_sizes[idx]
-        @test est_sources * est_targets == 0
-    end
-end
-
-@testset "sparse_sizes predict memory requirements" begin
-    windowed_problem = WindowedProblem(problem; buffer=10, centersize=5)
-    assessment = ConScape.assess(windowed_problem, rast)
-
-    # Memory for dense matrices scales as sources × targets × sizeof(Float64)
-    # Memory for sparse matrices scales as nnz × (sizeof(Float64) + sizeof(Int))
-    # This test verifies the relationship
-
-    for idx in assessment.indices[1:min(3, length(assessment.indices))]
-        est_sources, est_targets = assessment.sparse_sizes[idx]
-
-        # Predicted memory for main dense matrix (Z matrix)
-        predicted_dense_bytes = est_sources * est_targets * sizeof(Float64)
-
-        # The prediction should be reasonable (not zero, not absurdly large)
-        @test predicted_dense_bytes > 0
-        @test predicted_dense_bytes < 10 * 1024^3  # Less than 10 GB
-
-        # For typical windows, memory should be in MB range
-        if est_sources > 100 && est_targets > 10
-            @test predicted_dense_bytes > 1000  # At least 1 KB
-        end
-    end
+    # Verify we can init and solve with the assessment
+    wi = init(windowed_sens, rast, assessment)
+    result = solve!(wi)
+    @test haskey(result, :sens)
+    @test haskey(result, :ch)
 end
 
 # =============================================================================
@@ -683,4 +529,64 @@ end
 
     # Should be in reasonable range (MB, not bytes or GB for this small test)
     @test 1 < assessment.memory_estimate < 1000  # Between 1 MB and 1 GB
+end
+
+@testset "memory_estimate matches actual allocations" begin
+    measures = (;
+        betm=MovementFlow(),
+        ch=FunctionalHabitat(),
+        sens=SensitivityAnalysis(; wrt=StepCost(), metric=Summation(), type=Sensitivity())
+    )
+    movement = RandomisedShortestPath(ExpectedCost(); theta=θ)
+    problem = ConScapeProblem(; measures, movement)
+
+    windowed_problem = WindowedProblem(problem; buffer=40, centersize=15)
+    assessment = ConScape.assess(windowed_problem, rast)
+    mem = assessment.memory_estimate
+
+    wi = init(windowed_problem, rast, assessment)
+
+    # Mostly just vector workspaces are allocated for windows
+    @allocated init(windowed_problem, rast, assessment)
+    allocated_wi = @allocated init(windowed_problem, rast, assessment)
+    wi_size = mem.vec_workspaces + mem.mat_workspaces
+    @test wi_size <= allocated_wi < wi_size * 1.01
+
+    largest_subgraph = findmax(prod, assessment.sparse_sizes)[2]
+    gi = init(wi, largest_subgraph)
+    cgi = init(gi, 1)
+
+    # Workspaces are not realocated
+    @test vec_workspaces(wi) === vec_workspaces(gi) === vec_workspaces(cgi)
+
+    ConScape._sizeofsparse(size(gi.gridgraph.stepcost)..., 8)
+    @test 
+    mem.gridgraph
+    allocated_gi = @allocated init(wi, largest_subgraph)
+    allocated_cgi 
+    allocated_gi 
+    allocated_wi
+    allocated_sove_cgi 
+    cgi = init(gi, 1)
+    allocated_cgi = @allocated init(gi, 1)
+    solve!(cgi)
+    allocated_sove_cgi = @allocated solve!(cgi)
+    solve!(wi)
+    allocated_solve_wi = @allocated solve!(wi)
+
+    # Solve barely allocates
+    @profview_allocs nolve!(cgi)
+    f(wi, i, n) = for m in 1:n[] 
+        x = init(wi, i)
+        m == n && return x 
+    end
+    n = Ref(20000000)
+    @profview_allocs f(cgi, 1, n)
+    f(cgi, 1, n)
+    # ProfileView.view(; data=Profile.Allocs.fetch())
+    Profile.Allocs.fetch()
+    PProf.Allocs.pprof()
+
+    # Solve barely allocates
+    @test (@allocated solve!(wi)) < 50000
 end

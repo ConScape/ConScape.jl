@@ -23,11 +23,11 @@ g = ConScape.GridGraph(; steplikelihood, quality)
 
 types = (Sensitivity(), Elasticity())
 
-# RSP supports all sensitivity types
-# Note: PowerMeanProximity excluded due to Julia 1.12 compiler segfault during type inference
-rsp_wrts = (StepLikelihood(), StepCost(), Quality(), StepCostToLikelihood(), StepLikelihoodToCost())
-for wrt in rsp_wrts
-    for type in types
+@testset "Sensitivity validation" begin
+    # RSP supports all sensitivity types
+    # Note: PowerMeanProximity excluded due to Julia 1.12 compiler segfault during type inference
+    rsp_wrts = (StepLikelihood(), StepCost(), Quality(), StepCostToLikelihood(), StepLikelihoodToCost())
+    @testset "RSP $wrt $type" for wrt in rsp_wrts, type in types
         movement = RSP(ExpectedCost(); theta=θ, distance_transformation=ExpMinus())
         measures = (; sens=SensitivityAnalysis(; wrt, metric=Summation(), type))
         problem = ConScapeProblem(; movement, measures)
@@ -37,12 +37,10 @@ for wrt in rsp_wrts
         @test corr > 0.999
         @test mean_err < 0.01
     end
-end
 
-# RandomWalk only supports Quality sensitivity (not Permeability types)
-rw_wrts = (Quality(),)
-for wrt in rw_wrts
-    for type in types
+    # RandomWalk only supports Quality sensitivity (not Permeability types)
+    rw_wrts = (Quality(),)
+    @testset "RandomWalk $wrt $type" for wrt in rw_wrts, type in types
         movement = RandomWalk()
         measures = (; sens=SensitivityAnalysis(; wrt, metric=Summation(), type))
         problem = ConScapeProblem(; movement, measures)

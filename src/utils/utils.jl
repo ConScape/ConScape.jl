@@ -59,19 +59,66 @@ function _reshape!(A::Array, size::Tuple{Vararg{Int}})
     end
 end
 
-_allocate_workspaces!(vec_workspaces, problem::ConScapeProblem, graph::ConnectedGraph) =
-    _allocate_workspaces!(vec_workspaces, problem, nsources(graph))
-_allocate_workspaces!(vec_workspaces::Nothing, problem::ConScapeProblem, length::Int) =
-    Workspaces(length, num_vec_workspaces(problem))
-_allocate_workspaces!(vec_workspaces::Workspaces, ::ConScapeProblem, length::Int) =
-    free!(resize!(vec_workspaces, length))
+# Allocate or resize a WorkspaceCollection
+# Connected graphs are sorted by size, so first is largest
+function _allocate_workspaces!(wc, problem::ConScapeProblem, connectedgraphs::Vector)
+    if length(connectedgraphs) > 0
+        _allocate_workspaces!(wc, problem, first(connectedgraphs))
+    elseif isnothing(wc)
+        # Empty workspace collection
+        WorkspaceCollection(
+            Workspaces(0, 0),
+            Workspaces((0, 0), 0),
+            Workspaces(spzeros(0, 0), 0),
+        )
+    else
+        wc
+    end
+end
 
-_allocate_mat_workspaces!(ws, problem::ConScapeProblem, graph::ConnectedGraph) =
-    _allocate_mat_workspaces!(ws, problem, connectedgraph_size(graph))
-_allocate_mat_workspaces!(::Nothing, problem::ConScapeProblem, size::Tuple) =
-    Workspaces(size, num_mat_workspaces(problem))
-_allocate_mat_workspaces!(mat_workspaces::Workspaces, ::ConScapeProblem, size::Tuple) =
-    free!(resize!(mat_workspaces, size))
+function _allocate_workspaces!(wc::Nothing, problem::ConScapeProblem, graph::ConnectedGraph)
+    len = nsources(graph)
+    size = connectedgraph_size(graph)
+    sp_template = steplikelihood(graph)
+    sp_template = isnothing(sp_template) ? spzeros(len, len) : sp_template
+    # Create fresh workspaces with required counts
+    free!(WorkspaceCollection(
+        Workspaces(len, num_vec_workspaces(problem)),
+        Workspaces(size, num_mat_workspaces(problem)),
+        Workspaces(sp_template, num_sp_workspaces(problem)),
+    ))
+end
+
+function _allocate_workspaces!(wc::WorkspaceCollection, problem::ConScapeProblem, graph::ConnectedGraph)
+    len = nsources(graph)
+    size = connectedgraph_size(graph)
+    sp_template = steplikelihood(graph)
+
+    # Resize existing workspaces
+    vec_ws = resize!(vec_workspaces(wc), len)
+    mat_ws = resize!(mat_workspaces(wc), size)
+    sp_ws = _update_sparse_template!(sp_workspaces(wc), sp_template)
+
+    # Add more workspaces if needed
+    needed_vec = num_vec_workspaces(problem)
+    needed_mat = num_mat_workspaces(problem)
+    needed_sp = num_sp_workspaces(problem)
+
+    while length(vec_ws.workspaces) < needed_vec
+        push!(vec_ws.workspaces, copy(first(vec_ws.workspaces)))
+        push!(vec_ws.unused, true)
+    end
+    while length(mat_ws.workspaces) < needed_mat
+        push!(mat_ws.workspaces, copy(first(mat_ws.workspaces)))
+        push!(mat_ws.unused, true)
+    end
+    while length(sp_ws.workspaces) < needed_sp
+        push!(sp_ws.workspaces, copy(first(sp_ws.workspaces)))
+        push!(sp_ws.unused, true)
+    end
+
+    return free!(WorkspaceCollection(vec_ws, mat_ws, sp_ws))
+end
 
 # Get layers from a RasterStack or return nothing
 _get_sourcequality(rast::RasterStack) = _keys_or_nothing(rast, (:sourcequality, :quality))
@@ -147,27 +194,27 @@ const MeasureOutputNamedTuple = NamedTuple{<:Any,<:Tuple{Vararg{MeasureOutput}}}
 
 # Update measures in and object.
 # This lets us specify different measures after defining a problem.
-setmeasures(p::ConScapeProblem, m::Measure) =
+@stable setmeasures(p::ConScapeProblem, m::Measure) =
     setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
-function setmeasures(p::ConScapeProblem, measures::Union{Tuple,NamedTuple})
+@stable function setmeasures(p::ConScapeProblem, measures::Union{Tuple,NamedTuple})
     ConstructionBase.setproperties(p, (; measures))
 end
-function setmeasures(ggi::GridGraphInit, m::NamedTuple{<:Any,Tuple{Vararg{MeasureOutput}}};
+@stable function setmeasures(ggi::GridGraphInit, m::NamedTuple{<:Any,Tuple{Vararg{MeasureOutput}}};
     finallevel=defaultfinallevel(ggi)
 )
     problem = setmeasures(ConScape.problem(ggi), m)
     return ConstructionBase.setproperties(ggi, (; problem, outputs))
 end
-setmeasures(ggi::GridGraphInit, m::Measure) =
+@stable setmeasures(ggi::GridGraphInit, m::Measure) =
     setmeasures(ggi, NamedTuple{(Symbol(m),)}((m,)))
-function setmeasures(ggi::GridGraphInit, m::MeasureNamedTuple)
+@stable function setmeasures(ggi::GridGraphInit, m::MeasureNamedTuple)
     problem = setmeasures(ConScape.problem(ggi), m)
     outputs = map(measures(problem)) do m
         allocate_gridgraph_output(m, ggi)
     end
     return ConstructionBase.setproperties(ggi, (; problem, outputs))
 end
-function setmeasures(cgi::ConnectedGraphInit, m::MeasureNamedTuple;
+@stable function setmeasures(cgi::ConnectedGraphInit, m::MeasureNamedTuple;
     finallevel=defaultfinallevel(cgi)
 )
     problem = setmeasures(ConScape.problem(cgi), m)
@@ -179,14 +226,13 @@ function setmeasures(cgi::ConnectedGraphInit, m::MeasureNamedTuple;
         gridgraph(cgi),
         connectedgraph(cgi),
         outputs,
-        vec_workspaces(cgi),
-        mat_workspaces(cgi),
+        workspaces(cgi),
         storage(cgi),
         precalculation(cgi),
         connectedgraphid(cgi),
     )
 end
-function setmeasures(cgi::ConnectedGraphInit, mos::MeasureOutputNamedTuple;
+@stable function setmeasures(cgi::ConnectedGraphInit, mos::MeasureOutputNamedTuple;
     finallevel=defaultfinallevel(cgi)
 )
     return ConnectedGraphInit(
@@ -194,14 +240,13 @@ function setmeasures(cgi::ConnectedGraphInit, mos::MeasureOutputNamedTuple;
         gridgraph(cgi),
         connectedgraph(cgi),
         mos,
-        vec_workspaces(cgi),
-        mat_workspaces(cgi),
+        workspaces(cgi),
         storage(cgi),
         precalculation(cgi),
         connectedgraphid(cgi),
     )
 end
-function setmeasures(ti::TargetInit, m; finallevel=defaultfinallevel(ti))
+@stable function setmeasures(ti::TargetInit, m; finallevel=defaultfinallevel(ti))
     connectedgraphinit = setmeasures(connectedgraphinit(ti), m; finallevel)
     return TargetInit(connectedgraphinit, target(ti))
 end

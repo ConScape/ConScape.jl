@@ -22,18 +22,18 @@ struct SurvivalProbability <: ProximityMeasure end
 num_vec_workspaces(::FreeEnergyDistance, ::RSP) = 2
 num_vec_workspaces(::PowerMeanProximity, ::RSP) = 2
 
-function compute_target(::Distance, ti::TargetInit{<:Euclidean})::RVDe
+function compute_target(::Distance, ti::TargetInit{<:Euclidean})
     _hypot(a::CartesianIndex, b::CartesianIndex) = _hypot(Tuple(a), Tuple(b))
-    _hypot((a1, a2)::Tuple, (b1, b2)::Tuple) = hypot((b1 - a1), (b2 - a2))
+    _hypot((a1, a2), (b1, b2)) = hypot((b1 - a1), (b2 - a2))
 
     targetcol = vec_workspace(ti) .= _hypot.(sourceids(ti), (targetspatialidx(ti),))
     return readonlyarray(targetcol)
 end
-compute_target(::Distance, ti::TargetInit{<:LCP})::RVDe = readonlyarray(ti.shortest_paths.dists)
+compute_target(::Distance, ti::TargetInit{<:LCP}) = readonlyarray(ti.shortest_paths.dists)
 
 function compute_target(
     ::Union{ExpectedCost,FreeEnergyDistance}, ti::TargetInit{<:RandomWalk}
-)::RVDe
+)
     (; F_IW) = ti
     node = targetnode(ti)
     # Set target rowsum of PC to zero
@@ -44,26 +44,26 @@ function compute_target(
 end
 
 # RSP
-function compute_target(::ExpectedCost, ti::TargetInit{<:RSP})::RVDe
+function compute_target(::ExpectedCost, ti::TargetInit{<:RSP})
     (; Y, Zⁱ) = ti
     C̄ = vec_workspace(ti) .= Y .* Zⁱ
     # Subtract the cost at the target from all sources
     C̄ .-= C̄[targetnode(ti)]
     return readonlyarray(C̄)
 end
-function compute_target(::FreeEnergyDistance, ti::TargetInit{<:RSP})::RVDe
+function compute_target(::FreeEnergyDistance, ti::TargetInit{<:RSP})
     (; θ) = ti
     sp = get_or_compute_target!(ti, SurvivalProbability())
     targetcol = vec_workspace(ti) .= -log.(max.(0, sp)) ./ θ
     return readonlyarray(targetcol)
 end
-function compute_target(::PowerMeanProximity, ti::TargetInit{<:RSP})::RVDe
+function compute_target(::PowerMeanProximity, ti::TargetInit{<:RSP})
     (; θ) = ti
     sp = get_or_compute_target!(ti, SurvivalProbability())
     targetcol = vec_workspace(ti) .= sp .^ (1 / θ)
     return readonlyarray(targetcol)
 end
-function compute_target(::SurvivalProbability, ti::TargetInit{<:RSP})::RVDe
+function compute_target(::SurvivalProbability, ti::TargetInit{<:RSP})
     (; Z) = ti
     targetcol = vec_workspace(ti) .= Z ./ Z[targetnode(ti)]
     return readonlyarray(targetcol)

@@ -22,7 +22,7 @@ sparse matrix factorizations, and solves.
 - `measures`: A NamedTuple of [`Measure`](@ref)s.
 - `movement`: A [`MovementMode`](@ref), [`RandomisedShortestPath`](@ref)
     by default.
-- `solver`: A [`Solver`](@ref) specification, `VectorSolver` by default.
+- `solver`: A [`Solver`](@ref) specification, `ColumnSolver` by default.
     [`LinearSolver`](@ref) allows for the use of any LinearSolve.jl solvers,
     when the LinearSolve.jl package is loaded.
 - `grain::Int`: used to apply coarse_graining to target qualities, 
@@ -93,7 +93,7 @@ ConScapeProblem(measures::Union{Measure,Tuple,NamedTuple}; kw...) = ConScapeProb
 function ConScapeProblem(;
     movement=RandomisedShortestPath(),
     measures=(;),
-    solver=VectorSolver(),
+    solver=ColumnSolver(),
     grain=nothing, # Better name here - target_density?
     costfunction=MinusLog(),
     likelyhoodfunction=nothing,

@@ -36,4 +36,39 @@ end
     @test result ≈ W_t * X_matrix
 end
 
+@testset "_update_sparse_template!" begin
+    # Create a source sparse matrix
+    source = sprand(5, 5, 0.3)
+    source_original_nzval = copy(source.nzval)
 
+    # Create a different template with different size and pattern
+    template = sprand(8, 8, 0.2)
+
+    # Update source to match template's pattern
+    result = ConScape._update_sparse_template!(source, template)
+
+    # Check that result has correct dimensions
+    @test size(result) == size(template)
+
+    # Check that result has same sparsity pattern as template
+    @test result.colptr == template.colptr
+    @test result.rowval == template.rowval
+
+    # Check that values are zeroed out
+    @test all(result.nzval .== 0.0)
+    @test nnz(result) == nnz(template)
+
+    # Test with Workspaces
+    ws = ConScape.Workspaces(sprand(5, 5, 0.3), 3)
+    template2 = sprand(10, 10, 0.1)
+
+    ws_updated = ConScape._update_sparse_template!(ws, template2)
+
+    @test ConScape.size(ws_updated) == size(template2)
+    for w in ws_updated.workspaces
+        @test size(w) == size(template2)
+        @test w.colptr == template2.colptr
+        @test w.rowval == template2.rowval
+        @test all(w.nzval .== 0.0)
+    end
+end

@@ -26,10 +26,10 @@ the windows that actually run may be something like this:
 ┆       -    ┃░░░┃    6   ┃░░░┃   10   ┃░░░┃    14  ┃
 ┆            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
 ┆            ┣━━━╋━━━━━━━━╋━━━╋━━━━━━━━╋━━━╋━━━━━━━━┫
-┆            ┃▓▓▓┃░░░░░░░░┃▓▓▓┃        ┃▓▓▓┃░░░░░░░░┃
+┆            ┃▓▓▓┃░░░░░░░░┃▓▓▓┃░░░░░░░░┃▓▓▓┃░░░░░░░░┃
 ┆            ┣━━━┻━━━━━━━━╋━━━╋━━━━━━━━╋━━━╋━━━━━━━━┫
 ┆            ┃            ┃░░░┃        ┃░░░┃        ┃
-┆       -    ┃        7   ┃░░░┃   10   ┃░░░┃    15  ┃
+┆       -    ┃        7   ┃░░░┃   11   ┃░░░┃    15  ┃
 ┆            ┃            ┃░░░┃        ┃░░░┃        ┃
 ┏━━━━━━━━━━━━╋━━━┓        ┃░░░┃        ┃░░░┃        ┃
 ┃            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
@@ -129,21 +129,22 @@ WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 centersize(p::WindowedProblem) = p.centersize, p.centersize
 isthreaded(p::WindowedProblem) = p.threaded
 
-struct WindowedInit{P,R,W,M} <: Initialisation
+struct WindowedInit{P,R} <: Initialisation
     problem::P
     rast::R
     sparse_sizes::Vector{Tuple{Int,Int}}
     ranges::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
     indices::Vector{Int}
     sorted_indices::Vector{Int}
-    vec_workspaces::W
-    mat_workspaces::M
+    workspaces::WorkspaceCollection
     sparse_builders::SparseBuilders
 end
 
 problem(wi::WindowedInit) = wi.problem
-vec_workspaces(wi::WindowedInit) = wi.vec_workspaces
-mat_workspaces(wi::WindowedInit) = wi.mat_workspaces
+workspaces(wi::WindowedInit) = wi.workspaces
+vec_workspaces(wi::WindowedInit) = vec_workspaces(workspaces(wi))
+mat_workspaces(wi::WindowedInit) = mat_workspaces(workspaces(wi))
+sp_workspaces(wi::WindowedInit) = sp_workspaces(workspaces(wi))
 sparse_builders(wi::WindowedInit) = wi.sparse_builders
 
 function init(p::WindowedProblem, rast::RasterStack;
@@ -162,29 +163,31 @@ function init(p::WindowedProblem, rast::RasterStack;
     indices = isnothing(indices) ? _select_indices(p, rast; window_ranges, sparse_sizes) : indices
     sorted_indices = last.(sort!(first.(sparse_sizes[indices]) .=> indices; rev=true))
 
-    # Pre-allocate vec_workspaces sized for the largest window
+    # Pre-allocate workspaces sized for the largest window
     # These will be resized as needed for each window, avoiding repeated allocations
     # Use already-computed sparse_sizes to find max (avoids re-scanning raster)
     _, max_idx = findmax(prod, sparse_sizes)
     max_size = sparse_sizes[max_idx]
     inner_problem = problem(p)
-    vec_workspaces = Workspaces(max_size[1], num_vec_workspaces(inner_problem))
-    mat_workspaces = Workspaces(max_size, num_mat_workspaces(inner_problem))
+    workspaces = WorkspaceCollection(
+        Workspaces(max_size[1], num_vec_workspaces(inner_problem)),
+        Workspaces(max_size, num_mat_workspaces(inner_problem)),
+        Workspaces(spzeros(max_size[1], max_size[1]), num_sp_workspaces(inner_problem)),
+    )
     sparse_builders = SparseBuilders()
 
     return WindowedInit(
-        p, rast, sparse_sizes, window_ranges, indices, sorted_indices, vec_workspaces, mat_workspaces, sparse_builders
+        p, rast, sparse_sizes, window_ranges, indices, sorted_indices, workspaces, sparse_builders
     )
 end
 function init(wi::WindowedInit, i::Int; verbose=false)
     ranges = wi.ranges[i]
     verbose && println("Initialising window from ranges $ranges...")
     rast = _get_window_with_zeroed_buffer(wi, ranges)
-    # Pass pre-allocated vec_workspaces to avoid repeated allocations
+    # Pass pre-allocated workspaces to avoid repeated allocations
     init(problem(problem(wi)), rast;
         verbose,
-        vec_workspaces=vec_workspaces(wi),
-        mat_workspaces=mat_workspaces(wi),
+        workspaces=workspaces(wi),
         sparse_builders=sparse_builders(wi),
     )
 end
@@ -261,30 +264,6 @@ function solve!(window_init::WindowedInit;
             output_stacks
         end
     end
-end
-
-function _max_estimated_sparse_sizes(p::AbstractWindowedProblem, rast; kw...)
-    sizes = _estimate_sparse_sizes(p, rast; kw...)
-    _, i = findmax(prod, sizes)
-    return sizes[i]
-end
-
-
-# Calculate the maximum number of source and target values in any window
-function _estimate_sparse_sizes(p::AbstractWindowedProblem, rast;
-    window_ranges=window_ranges(p, rast)
-)
-    # Calculate the maximum number of source and target values in any window
-    return map(r -> _estimate_sparse_sizes(p, rast, r), window_ranges)
-end
-
-# This function extimates problem size without actually constructing grids.
-# It cant be too small, but may be too large
-_estimate_sparse_sizes(p::AbstractProblem, rast) = _estimate_sparse_sizes(p, rast, axes(rast))
-function _estimate_sparse_sizes(p::AbstractProblem, rast, ranges::Tuple)
-    source_count = _valid_sources(count, p, rast, ranges)
-    target_count = _valid_targets(count, p, rast, ranges)
-    return source_count, target_count
 end
 
 """

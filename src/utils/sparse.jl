@@ -85,3 +85,39 @@ function matmul_by_row!(
        end
    end
 end
+
+# Create a sparse matrix matching `template`'s pattern, reusing `source`'s memory.
+function _update_sparse_template!(
+    source::SparseMatrixCSC{Tv,Ti}, template::SparseMatrixCSC{Tv,Ti}
+) where {Tv,Ti}
+    m_new, n_new = size(template)
+    nnz_new = nnz(template)
+
+    src_colptr = SparseArrays.getcolptr(source)
+    src_rowval = SparseArrays.getrowval(source)
+    src_nzval = SparseArrays.nonzeros(source)
+
+    # Resize to match template dimensions
+    resize!(src_colptr, n_new + 1)
+    resize!(src_rowval, nnz_new)
+    resize!(src_nzval, nnz_new)
+
+    tpl_colptr = SparseArrays.getcolptr(template)
+    tpl_rowval = SparseArrays.getrowval(template)
+    tpl_nzval = SparseArrays.nonzeros(template)
+
+    # Copy pattern and values
+    copyto!(src_colptr, tpl_colptr)
+    copyto!(src_rowval, tpl_rowval)
+    fill!(src_nzval, 0.0)
+
+    return SparseMatrixCSC(m_new, n_new, src_colptr, src_rowval, src_nzval)
+end
+function _update_sparse_template!(
+    ws::Workspaces{SparseMatrixCSC{Tv,Ti}}, template::SparseMatrixCSC{Tv,Ti}
+) where {Tv,Ti}
+    for (i, w) in enumerate(ws.workspaces)
+        ws.workspaces[i] = _update_sparse_template!(w, template)
+    end
+    return Workspaces(size(template), ws.workspaces, ws.unused)
+end

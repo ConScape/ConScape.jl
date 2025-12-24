@@ -63,14 +63,13 @@ allocate_connectedgraph_output(l::Level, measures::Union{Tuple,NamedTuple}, args
 allocate_connectedgraph_output(l::Level, m::Measure, args...)::MeasureOutput =
     allocate_connectedgraph_output(l, returntrait(m), m, args...)
 allocate_connectedgraph_output(l::Level, m::Measure, cgi::ConnectedGraphInit)::MeasureOutput =
-    allocate_connectedgraph_output(l, returntrait(m), m, gridgraph(cgi), connectedgraph(cgi), precalculation(cgi))
+    allocate_connectedgraph_output(l, returntrait(m), m, gridgraph(cgi), connectedgraph(cgi))
 function allocate_connectedgraph_output(
     l::Union{ConnectedGraphLevel,TargetLevel},
     ::ReturnSpatial,
     m::Measure,
     gridgraph::GridGraph,
     connectedgraph::ConnectedGraph,
-    precalculation,
 )
     o = fill(NaN, size(gridgraph))
     # Initialise pixels in the connected subgraph
@@ -83,7 +82,6 @@ function allocate_connectedgraph_output(
     m::Measure,
     ::GridGraph,
     ::ConnectedGraph,
-    precalculation
 )
     o = Ref(0.0)
     return MeasureOutput(m, o)
@@ -95,7 +93,6 @@ function allocate_connectedgraph_output(
     m::Measure,
     ::GridGraph,
     connectedgraph::ConnectedGraph,
-    precalculation
 )
     o = spzeros(Float64, connectedgraph_size(connectedgraph))
     return MeasureOutput(m, o)
@@ -107,7 +104,6 @@ function allocate_connectedgraph_output(
     m::Measure,
     ::GridGraph,
     connectedgraph::ConnectedGraph,
-    precalculation
 )
     o = spzeros(Float64, nsources(connectedgraph))
     return MeasureOutput(m, o)
@@ -119,7 +115,6 @@ function allocate_connectedgraph_output(
     m::Measure,
     ::GridGraph,
     connectedgraph::ConnectedGraph,
-    precalculation
 )
     o = fill(NaN, connectedgraph_size(connectedgraph))
     return MeasureOutput(m, o)
@@ -131,7 +126,6 @@ function allocate_connectedgraph_output(
     m::Measure,
     ::GridGraph,
     connectedgraph::ConnectedGraph,
-    precalculation
 )
     o = fill(NaN, nsources(connectedgraph))
     return MeasureOutput(m, o)
@@ -190,11 +184,9 @@ function update_connectedgraph_output!(
     return output
 end
 function update_connectedgraph_output!(
-    output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssignedSparse, ti::TargetInit, v::AbstractVector
+    output::AbstractMatrix, ::ConnectedGraphLevel, ::ReturnAssigned, ti::TargetInit, v::AbstractVector
 )
     output[:, target(ti).connectedgraphidx] .= v
-    # Return the output vec_workspace
-    put!(vec_workspaces(ti), v)
     return output
 end
 

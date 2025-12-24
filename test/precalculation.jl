@@ -17,8 +17,9 @@ rast = RasterStack((; steplikelihood, quality))
         problem = ConScapeProblem(; movement=rsp, measures=(; fh=FunctionalHabitat()))
         ggi = init(problem, rast)
         cg = ConScape.connectedgraphs(ggi)[1]
+        workspaces = ConScape._allocate_workspaces!(nothing, problem, cg)
 
-        precalc = ConScape.sparse_precalculation(problem, cg)
+        precalc = ConScape.sparse_precalculation(problem, cg, workspaces)
 
         # Check all expected keys are present
         @test haskey(precalc, :P)
@@ -77,8 +78,9 @@ rast = RasterStack((; steplikelihood, quality))
         problem = ConScapeProblem(; movement=lcp, measures=(; fh=FunctionalHabitat()))
         ggi = init(problem, rast)
         cg = ConScape.connectedgraphs(ggi)[1]
+        workspaces = ConScape._allocate_workspaces!(nothing, problem, cg)
 
-        precalc = ConScape.sparse_precalculation(problem, cg)
+        precalc = ConScape.sparse_precalculation(problem, cg, workspaces)
 
         # Check all expected keys are present
         @test haskey(precalc, :P)
@@ -106,8 +108,9 @@ rast = RasterStack((; steplikelihood, quality))
         problem = ConScapeProblem(; movement=rw, measures=(; fh=FunctionalHabitat()))
         ggi = init(problem, rast)
         cg = ConScape.connectedgraphs(ggi)[1]
+        workspaces = ConScape._allocate_workspaces!(nothing, problem, cg)
 
-        precalc = ConScape.sparse_precalculation(problem, cg)
+        precalc = ConScape.sparse_precalculation(problem, cg, workspaces)
 
         # Check all expected keys are present
         @test haskey(precalc, :Lⁱ)
@@ -148,8 +151,9 @@ rast = RasterStack((; steplikelihood, quality))
         problem = ConScapeProblem(; movement=euc, measures=(; fh=FunctionalHabitat()))
         ggi = init(problem, rast)
         cg = ConScape.connectedgraphs(ggi)[1]
+        workspaces = ConScape._allocate_workspaces!(nothing, problem, cg)
 
-        precalc = ConScape.sparse_precalculation(problem, cg)
+        precalc = ConScape.sparse_precalculation(problem, cg, workspaces)
 
         # Euclidean should return empty NamedTuple
         @test precalc == (;)
@@ -413,7 +417,9 @@ end
         end
         dropzeros!(L)
 
-        P, rowsums = ConScape._transitionprobability(L)
+        # Allocate output workspace with same sparsity pattern
+        P_workspace = copy(L)
+        P, rowsums = ConScape._transitionprobability(L, P_workspace)
 
         @test P isa SparseMatrixCSC
         @test rowsums isa ConScape.ReadOnlyArray
@@ -442,13 +448,17 @@ end
         end
         dropzeros!(L)
 
-        P, _ = ConScape._transitionprobability(L)
-        C = sprand(10, 10, 0.3)
-        C = C + C'
-        dropzeros!(C)
+        # Allocate output workspace for P
+        P_workspace = copy(L)
+        P, _ = ConScape._transitionprobability(L, P_workspace)
+        # C must have same sparsity pattern as P (like in real grid graphs)
+        C = copy(P)
+        C.nzval .= rand(length(C.nzval))
 
         rsp = RSP(; theta=0.5)
-        W = ConScape._substochasticmatrix(rsp, P, C)
+        # Allocate output workspace for W with same sparsity as P
+        W_workspace = copy(P)
+        W = ConScape._substochasticmatrix(rsp, P, C, W_workspace)
 
         @test W isa SparseMatrixCSC
 

@@ -39,7 +39,6 @@ function allocate_connectedgraph_output(
     m::EigMax,
     ::GridGraph,
     cg::ConnectedGraph,
-    precalculation
 )
     n = length(sourceids(cg))
     vʳ = fill(NaN, n)

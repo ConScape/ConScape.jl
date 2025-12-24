@@ -42,7 +42,7 @@ solve!(ti::TargetInit; finallevel=TargetLevel()) = _solve_target!(ti; finallevel
 
 # Actual solve Logic separated out from solve! dispatch
 
-# Solve the whole grid into one output, 
+# Solve the whole grid into one output,
 # possibly from multiple connected subgraphs
 function _solve_gridgraph!(ggi; kw...)
     # Loop over subgraphs (there may be only one)
@@ -80,7 +80,7 @@ function _solve_connectedgraph!(cgi; finallevel=ConnectedGraphLevel(), kw...)
 end
 
 # Solve a single target pixel, for all measures computed at TargetLevel
-function _solve_target!(ti; finallevel)
+@stable function _solve_target!(ti; finallevel)
     # Allocate target size outputs only?
     # This is only used when a single target is being solved.
     # outputs = if isnothing(ConScape.outputs(ti))
