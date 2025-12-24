@@ -320,18 +320,15 @@ function _woodburysubtochasticmatrix(ti::TargetInit{<:RandomWalk})
     #   U = [e_base | e_t]  (n×2 matrix with unit vectors as columns)
     #   V = [-P[base,:]; P[t,:]]  (2×n matrix)
 
-    # U and V must be fresh allocations, NOT workspaces!
-    # The Woodbury matrix holds references to these arrays.
     U = zeros(n, 2)
     V = zeros(2, n)
+    C = Matrix{Float64}(I, 2, 2)  # 2×2 identity
 
     U[base_target_node, 1] = 1.0  # e_base in column 1
     U[t, 2] = 1.0                  # e_t in column 2
 
     V[1, :] .= .-view(P, base_target_node, :)  # -P[base,:]
     V[2, :] .= view(P, t, :)                    # P[t,:]
-
-    C = Matrix{Float64}(I, 2, 2)  # 2×2 identity
 
     return Woodbury(F_IW_base, U, C, V)
 end

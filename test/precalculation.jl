@@ -118,8 +118,8 @@ rast = RasterStack((; steplikelihood, quality))
         @test haskey(precalc, :P)
         @test haskey(precalc, :PC)
         @test haskey(precalc, :PC_rowsums)
-        @test haskey(precalc, :IP)
-        @test haskey(precalc, :F_IP)
+        @test haskey(precalc, :IW_base)
+        @test haskey(precalc, :F_IW_base)
         @test haskey(precalc, :qᵗ)
         @test haskey(precalc, :qˢ)
 
@@ -129,17 +129,14 @@ rast = RasterStack((; steplikelihood, quality))
         @test precalc.P isa SparseMatrixCSC{Float64,Int64}
         @test precalc.PC isa SparseMatrixCSC{Float64,Int64}
         @test precalc.PC_rowsums isa Matrix{Float64}
-        @test precalc.IP isa SparseMatrixCSC{Float64,Int64}
-        @test precalc.F_IP isa Factorization
+        @test precalc.IW_base isa SparseMatrixCSC{Float64,Int64}
+        @test precalc.F_IW_base isa Factorization
         @test precalc.qᵗ isa ConScape.ReadOnlyArray
         @test precalc.qˢ isa ConScape.ReadOnlyArray
 
         # Check P is row-stochastic
         P_rowsums = sum(precalc.P, dims=2)
         @test all(isapprox.(P_rowsums, 1.0, atol=1e-10))
-
-        # Check IP = I - P
-        @test precalc.IP ≈ I - precalc.P
 
         # Check PC = P .* C
         C = ConScape.stepcost(cg)

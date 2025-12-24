@@ -106,11 +106,12 @@ function sparse_precalculation(problem::ConScapeProblem{<:RandomWalk}, graph::Co
     #
     # This gives numerically stable solves for all targets.
 
+    # Create W₁ = P with base target row zeroed (substochastic)
+    IW_base = sp_workspace(workspaces) .= I - P
+
     # Get the first target node to use as the base for the substochastic matrix
     base_target_node = first(targetids(graph)).node
 
-    # Create W₁ = P with base target row zeroed (substochastic)
-    IW_base = sp_workspace(workspaces) .= I - P
     # Zero the base target row in the sparse matrix by setting its values to the identity row
     # IW_base[base_target_node, :] should be [0, ..., 1, ..., 0] (identity row)
     for j in 1:size(IW_base, 2)
