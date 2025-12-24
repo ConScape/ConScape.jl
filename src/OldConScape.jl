@@ -4,6 +4,7 @@ module OldConScape
 
     using SparseArrays, LinearAlgebra
     using Graphs, Plots, SimpleWeightedGraphs, ProgressLogging, ArnoldiMethod
+    import Random
 
     abstract type ConnectivityFunction <: Function end
     abstract type DistanceFunction <: ConnectivityFunction end

@@ -545,12 +545,17 @@ function LinearAlgebra.eigmax(grsp::GridRSP;
 
     # compute left vector (of submatrix) by shift-invert
     Flu = lu(qSq₀₀ - λ₀[1]*I)
-    vˡ₀ = ldiv!(Flu', rand(length(targetidx)))
-    rmul!(vˡ₀, inv(vˡ₀[1]))
+    # Used a fixed seed for randomisation so we can test against it
+    rng = Random.MersenneTwister(1234)
+    rhs = rand(rng, length(targetidx))
+    vˡ₀ = ldiv!(copy(rhs), Flu', copy(rhs))
 
     # construct full left vector
     vˡ = zeros(n)
     vˡ[targetnodes] = vˡ₀
+
+    rmul!(vˡ, inv(vˡ[findmax(abs, vˡ)[2]]))
+    rmul!(vʳ, inv(vʳ[findmax(abs, vʳ)[2]]))
 
     return vˡ, λ₀[1], vʳ
 end
@@ -681,7 +686,7 @@ function sensitivity(grsp::ConScape.GridRSP;
         
         if (wrt !== "Q")
             qˢ = qˢ .* v    
-            qᵗ = qᵗ .* w
+            qᵗ = qᵗ .* w[targetnodes] # [targetnodes] is needed or only square Z works
         end
     end
 
@@ -794,7 +799,7 @@ function sensitivity(grsp::ConScape.GridRSP;
         
         if (landscape_measure === "eigenanalysis")
             K = (v) .* K
-            K = (w') .* K
+            K = (w[targetnodes]') .* K # Without [targetnodes] this only works square
         end
 
         K = (K) + transpose(K)
