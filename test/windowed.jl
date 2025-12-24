@@ -15,7 +15,7 @@ rast = RasterStack((; steplikelihood, quality))
 measures = (;
     betm=ConScape.MovementFlow(),
     # betq=Betweenness(QualityWeighted()), # Doesn't work windowed!
-    ch=FunctionalHabitat(),
+    fh=FunctionalHabitat(),
     # # TODO sens=ConScape.Sensitivity(),
 )
 # Set low alpha here so the decay is steep for testing
@@ -94,22 +94,22 @@ end
     # Use a higher alpha to catch differences
     distance_transformation = x -> exp(-x / 50)
     movement = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
-    problem = ConScapeProblem(; measures, movement, solver);
+    csp = ConScapeProblem(; measures, movement, solver);
 
     kw = (; buffer=10, centersize=5)
-    windowed_problem = WindowedProblem(problem; kw...)
+    windowed_problem = WindowedProblem(csp; kw...)
     @time windowed_init = init(windowed_problem, rast);
     @test windowed_init isa ConScape.WindowedInit
     @time windowed_result = solve!(windowed_init);
 
-    batch_problem = BatchProblem(problem; datapath=tempname(), kw...)
+    batch_problem = BatchProblem(csp; datapath=tempname(), kw...)
     paths = solve(batch_problem, rast; verbose=true)
     Rasters.mosaic(sum, RasterStack.(paths))
 
-    @test_broken batch_result = mosaic(batch_problem; to=rast)
-    @test_broken batch_result isa RasterStack
+    batch_result = mosaic(batch_problem; to=rast)
+    @test batch_result isa RasterStack
 
-    batch_init_problem = BatchProblem(problem; datapath=tempname(), kw...)
+    batch_init_problem = BatchProblem(csp; datapath=tempname(), kw...)
     batch_init = init(batch_init_problem, rast; verbose=true)
     paths = solve!(batch_init)
 
@@ -119,26 +119,26 @@ end
 
     # BatchProblem can be run as batch jobs for clusters
     # We just need a new path to make sure the result is from a new run
-    batch_jobs_problem = BatchProblem(problem; 
+    batch_jobs_problem = BatchProblem(csp;
         datapath=tempname(), kw...
     )
     assessment = ConScape.assess(batch_jobs_problem, rast)
     @test assessment.njobs == 39
 
     paths = solve(batch_jobs_problem, rast, assessment, 1; verbose=true)
-    @test keys(paths) == (:betm, :ch)
+    @test keys(paths) == (:betm, :fh)
     for job in 1:assessment.njobs
         solve(batch_jobs_problem, rast, assessment, job)
     end
-    @test_broken batch_jobs_result = mosaic(batch_jobs_problem; to=rast)
+    batch_jobs_result = mosaic(batch_jobs_problem; to=rast)
 
-    batch_jobs_init_problem = BatchProblem(problem; datapath=tempname(), kw...)
+    batch_jobs_init_problem = BatchProblem(csp; datapath=tempname(), kw...)
     assessment = ConScape.assess(batch_jobs_init_problem, rast)
     for job in 1:assessment.njobs
         batch_jobs_init = init(batch_jobs_init_problem, rast, assessment; verbose=true)
         solve!(batch_jobs_init, job; verbose=true)
     end
-    @test_broken batch_jobs_init_result = mosaic(sum, batch_jobs_init_problem; to=rast)
+    batch_jobs_init_result = mosaic(sum, batch_jobs_init_problem; to=rast)
 
     @testset "reassessment" begin
         # There should be no jobs left
@@ -170,10 +170,10 @@ end
         datapath=tempname(), centersize=(10, 10)
     )
     paths = solve(nested_problem, rast)
-    @test keys(paths[1]) == (:betm, :ch)
+    @test keys(paths[1]) == (:betm, :fh)
     @test paths[1].betm isa String
-    @test_broken nested_result = mosaic(sum, nested_problem; to=rast)
-    @test_broken nested_result isa RasterStack
+    nested_result = mosaic(sum, nested_problem; to=rast)
+    @test nested_result isa RasterStack
 
     nested_jobs_problem = ConScape.BatchProblem(windowed_problem; 
         datapath=tempname(), centersize=(10, 10)
@@ -186,7 +186,7 @@ end
     for job in 1:assessment.njobs
         solve(nested_jobs_problem, rast, job)
     end
-    @test_broken nested_jobs_result = mosaic(sum, nested_jobs_problem; to=rast)
+    nested_jobs_result = mosaic(sum, nested_jobs_problem; to=rast)
 
     @testset "nested reassessment" begin
         # There should be no jobs left
@@ -214,30 +214,30 @@ end
         @test count(re3.mask) == 0
     end
 
-    @test_broken keys(windowed_result) == 
-          keys(nested_result) == 
-          keys(batch_result) == 
-          keys(batch_jobs_result) == 
-          keys(batch_jobs_init_result) == 
-          keys(nested_jobs_result) == 
+    @test keys(windowed_result) ==
+          keys(nested_result) ==
+          keys(batch_result) ==
+          keys(batch_jobs_result) ==
+          keys(batch_jobs_init_result) ==
+          keys(nested_jobs_result) ==
           keys(measures)
 
     # These may be approximate after mosaic order changes
     compare(a, b) = ismissing(a) && ismissing(b) || isnan(a) && isnan(b) || isapprox(a, b)
     sts = RasterStack.(filter(isdir, ConScape.batch_paths(batch_jobs_problem, rast)))
 
-    @test_broken all(batch_jobs_result.ch .=== batch_result.ch)
-    @test_broken all(batch_jobs_result.betm .=== batch_result.betm)
-    @test_broken all(batch_jobs_init_result.ch .=== batch_result.ch)
-    @test_broken all(batch_jobs_init_result.betm .=== batch_result.betm)
-    @test_broken all(compare.(nested_result.betm, nested_jobs_result.betm))
-    @test_broken all(compare.(nested_result.ch, nested_jobs_result.ch))
-    @test_broken all(compare.(permutedims(nested_result.betm), windowed_result.betm))
-    @test_broken all(compare.(permutedims(nested_result.ch), windowed_result.ch))
-    @test_broken all(compare.(permutedims(nested_jobs_result.betm), windowed_result.betm))
-    @test_broken all(compare.(permutedims(nested_jobs_result.ch), windowed_result.ch))
-    @test_broken all(compare.(permutedims(batch_result.ch), windowed_result.ch))
-    @test_broken all(compare.(permutedims(batch_result.betm), windowed_result.betm))
+    @test all(batch_jobs_result.fh .=== batch_result.fh)
+    @test all(batch_jobs_result.betm .=== batch_result.betm)
+    @test all(batch_jobs_init_result.fh .=== batch_result.fh)
+    @test all(batch_jobs_init_result.betm .=== batch_result.betm)
+    @test all(compare.(nested_result.betm, nested_jobs_result.betm))
+    @test all(compare.(nested_result.fh, nested_jobs_result.fh))
+    @test all(compare.(nested_result.betm, windowed_result.betm))
+    @test all(compare.(nested_result.fh, windowed_result.fh))
+    @test all(compare.(nested_jobs_result.betm, windowed_result.betm))
+    @test all(compare.(nested_jobs_result.fh, windowed_result.fh))
+    @test all(compare.(batch_result.fh, windowed_result.fh))
+    @test all(compare.(batch_result.betm, windowed_result.betm))
 
     # plot(windowed_result)
     # plot(batch_result)
