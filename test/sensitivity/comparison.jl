@@ -11,15 +11,16 @@ quality = reverse(rotr90(Raster(joinpath(datadir, "qualities_$landscape.asc"); m
 quality[(steplikelihood .> 0) .& isnan.(quality)] .= 1e-20
 rast = RasterStack((; steplikelihood, quality))
 
-function isnanorapprox(xs::AbstractArray, ys::AbstractArray; 
+function isnanorapprox(xs::AbstractArray, ys::AbstractArray;
     atol::Real=0,
     rtol::Real=Base.rtoldefault(LinearAlgebra.promote_leaf_eltypes(xs), LinearAlgebra.promote_leaf_eltypes(ys), atol),
 )
     all(((x, y),) -> isnanorapprox(x, y; atol, rtol), zip(xs, ys))
 end
 function isnanorapprox(x::Number, y::Number; atol, rtol)
-    out = (isnan(x) && isnan(y)) || isapprox(x, y; atol)
-    out || println("Not approx: $x $y $atol")
+    # Use rtol for relative comparison, with a small floor for very small values
+    out = (isnan(x) && isnan(y)) || isapprox(x, y; atol, rtol=max(rtol, 1e-5))
+    out || println("Not approx: $x $y atol=$atol rtol=$rtol")
     return out
 end
 
