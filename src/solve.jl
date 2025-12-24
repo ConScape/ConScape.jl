@@ -80,7 +80,7 @@ function _solve_connectedgraph!(cgi; finallevel=ConnectedGraphLevel(), kw...)
 end
 
 # Solve a single target pixel, for all measures computed at TargetLevel
-@stable function _solve_target!(ti; finallevel)
+function _solve_target!(ti; finallevel)
     # Allocate target size outputs only?
     # This is only used when a single target is being solved.
     # outputs = if isnothing(ConScape.outputs(ti))

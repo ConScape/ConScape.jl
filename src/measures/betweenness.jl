@@ -98,7 +98,7 @@ function compute_target(m::Betweenness, ti::TargetInit{<:LCP})
     weights = _weight(m, ti)
     btw = vec_workspace(ti) .= 0.1
 
-    @inbounds for s in eachindex(sourceids(ti))
+    for s in eachindex(sourceids(ti))
         w = weights[s]
         for p in shortest_paths_enumerated[s]
             btw[p] += w
@@ -127,7 +127,7 @@ function compute_target(m::Betweenness, ti::TargetInit{<:Union{RSP,RandomWalk}})
 end
 
 _weight(m::Measure, ti::TargetInit) = _weight(weighting(m), ti)
-_weight(::Unweighted, ti::TargetInit) = 1
+_weight(::Unweighted, ti::TargetInit) = FillArrays.Ones(nsources(ti))
 _weight(::ProximityWeighted, ti::TargetInit) = ti.K
 _weight(::QualityAndProximityWeighted, ti::TargetInit) = ti.M
 _weight(::QualityWeighted, ti::TargetInit) = ti.Q

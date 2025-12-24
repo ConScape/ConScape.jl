@@ -194,27 +194,27 @@ const MeasureOutputNamedTuple = NamedTuple{<:Any,<:Tuple{Vararg{MeasureOutput}}}
 
 # Update measures in and object.
 # This lets us specify different measures after defining a problem.
-@stable setmeasures(p::ConScapeProblem, m::Measure) =
+setmeasures(p::ConScapeProblem, m::Measure) =
     setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
-@stable function setmeasures(p::ConScapeProblem, measures::Union{Tuple,NamedTuple})
+function setmeasures(p::ConScapeProblem, measures::Union{Tuple,NamedTuple})
     ConstructionBase.setproperties(p, (; measures))
 end
-@stable function setmeasures(ggi::GridGraphInit, m::NamedTuple{<:Any,Tuple{Vararg{MeasureOutput}}};
+function setmeasures(ggi::GridGraphInit, m::NamedTuple{<:Any,Tuple{Vararg{MeasureOutput}}};
     finallevel=defaultfinallevel(ggi)
 )
     problem = setmeasures(ConScape.problem(ggi), m)
     return ConstructionBase.setproperties(ggi, (; problem, outputs))
 end
-@stable setmeasures(ggi::GridGraphInit, m::Measure) =
+setmeasures(ggi::GridGraphInit, m::Measure) =
     setmeasures(ggi, NamedTuple{(Symbol(m),)}((m,)))
-@stable function setmeasures(ggi::GridGraphInit, m::MeasureNamedTuple)
+function setmeasures(ggi::GridGraphInit, m::MeasureNamedTuple)
     problem = setmeasures(ConScape.problem(ggi), m)
     outputs = map(measures(problem)) do m
         allocate_gridgraph_output(m, ggi)
     end
     return ConstructionBase.setproperties(ggi, (; problem, outputs))
 end
-@stable function setmeasures(cgi::ConnectedGraphInit, m::MeasureNamedTuple;
+function setmeasures(cgi::ConnectedGraphInit, m::MeasureNamedTuple;
     finallevel=defaultfinallevel(cgi)
 )
     problem = setmeasures(ConScape.problem(cgi), m)
@@ -232,7 +232,7 @@ end
         connectedgraphid(cgi),
     )
 end
-@stable function setmeasures(cgi::ConnectedGraphInit, mos::MeasureOutputNamedTuple;
+function setmeasures(cgi::ConnectedGraphInit, mos::MeasureOutputNamedTuple;
     finallevel=defaultfinallevel(cgi)
 )
     return ConnectedGraphInit(
@@ -246,7 +246,7 @@ end
         connectedgraphid(cgi),
     )
 end
-@stable function setmeasures(ti::TargetInit, m; finallevel=defaultfinallevel(ti))
+function setmeasures(ti::TargetInit, m; finallevel=defaultfinallevel(ti))
     connectedgraphinit = setmeasures(connectedgraphinit(ti), m; finallevel)
     return TargetInit(connectedgraphinit, target(ti))
 end

@@ -6,7 +6,7 @@ version = "0.3.0"
 ArnoldiMethod = "ec485272-7323-5ecc-a04f-4719b315124d"
 CommonSolve = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
 ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
-DispatchDoctor = "8d63f2c5-f18a-4cf2-ba9d-b3f60fc568c8"
+FillArrays = "1a297f60-69ca-5386-bcde-b61e274b549b"
 GeometryOps = "3251bfac-6a57-4b6d-aa61-ac1fef2975ab"
 Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -23,7 +23,7 @@ WoodburyMatrices = "efce3f68-66dc-5838-9240-27a6d6f5f9b6"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 
 [sources]
-OldConScape = {url = "https://github.com/ConScape/ConScape.jl/", rev="old"}
+OldConScape = {rev = "old", url = "https://github.com/ConScape/ConScape.jl/"}
 
 [extensions]
 ConScapeLinearSolveExt = "LinearSolve"
@@ -34,7 +34,7 @@ ArchGDAL = "0.10"
 ArnoldiMethod = "0.0.4, 0.4"
 CommonSolve = "0.2"
 ConstructionBase = "1.5.8"
-DispatchDoctor = "0.4.26"
+FillArrays = "1.15.0"
 GeometryOps = "0.1"
 Graphs = "1"
 LinearAlgebra = "1"

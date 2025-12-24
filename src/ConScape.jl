@@ -8,24 +8,24 @@ import ConstructionBase
 import Graphs
 import Mmap
 import Rasters
+import FillArrays
+import ReadOnlyArrays
+import Random
 
 import GeometryOps as GO
 import GeometryOps.GeoInterface as GI
 import SortTileRecursiveTree as STR
-import ReadOnlyArrays
-import Random
-using DispatchDoctor
 
 import Rasters.Extents
 import Rasters.DimensionalData
 
 import CommonSolve: solve, solve!, init
+import Rasters: Raster
 
 using WoodburyMatrices: Woodbury
 using SimpleWeightedGraphs: SimpleWeightedGraph, SimpleWeightedDiGraph
 using ReadOnlyArrays: ReadOnlyArray
 using Rasters: AbstractRaster, AbstractRasterStack, RasterStack, rebuild, dims, mosaic
-import Rasters: Raster
 
 
 export RandomisedShortestPath, LeastCostPath, RandomWalk, Euclidean, RSP, LCP
