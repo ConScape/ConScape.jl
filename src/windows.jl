@@ -615,6 +615,7 @@ Rasters.mosaic(p::BatchProblem; kw...) = Rasters.mosaic(sum, p::BatchProblem; kw
 function Rasters.mosaic(f::Function, p::BatchProblem; to::RasterStack, filename=nothing, force=false, progress=true, kw...)
     paths = filter(isdir, batch_paths(p, to))
     isempty(paths) && error("No directories exist to mosaic, have any batches been run?")
-    stacks = [RasterStack(path; lazy=true) for path in paths]
+    # GDAL reads tifs with (X, Y) order, permute to match target dims
+    stacks = [permutedims(RasterStack(path; lazy=true), dims(to)) for path in paths]
     return mosaic(f, stacks; to, filename, force, progress, missingval=NaN, kw...)
 end
