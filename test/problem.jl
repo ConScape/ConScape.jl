@@ -38,7 +38,7 @@ edge_betweenness_measures = (;
 
 other_measures = (;
     mkld=MeanKullbackLeiblerDivergence(),
-    ch=FunctionalHabitat(),
+    fh=FunctionalHabitat(),
 )
      
 
