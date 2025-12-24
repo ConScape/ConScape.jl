@@ -6,6 +6,7 @@ using SparseArrays
 import ArnoldiMethod
 import ConstructionBase
 import Graphs
+import Mmap
 import Rasters
 
 import GeometryOps as GO

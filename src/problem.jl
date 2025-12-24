@@ -36,8 +36,15 @@ sparse matrix factorizations, and solves.
     With a three-dimensional matrix, `neighbors` keyword is not used.
 - `stepweight`: `TargetWeight()` by default, using only the value of the
     destination pixel (neighbor). Can be `AverageWeight()` to use the average of
-    both neighboring nodes. If a three-dimensional matrix is provided, 
+    both neighboring nodes. If a three-dimensional matrix is provided,
     `stepweight` is not used as the array values are already transitions.
+- `mmap_path`: Directory path for storing memory-mapped matrix workspaces, or 
+    `nothing` (default) to use in-memory arrays. When set, large intermediate matrices
+    (Z, Y) are stored as memory-mapped files, reducing Julia RAM usage at the
+    cost of some disk I/O. This is only important for `SensitivityAnalysis`, 
+    `EigMax` and `EdgeBetweenness` measures that need full matrices allocated.
+    Only use with fast local drives (SSD/NVMe); network storage will degrade 
+    performance significantly. 
 
 ## Initialising and solving
 
@@ -67,7 +74,7 @@ solve(singleinit)
 solve(targetinit) 
 ```
 """
-struct ConScapeProblem{MM<:MovementMode,M<:NamedTuple,S<:Solver,G<:Union{Int,Nothing},CF,LF,N,SW<:StepWeight} <: AbstractProblem
+struct ConScapeProblem{MM<:MovementMode,M<:NamedTuple,S<:Solver,G<:Union{Int,Nothing},CF,LF,N,SW<:StepWeight,MP<:Union{Nothing,String}} <: AbstractProblem
     movement::MM
     measures::M
     solver::S
@@ -76,9 +83,10 @@ struct ConScapeProblem{MM<:MovementMode,M<:NamedTuple,S<:Solver,G<:Union{Int,Not
     likelyhoodfunction::LF
     neighbors::N
     stepweight::SW
+    mmap_path::MP
     function ConScapeProblem(
-        movement::MM, m::M, solver::S, grain::G, costfunction::CF, likelyhoodfunction::LF, neighbors::N, stepweight::NW
-    ) where {MM,M,S,G,CF,LF,N,NW}
+        movement::MM, m::M, solver::S, grain::G, costfunction::CF, likelyhoodfunction::LF, neighbors::N, stepweight::NW, mmap_path::MP
+    ) where {MM,M,S,G,CF,LF,N,NW,MP}
         m1 = if m isa Measure
             NamedTuple{(Symbol(m),)}((m,))
         elseif m isa Tuple
@@ -86,7 +94,7 @@ struct ConScapeProblem{MM<:MovementMode,M<:NamedTuple,S<:Solver,G<:Union{Int,Not
         else
             m
         end
-        return new{MM,typeof(m1),S,G,CF,LF,N,NW}(movement, m1, solver, grain, costfunction, likelyhoodfunction, neighbors, stepweight)
+        return new{MM,typeof(m1),S,G,CF,LF,N,NW,MP}(movement, m1, solver, grain, costfunction, likelyhoodfunction, neighbors, stepweight, mmap_path)
     end
 end
 ConScapeProblem(measures::Union{Measure,Tuple,NamedTuple}; kw...) = ConScapeProblem(; measures, kw...)
@@ -94,13 +102,14 @@ function ConScapeProblem(;
     movement=RandomisedShortestPath(),
     measures=(;),
     solver=ColumnSolver(),
-    grain=nothing, # Better name here - target_density?
+    grain=nothing,
     costfunction=MinusLog(),
     likelyhoodfunction=nothing,
     neighbors=N8,
     stepweight=TargetWeight(),
+    mmap_path=nothing,
 )
-    ConScapeProblem(movement, measures, solver, grain, costfunction, likelyhoodfunction, neighbors, stepweight)
+    ConScapeProblem(movement, measures, solver, grain, costfunction, likelyhoodfunction, neighbors, stepweight, mmap_path)
 end
 
 function Base.show(io::IO, mime::MIME"text/plain", p::ConScapeProblem; indent="")
@@ -124,6 +133,7 @@ costfunction(p::ConScapeProblem) = p.costfunction
 likelihoodfunction(p::ConScapeProblem) = p.likelyhoodfunction
 neighbors(p::ConScapeProblem) = p.neighbors
 stepweight(p::ConScapeProblem) = p.stepweight
+mmap_path(p::ConScapeProblem) = p.mmap_path
 proximity_measure(p::ConScapeProblem) = proximity_measure(movement(p))
 distance_transformation(p::ConScapeProblem) = distance_transformation(movement(p))
 diagvalue(p::ConScapeProblem) = diagvalue(movement(p))

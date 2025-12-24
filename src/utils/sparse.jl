@@ -119,5 +119,5 @@ function _update_sparse_template!(
     for (i, w) in enumerate(ws.workspaces)
         ws.workspaces[i] = _update_sparse_template!(w, template)
     end
-    return Workspaces(size(template), ws.workspaces, ws.unused)
+    return Workspaces(size(template), ws.workspaces, ws.unused, ws.mmap_paths)
 end

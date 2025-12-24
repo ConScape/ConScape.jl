@@ -18,5 +18,6 @@ using SafeTestsets
     @safetestset "Sensitivity comparison with (bugfixed) original implementation" begin include("sensitivity/comparison.jl") end
     @safetestset "Sensitivity validation against simulations" begin include("sensitivity/validation.jl") end
     @safetestset "WindowedProblems and BatchProblems" begin include("windowed.jl") end
+    @safetestset "MMap" begin include("mmap.jl") end
     @safetestset "Assessment" begin include("assessment.jl") end
 end

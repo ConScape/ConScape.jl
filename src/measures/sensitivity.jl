@@ -16,14 +16,15 @@ Compute sensitivity of all nodes.
 
 ## Keywords
 
-- `wrt`: Five types of node sensitivity are implemented: `Affinity()`, `Cost()`, 
-    `Quality()`, `CostAndAffinity()` and `AffinityAndCost()`.
+- `wrt`: Seven types of node sensitivity are implemented: `StepLikelihood()`, `StepCost()`, 
+    `StepCostAndLikelihood()` and `StepLikelihoodAndCost()`, `Quality()`, `TargetetQualtiy()`
+    and `SourceQuality()`.
 - `metric`: Two [`TopologicalMetric`](@ref)s are implemented to summarize the 
-    landscape matrix either through summation ([`Summation()`](@ref)) or through eigen 
-    analysis [`LandscapeEigen()`](@ref). The default is `Eigen()`.
+    landscape matrix either through summation ([`Summation`](@ref)) or through eigen 
+    analysis [`LandscapeEigen`](@ref). The default is `Eigen()`.
 - `type`: The results can be provided either as sensitivity w.r.t. `Sensitivity()`
     or w.r.t. `Elasticity()`, the latter are also known as elasticities. 
-    The default is `Sensitivity()`
+    The default is `Sensitivity()`.
 
 The value returned from `solve` is a spatial `Raster` or `Matrix`.
 """

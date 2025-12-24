@@ -111,7 +111,7 @@ $WINDOW_LAYOUT
     buffer::Int
     threaded::Bool = false
     shape::Symbol = :circle
-    gc::Bool = true 
+    gc::Bool = true
     test_windows::Bool = false # TODO: remove this field
     mosaic_return::Bool = true
     timed::Bool = false
@@ -129,7 +129,7 @@ WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 centersize(p::WindowedProblem) = p.centersize, p.centersize
 isthreaded(p::WindowedProblem) = p.threaded
 
-struct WindowedInit{P,R} <: Initialisation
+mutable struct WindowedInit{P,R} <: Initialisation
     problem::P
     rast::R
     sparse_sizes::Vector{Tuple{Int,Int}}
@@ -138,6 +138,17 @@ struct WindowedInit{P,R} <: Initialisation
     sorted_indices::Vector{Int}
     workspaces::WorkspaceCollection
     sparse_builders::SparseBuilders
+    function WindowedInit(problem::P, rast::R, sparse_sizes, ranges, indices, sorted_indices, workspaces, sparse_builders) where {P,R}
+        wi = new{P,R}(problem, rast, sparse_sizes, ranges, indices, sorted_indices, workspaces, sparse_builders)
+        # Register finalizer to clean up mmap files if any
+        isempty(mat_workspaces(workspaces).mmap_paths) || finalizer(_cleanup_windowed_init!, wi)
+        return wi
+    end
+end
+
+function _cleanup_windowed_init!(wi::WindowedInit)
+    cleanup!(mat_workspaces(wi))
+    return nothing
 end
 
 problem(wi::WindowedInit) = wi.problem
@@ -146,6 +157,14 @@ vec_workspaces(wi::WindowedInit) = vec_workspaces(workspaces(wi))
 mat_workspaces(wi::WindowedInit) = mat_workspaces(workspaces(wi))
 sp_workspaces(wi::WindowedInit) = sp_workspaces(workspaces(wi))
 sparse_builders(wi::WindowedInit) = wi.sparse_builders
+
+"""
+    cleanup!(wi::WindowedInit)
+
+Explicitly clean up mmap files. Called automatically by finalizer,
+but can be called manually for immediate cleanup.
+"""
+cleanup!(wi::WindowedInit) = _cleanup_windowed_init!(wi)
 
 function init(p::WindowedProblem, rast::RasterStack;
     window_ranges=window_ranges(p, rast),
@@ -169,9 +188,13 @@ function init(p::WindowedProblem, rast::RasterStack;
     _, max_idx = findmax(prod, sparse_sizes)
     max_size = sparse_sizes[max_idx]
     inner_problem = problem(p)
+
+    # Create mat_workspaces - optionally mmap'd to reduce GC pressure
+    mat_ws = _create_mat_workspaces(max_size, num_mat_workspaces(inner_problem), mmap_path(inner_problem))
+
     workspaces = WorkspaceCollection(
         Workspaces(max_size[1], num_vec_workspaces(inner_problem)),
-        Workspaces(max_size, num_mat_workspaces(inner_problem)),
+        mat_ws,
         Workspaces(spzeros(max_size[1], max_size[1]), num_sp_workspaces(inner_problem)),
     )
     sparse_builders = SparseBuilders()

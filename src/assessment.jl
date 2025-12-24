@@ -65,6 +65,20 @@ abstract type ProblemAssessment end
 
 Base.size(a::ProblemAssessment) = a.size
 
+function Base.show(io::IO, mime::MIME"text/plain", a::ProblemAssessment)
+    println(io, typeof(a))
+    println(io, "Shape: $(a.shape)")
+    println(io, "Number of jobs: $(a.njobs)")
+    println(io, "Memory estimate: $(round(a.memory_estimate.total / 2^20)) MB")  # Convert to MB
+    # Use SparseArrays nice matrix printing for the mask
+    if any(a.warnings)
+        println(io, "Warnings: $(a.warnings)")
+    end
+    println(io, "Job mask: ")
+    mask = sparse(reshape(a.mask, a.shape))
+    Base.print_array(io, mask)
+end
+
 """
     WindowAssessment <: ProblemAssessment
 
@@ -103,7 +117,8 @@ that holds another `AbstractWindowedProblem`.
 - `njobs::Int`: the number of problem runs required to finish the problem
 - `mask::Vector{Bool}`: Vector{Bool} where `true` values are jobs that need to be run.
 - `indices::Vector{Int}`: the indices of `mask` that are `true`.
-- `assessments::Vector{WindowAssessment}`: asessments at the next level down.
+- `assessments::Vector{WindowAssessment}`: assessments at the next level down.
+- `memory_estimate::Float64`: estimated maximum peak memory usage in MB.
 """
 @kwdef struct NestedAssessment <: ProblemAssessment
     size::Tuple{Int,Int}
@@ -113,20 +128,7 @@ that holds another `AbstractWindowedProblem`.
     indices::Vector{Int}
     warnings::AssessmentWarnings
     assessments::Vector{WindowAssessment}
-end
-
-function Base.show(io::IO, mime::MIME"text/plain", a::ProblemAssessment)
-    println(io, typeof(a))
-    println(io, "Shape: $(a.shape)")
-    println(io, "Number of jobs: $(a.njobs)")
-    println(io, "Memory estimate: $(round(a.memory_estimate.total / 2^20)) MB")  # Convert to MB
-    # Use SparseArrays nice matrix printing for the mask
-    if any(a.warnings)
-        println(io, "Warnings: $(a.warnings)")
-    end
-    println(io, "Job mask: ")
-    mask = sparse(reshape(a.mask, a.shape))
-    Base.print_array(io, mask)
+    memory_estimate::MemoryEstimate
 end
 
 
@@ -180,7 +182,16 @@ function assess(p::AbstractWindowedProblem{<:ConScapeProblem}, rast::AbstractRas
         MemoryEstimate(0, 0, 0, 0, 0, 0, 0, 0, 0)
     end
 
-    WindowAssessment(size(rast), shape, njobs, window_mask, non_empty_indices, warnings, sparse_sizes, memory_estimate)
+    WindowAssessment(
+        size(rast),
+        shape,
+        njobs,
+        window_mask,
+        non_empty_indices,
+        warnings,
+        sparse_sizes,
+        memory_estimate,
+    )
 end
 function assess(
     p::AbstractWindowedProblem{<:AbstractWindowedProblem},
@@ -238,7 +249,24 @@ function assess(
     shape = size(window_ranges)
     warnings = reduce(|, (a.warnings for a in assessments))
 
-    return NestedAssessment(size(rast), shape, njobs, mask, non_empty_indices, warnings, assessments)
+    # Calculate memory estimate based on max window size
+    memory_estimate = if !isempty(assessments)
+        _, max_idx = findmax(a -> a.memory_estimate.total, assessments)
+        assessments[max_idx].memory_estimate
+    else
+        MemoryEstimate(0, 0, 0, 0, 0, 0, 0, 0, 0)
+    end
+
+    return NestedAssessment(
+        size(rast),
+        shape,
+        njobs,
+        mask,
+        non_empty_indices,
+        warnings,
+        assessments,
+        memory_estimate,
+    )
 end
 
 """
@@ -413,7 +441,7 @@ function estimate_memory_for_centersize(
     new_targets = centersize^2
 
     # Recalculate memory estimate
-    estimate_memory(problem, max_sources, new_targets).total / 1024^2
+    return estimate_memory(problem, max_sources, new_targets)
 end
 
 

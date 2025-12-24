@@ -49,13 +49,13 @@ function GridGraph(;
         quality
     else
         sourcequality
-    end::AbstractMatrix
+    end
 
     targetquality = if isnothing(targetquality)
         isnothing(quality) ? sourcequality : quality
     else
         targetquality
-    end::AbstractMatrix
+    end
 
     isnothing(stepcost) && isnothing(steplikelihood) &&
         isnothing(cost) && isnothing(likelihood) &&
@@ -222,17 +222,17 @@ function split_connected_graphs(g::GridGraph;
         sort!(scci)
 
         # Get permeability matrices for the subgraph 
-        transcost = if !isnothing(stepcost(g))
+        cost = if !isnothing(stepcost(g))
             stepcost(g)[scci, scci]
         end
-        translikelihood = if !isnothing(steplikelihood(g))
+        likelihood = if !isnothing(steplikelihood(g))
             steplikelihood(g)[scci, scci]
         end
-        if isnothing(transcost) && !isnothing(costfunction)
-            transcost = mapnz(costfunction, steplikelihood(g))
+        if isnothing(cost) && !isnothing(costfunction)
+            cost = mapnz(costfunction, steplikelihood(g))
         end
-        if isnothing(translikelihood) && !isnothing(likelihoodfunction) 
-            translikelihood = mapnz(likelihoodfunction, stepcost(g))
+        if isnothing(likelihood) && !isnothing(likelihoodfunction) 
+            likelihood = mapnz(likelihoodfunction, stepcost(g))
         end
 
         # Get new source and target ids for subgraph
@@ -245,8 +245,8 @@ function split_connected_graphs(g::GridGraph;
 
         # Return a ConnectedGraph
         ConnectedGraph(
-            transcost,
-            translikelihood,
+            cost,
+            likelihood,
             sourcequality_vector,
             targetquality_vector,
             sourceidxs,
