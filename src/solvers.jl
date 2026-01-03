@@ -1,26 +1,29 @@
 """
-   VectorSolver(; check, threaded)
+   ColumnSolver(; check, threaded)
 
-Use Julias' default UMFPACK solver, 
-over vector columns for each target of the problem.
+Use Julias' default UMFPACK solver, but over over vector columns 
+for each target of the problem, rather than full matrices.
 """
-struct VectorSolver <: Solver end
+struct ColumnSolver <: Solver end
 
 # Solver init
-init(solver::VectorSolver, A::AbstractMatrix) = lu(A)
+init(solver::ColumnSolver, A::AbstractMatrix) = lu(A)
 
 # ldiv!
 # The main reason to have Solver types is to provide methods for ldiv!
 function LinearAlgebra.ldiv!(p::Initialisation, init, B)
-    # Handle using a workspace instead of copying B
-    B_copy = take!(workspaces(p)) .= B
+    # Handle using a vec_workspace instead of copying B
+    B_copy = take!(vec_workspaces(p)) .= B
     # Solve
     X = ldiv!(solver(p), B, init, B_copy)
-    # Return the workspace to the pool
-    put!(workspaces(p), B_copy)
+    # Return the vec_workspace to the pool
+    put!(vec_workspaces(p), B_copy)
     return X
 end
-LinearAlgebra.ldiv!(s::VectorSolver, B, F, B_copy) = ldiv!(B, F, B_copy)
+LinearAlgebra.ldiv!(s::ColumnSolver, B::AbstractArray, F, B_copy::AbstractArray) = ldiv!(B, F, B_copy)
+
+# Keep old code working for a while
+@deprecate VectorSolver ColumnSolver
 
 """
    LinearSolver(args...; kw...)

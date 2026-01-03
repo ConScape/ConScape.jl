@@ -121,8 +121,6 @@ Makie.plot(tmp, colormap=cgrad([:lightgrey, :black]))
 We set up a problem, see details on this elsewhere, and loop over a range of $\theta$ values to demonstrate the effect of path optimality.
 
 ```{julia}
-solver = ConScape.VectorSolver()
-
 measures = (; betq=Betweenness(QualityWeighted()))
 distance_transformation = (nodist=nothing)
 
@@ -134,7 +132,7 @@ rast = RasterStack((; affinities=permeabilities, source_qualities=qualities, tar
 
 betqs = map(θs) do θ
     movement_mode = RandomisedShortestPath(ConScape.ExpectedCost(); distance_transformation=nothing, theta=θ)
-    problem = ConScape.Problem(; measures, movement_mode, solver)
+    problem = ConScapeProblem(; measures, movement_mode)
     ConScape.solve(problem, rast).betq
 end
 betw = cat(betqs...; dims=Dim{:theta}(θs))

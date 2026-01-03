@@ -19,10 +19,10 @@ It is possible to also supply matrices of `source_qualities` and `target_qualiti
 Alternatively, it is possible to supply a matrix to `costs` directly.
 """
 struct GridGraph{
-    C<:Union{AbstractMatrix,Nothing},
-    L<:Union{AbstractMatrix,Nothing},
-    SQ<:AbstractMatrix,
-    TQ<:AbstractMatrix,
+    C<:Union{SparseMatrixCSC{Float64,Int64},Nothing},
+    L<:Union{SparseMatrixCSC{Float64,Int64},Nothing},
+    SQ<:AbstractMatrix{Float64},
+    TQ<:AbstractMatrix{Float64},
     D<:Union{Tuple,Nothing}
 }
     stepcost::C
@@ -49,21 +49,28 @@ function GridGraph(;
         quality
     else
         sourcequality
-    end::AbstractMatrix
+    end
+
     targetquality = if isnothing(targetquality)
         isnothing(quality) ? sourcequality : quality
     else
         targetquality
-    end::AbstractMatrix
+    end
 
-    isnothing(stepcost) && isnothing(steplikelihood) && 
-        isnothing(cost) && isnothing(likelihood) && 
+    isnothing(stepcost) && isnothing(steplikelihood) &&
+        isnothing(cost) && isnothing(likelihood) &&
             throw(ArgumentError("At least one of `cost` and `likelihood` must be specified"))
-    if !isnothing(likelihood) 
-        steplikelihood = graph_matrix_from_raster(likelihood; input_type=StepLikelihood(), kw...)
+
+    # Filter kw to only include keywords accepted by graph_matrix_from_raster
+    raster_kw_names = filter(k -> k in (:neighbors, :stepweight, :sparse_builders), keys(kw))
+    raster_kw = Base.pairs(NamedTuple{raster_kw_names}(values(kw)))
+
+    # Compute whichever sparse arrays were not passed in
+    if !isnothing(likelihood)
+        steplikelihood = graph_matrix_from_raster(likelihood; input_type=StepLikelihood(), raster_kw...)
     end
     if !isnothing(cost)
-        stepcost = graph_matrix_from_raster(cost; input_type=StepCost(), kw...) 
+        stepcost = graph_matrix_from_raster(cost; input_type=StepCost(), raster_kw...)
     end
     if isnothing(steplikelihood) && !isnothing(stepcost) && !isnothing(likelihoodfunction)
         steplikelihood = mapnz(likelihoodfunction, stepcost)
@@ -85,6 +92,7 @@ function GridGraph(;
     #     end
     # end
 
+    # Check matrix sizes
     if !isnothing(steplikelihood) && prod(size(sourcequality)) != (n = LinearAlgebra.checksquare(steplikelihood))
         throw(ArgumentError("quality size $(length(sourcequality)) is incompatible with size of steplikelihood matrix ($n, $n)"))
     end
@@ -98,6 +106,9 @@ function GridGraph(;
     if !isnothing(grain)
         targetquality = coarse_graining(targetquality, grain)
     end
+
+    gridgraph_size = 
+
     return GridGraph(
         stepcost,
         steplikelihood,
@@ -115,13 +126,20 @@ function GridGraph(rast::RasterStack;
 )
     GridGraph(; likelihood, cost, sourcequality, targetquality, kw...)
 end
-function GridGraph(p::AbstractProblem, rast::RasterStack; kw...)
+function GridGraph(p::AbstractProblem, rast::RasterStack; 
+    grain=nothing, 
+    neighbors=nothing,
+    stepweight=nothing,
+    kw...
+)
     GridGraph(rast;
-        grain=grain(p),
+        # Purely spatial keywords can be passed in
+        grain=isnothing(grain) ? ConScape.grain(p) : grain,
+        neighbors=isnothing(neighbors) ? ConScape.neighbors(p) : neighbors,
+        stepweight=isnothing(stepweight) ? ConScape.stepweight(p) : stepweight,
+        # Functions must match the problem
         costfunction=costfunction(p),
         likelihoodfunction=likelihoodfunction(p),
-        neighbors=neighbors(p),
-        stepweight=stepweight(p),
         kw...
     )
 end
@@ -132,8 +150,15 @@ sourcequality(g::GridGraph) = g.sourcequality
 targetquality(g::GridGraph) = g.targetquality
 sourceids(g::GridGraph) = vec(CartesianIndices(sourcequality(g)))
 nsources(g::GridGraph) = length(g)
-# TODO is this a memory problem for custom use?
-ntargets(g::GridGraph) = nsources(g) 
+function ntargets(g::GridGraph) 
+    if issparse(targetquality(g))
+        # If targets are sparse count them
+        length(nonzeros(targetquality(g)))
+    else
+        # Otherwise all sources are targets
+        nsources(g)
+    end
+end
 gridgraph_size(gg::GridGraph) = (nsources(gg), ntargets(gg))
 
 Base.size(g::GridGraph, args...) = size(sourcequality(g), args...)
@@ -197,17 +222,17 @@ function split_connected_graphs(g::GridGraph;
         sort!(scci)
 
         # Get permeability matrices for the subgraph 
-        transcost = if !isnothing(stepcost(g))
+        cost = if !isnothing(stepcost(g))
             stepcost(g)[scci, scci]
         end
-        translikelihood = if !isnothing(steplikelihood(g))
+        likelihood = if !isnothing(steplikelihood(g))
             steplikelihood(g)[scci, scci]
         end
-        if isnothing(transcost) && !isnothing(costfunction)
-            transcost = mapnz(costfunction, steplikelihood(g))
+        if isnothing(cost) && !isnothing(costfunction)
+            cost = mapnz(costfunction, steplikelihood(g))
         end
-        if isnothing(translikelihood) && !isnothing(likelihoodfunction) 
-            translikelihood = mapnz(likelihoodfunction, stepcost(g))
+        if isnothing(likelihood) && !isnothing(likelihoodfunction) 
+            likelihood = mapnz(likelihoodfunction, stepcost(g))
         end
 
         # Get new source and target ids for subgraph
@@ -215,13 +240,13 @@ function split_connected_graphs(g::GridGraph;
         targets = _target_ids(targetquality(g), sourceidxs, spatialidxs)
 
         # Get source and target quality vectors for subgraph
-        sourcequality_vector = view(sourcequality(g), sourceidxs)
-        targetquality_vector = [targetquality(g)[i.spatialidx] for i in targets]
+        sourcequality_vector = readonlyarray(sourcequality(g)[sourceidxs])
+        targetquality_vector = readonlyarray([targetquality(g)[i.spatialidx] for i in targets])
 
         # Return a ConnectedGraph
         ConnectedGraph(
-            transcost,
-            translikelihood,
+            cost,
+            likelihood,
             sourcequality_vector,
             targetquality_vector,
             sourceidxs,
@@ -255,7 +280,7 @@ function _target_ids(
     target_graph_ids = _find_all_sorted(all_spatial_ids, target_spatial_ids)
     # Return Vector{NamedTuple} each with target.spatial and target.node
     return map(target_spatial_ids, target_graph_ids, eachindex(target_nodes), target_nodes) do spatialidx, gridgraphidx, connectedgraphidx, node
-        (; spatialidx, gridgraphidx, connectedgraphidx, node)
+        TargetID(spatialidx, gridgraphidx, connectedgraphidx, node)
     end
 end
 
@@ -335,6 +360,35 @@ weightedval(::AverageWeight, ::StepLikelihood, baseval, targetval, distance) =
     2 / ((inv(baseval) + inv(targetval)) * distance)
 
 """
+    SparseBuilders
+
+Reusable buffers for building sparse matrices, avoiding repeated allocations.
+
+Used by `graph_matrix_from_raster` to accumulate indices and values before
+calling `sparse()`.
+"""
+struct SparseBuilders
+    is::Vector{Int}
+    js::Vector{Int}
+    vals::Vector{Float64}
+end
+SparseBuilders() = SparseBuilders(Int[], Int[], Float64[])
+
+function Base.empty!(sb::SparseBuilders)
+    empty!(sb.is)
+    empty!(sb.js)
+    empty!(sb.vals)
+    return sb
+end
+
+function Base.sizehint!(sb::SparseBuilders, len::Int)
+    sizehint!(sb.is, len)
+    sizehint!(sb.js, len)
+    sizehint!(sb.vals, len)
+    return sb
+end
+
+"""
     graph_matrix_from_raster(R::Matrix; kw...) -> SparseMatrixCSC
 
 Compute a graph matrix, i.e. an affinity or cost matrix of the raster image `R` 
@@ -348,20 +402,20 @@ The values can be computed with respect to eight `neighbors`` (`N8`) or four nei
 
 - `stepweight`: `TargetWeight` or `AverageWeight`, TargetWeight by default.
 - `neighbors` : `N4` or `N8`, `N8` by default.
-- `input_type`: `Likelyhood()` or `Cost()`, `Likelyhood()` by default
+- `input_type`: `Likelihood()` or `Cost()`.
 """
 function graph_matrix_from_raster(R::AbstractMatrix;
     neighbors::Tuple=N8,
     stepweight=TargetWeight(),
     input_type,
+    sparse_builders::SparseBuilders=SparseBuilders(),
 )
     m, n = size(R)
     len = count(x -> !isnan(x) && !iszero(x), R) * 7
-    # Initialize the buffers of the SparseMatrixCSC
-    is, js, vals = Int[], Int[], Float64[]
-    sizehint!(is, len)
-    sizehint!(js, len)
-    sizehint!(vals, len)
+    # Reuse or initialize the buffers
+    empty!(sparse_builders)
+    sizehint!(sparse_builders, len)
+    (; is, js, vals) = sparse_builders
 
     for j in 1:n, i in 1:m
         # Base node
@@ -384,10 +438,12 @@ function graph_matrix_from_raster(R::AbstractArray{<:Any,3};
     neighbors::Tuple=N8,
     stepweight=TargetWeight(),
     input_type,
+    sparse_builders::SparseBuilders=SparseBuilders(),
 )
     nneighbors, m, n = size(R)
-    # Initialize the buffers of the SparseMatrixCSC
-    is, js, vals = Int[], Int[], Float64[]
+    # Reuse or initialize the buffers
+    empty!(sparse_builders)
+    (; is, js, vals) = sparse_builders
 
     for j in 1:n, i in 1:m
         if nneighbors == 4
@@ -425,7 +481,7 @@ Compute a graph matrix, i.e. an affinity or cost matrix from the geometies `geom
 
 # Keywords
 
-- `input_type`: `StepLikelyhood()` or `StepCost()`.
+- `input_type`: `StepLikelihood()` or `StepCost()`.
 - `stepweight`: `TargetWeight()` or `AverageWeight()`, `TargetWeight()` by default.
 - `cutoff_distance`: the distance at which to stop computing affinities.
     Should be in the same units as the geometry projection.

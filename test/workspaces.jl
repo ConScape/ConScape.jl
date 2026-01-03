@@ -20,6 +20,17 @@ end
     @test count(workspaces.unused) == 3
     put!(workspaces, workspace)
     @test count(workspaces.unused) == 4
+
+    workspace1 = take!(workspaces)
+    workspace2 = take!(workspaces)
+    workspace3 = take!(workspaces)
+    workspace4 = take!(workspaces)
+    @test_throws ErrorException take!(workspaces)
+    put!(workspaces, workspace1)
+    put!(workspaces, workspace2)
+    put!(workspaces, workspace3)
+    put!(workspaces, workspace4)
+    @test count(workspaces.unused) == 4
 end
 
 @testset "iteration calls take!" begin

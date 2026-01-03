@@ -4,11 +4,52 @@
 Abstract supertype for movement modes.
 
 These define the path distribution of all possible paths between source and targets.
+
+TODO: should Euclidean be outside the Spatial heterogeneity branch.
+
+```
+                           MovementMode
+                               ├───────────────────────────────┐
+                       LandscapeMovement                       │  
+                 ┌─────────────┴─────────────┐                 │
+                 │                           │                 │
+         ArrivingMovement            AbsorbingMovement         │
+      (Assumes immortality,       (Allows for mortality,       │
+      arrival is guaranteed)      arrival not guaranteed)      │
+                 │                           │                 │
+                 │                 (not yet implemented)       │       
+     ┌───────────┼───────────┐               │                 │       
+     │           │           │               │                 │       
+LeastCostPath   RSP   RandomWalk    AbsorbingRandomWalk    Euclidean   
+ (θ → ∞)    ,    (θ)       (θ → 0)
+```
+
+It is important to note that not all `MovemtentMode`s implement all `Measure`.
+Some due to logical incompatibility, and other simply have not been completed.
+
+| Measure                   | RSP | LCP | RandomWalk | Euclidean |
+|---------------------------|-----|-----|------------|-----------|
+| Distance                  |  ✓  |  ✓  |     ✗      |     ✓     |
+| ExpectedCost              |  ✓  |  ✓  |     ✓      |     ✗     |
+| FreeEnergyDistance        |  ✓  |  ✗  |     ✓      |     ✗     |
+| PowerMeanProximity        |  ✓  |  ✗  |     ✗      |     ✗     |
+| SurvivalProbability       |  ✓  |  ✗  |     ✗      |     ✗     |
+| FunctionalHabitat         |  ✓  |  ✓  |     ✓      |     ✗     |
+| Betweenness               |  ✓  |  ✓  |     ✓      |     ✗     |
+| SensitivityAnalysis       |  ✓  |  ✗  |     ✓*     |     ✗     |
+| EdgeBetweenness           |  ✓  |  ✗  |     ✗      |     ✗     |
+| LandscapeMatrix           |  ✓  |  ✓  |     ✓      |     ✗     |
+| KullbackLeiblerDivergence |  ✓  |  ✓  |     ✓      |     ✗     |
+| EigMax                    |  ✓  |  ✗  |     ✗      |     ✗     |
+
+* Only for sensitivity with respect to quality
 """
 abstract type MovementMode end
 
 distance_transformation(mm::MovementMode) = mm.distance_transformation
 diagvalue(mm::MovementMode) = mm.diagvalue
+
+abstract type LandscapeMovement <: MovementMode end
 
 """
     ArrivingMovement
@@ -16,7 +57,7 @@ diagvalue(mm::MovementMode) = mm.diagvalue
 MovementMode where the movement is conditional upon arrival at the target,
 assuming immortality within the context of movement.
 """
-abstract type ArrivingMovement <: MovementMode end
+abstract type ArrivingMovement <: LandscapeMovement end
 
 """
     AbsorbingMovement

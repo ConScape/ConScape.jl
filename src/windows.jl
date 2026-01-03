@@ -1,5 +1,48 @@
 # This file is a work in progress...
+"""
+    AbstractWindowedProblem
+
+Abstract supertype for [`WindowedProblem`](@ref) and [`BatchProblem`](@ref).
+"""
 abstract type AbstractWindowedProblem{P<:AbstractProblem} <: AbstractProblem end
+
+const WINDOW_LAYOUT = """
+## Visualising Window Layout
+
+Due to some windows being all zeros or missing values, 
+the windows that actually run may be something like this:
+                                                          
+```
+┏━━━━━━━━━━━━┳━━━┳━━━━━━━━━━━━┓┄┄┄┄┄┄┄┄┏━━━━━━━━━━━━┓
+┃            ┃░░░┃            ┃        ┃            ┃
+┃            ┃░░░┃            ┃        ┃            ┃
+┃            ┃░░░┃            ┃        ┃            ┃
+┃       1    ┃░░░┃    5       ┃    -   ┃        13  ┃
+┃            ┃░░░┃            ┃        ┃            ┃
+┃            ┣━━━╋━━━━━━━━┳━━━╋━━━━━━━━╋━━━┳━━━━━━━━┫
+┃            ┃▓▓▓┃░░░░░░░░┃▓▓▓┃        ┃▓▓▓┃░░░░░░░░┃
+┗━━━━━━━━━━━━╋━━━╋━━━━━━━━╋━━━┫        ┣━━━╋━━━━━━━━┫
+┆            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
+┆       -    ┃░░░┃    6   ┃░░░┃   10   ┃░░░┃    14  ┃
+┆            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
+┆            ┣━━━╋━━━━━━━━╋━━━╋━━━━━━━━╋━━━╋━━━━━━━━┫
+┆            ┃▓▓▓┃░░░░░░░░┃▓▓▓┃░░░░░░░░┃▓▓▓┃░░░░░░░░┃
+┆            ┣━━━┻━━━━━━━━╋━━━╋━━━━━━━━╋━━━╋━━━━━━━━┫
+┆            ┃            ┃░░░┃        ┃░░░┃        ┃
+┆       -    ┃        7   ┃░░░┃   11   ┃░░░┃    15  ┃
+┆            ┃            ┃░░░┃        ┃░░░┃        ┃
+┏━━━━━━━━━━━━╋━━━┓        ┃░░░┃        ┃░░░┃        ┃
+┃            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
+┃            ┗━━━╋━━━━━━━━┻━━━┻━━━━━━━━┻━━━┻━━━━━━━━┛
+┃       4        ┃    -            -             -  ┆
+┃                ┃                                  ┆
+┗━━━━━━━━━━━━━━━━┛┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘
+```
+
+Overlapping `buffer` areas are represented with ░ and ▓.
+Bottom and right windows may be smaller than the others,
+as pictured.
+"""
 
 buffer(p::AbstractWindowedProblem) = p.buffer
 buffer(p::AbstractProblem) = 0
@@ -13,7 +56,7 @@ solver(p::AbstractWindowedProblem) = solver(problem(p))
 """
     WindowedProblem(problem::AbstractProblem; kw...)
 
-Combine multiple compute operations into a single object, 
+Combine multiple compute operations into a single object,
 to be run over windowed grids.
 
 ## Arguments
@@ -22,17 +65,45 @@ to be run over windowed grids.
 
 ## Keywords
 
-- `centersize::Int`: The size of one side of the square of target 
-    pixels, in the center of the window.
-- `y`: The maximum number of pixels outside the target square.
+- `centersize::Int`: The size of one side of the square of target
+    pixels, in the center of the window. This is the key parameter for controlling
+    memory usage - see Memory section below.
+- `buffer::Int`: The number of pixels outside the target square (the dispersal context).
 - `shape`: whether to make the shape of the window a :square or a :circle.
     using `:circle` will give faster runtime and leave less artifacts.
 - `threaded`: Whether to run windows in parallel on separate threads. `false` by default.
-- `mosaic_return`: Whether to `mosaic` returned spatial rasters from each window, 
+- `mosaic_return`: Whether to `mosaic` returned spatial rasters from each window,
     or return them as a vector. This can be useful for diagnostics. `true` by default.
 - `gc`: Whether to run the garbage collector between windows. This may be important in
-    restricted memory environments, such as a small node on a SLURM cluster. 
+    restricted memory environments, such as a small node on a SLURM cluster.
     `true` by default. It may improve performance to set to `false`.
+
+## Memory usage
+
+For measures requiring dense matrices (`EigMax`, `SensitivityAnalysis`), memory scales as
+`O(sources × targets)` where:
+- `sources = (centersize + 2×buffer)²` (the full window)
+- `targets = centersize²` (the center region)
+
+Since `targets = centersize²`, **`centersize` is the key parameter for controlling memory**.
+Halving `centersize` reduces dense matrix memory by approximately 4×.
+
+Example memory estimates for `SensitivityAnalysis` at 10× resolution (buffer=190):
+
+| centersize | targets | Memory estimate |
+|------------|---------|-----------------|
+| 10         | 100     | ~1.2 GB         |
+| 15         | 225     | ~2.4 GB         |
+| 20         | 400     | ~4.1 GB         |
+| 30         | 900     | ~9.3 GB         |
+
+For a typical 4 GB/core cluster limit, use `centersize ≤ 20` for `SensitivityAnalysis`.
+
+To quickly test different `centersize` values after running an expensive `assess()` call,
+use [`estimate_memory_for_centersize`](@ref).
+
+$WINDOW_LAYOUT
+
 """
 @kwdef struct WindowedProblem{P} <: AbstractWindowedProblem{P}
     problem::P
@@ -40,7 +111,7 @@ to be run over windowed grids.
     buffer::Int
     threaded::Bool = false
     shape::Symbol = :circle
-    gc::Bool = true 
+    gc::Bool = true
     test_windows::Bool = false # TODO: remove this field
     mosaic_return::Bool = true
     timed::Bool = false
@@ -58,18 +129,44 @@ WindowedProblem(problem; kw...) = WindowedProblem(; problem, kw...)
 centersize(p::WindowedProblem) = p.centersize, p.centersize
 isthreaded(p::WindowedProblem) = p.threaded
 
-struct WindowedInit{P,R} <: Initialisation
+mutable struct WindowedInit{P,R} <: Initialisation
     problem::P
     rast::R
     sparse_sizes::Vector{Tuple{Int,Int}}
     ranges::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
     indices::Vector{Int}
     sorted_indices::Vector{Int}
+    workspaces::WorkspaceCollection
+    sparse_builders::SparseBuilders
+    function WindowedInit(problem::P, rast::R, sparse_sizes, ranges, indices, sorted_indices, workspaces, sparse_builders) where {P,R}
+        wi = new{P,R}(problem, rast, sparse_sizes, ranges, indices, sorted_indices, workspaces, sparse_builders)
+        # Register finalizer to clean up mmap files if any
+        isempty(mat_workspaces(workspaces).mmap_paths) || finalizer(_cleanup_windowed_init!, wi)
+        return wi
+    end
+end
+
+function _cleanup_windowed_init!(wi::WindowedInit)
+    cleanup!(mat_workspaces(wi))
+    return nothing
 end
 
 problem(wi::WindowedInit) = wi.problem
+workspaces(wi::WindowedInit) = wi.workspaces
+vec_workspaces(wi::WindowedInit) = vec_workspaces(workspaces(wi))
+mat_workspaces(wi::WindowedInit) = mat_workspaces(workspaces(wi))
+sp_workspaces(wi::WindowedInit) = sp_workspaces(workspaces(wi))
+sparse_builders(wi::WindowedInit) = wi.sparse_builders
 
-function init(p::WindowedProblem, rast::RasterStack; 
+"""
+    cleanup!(wi::WindowedInit)
+
+Explicitly clean up mmap files. Called automatically by finalizer,
+but can be called manually for immediate cleanup.
+"""
+cleanup!(wi::WindowedInit) = _cleanup_windowed_init!(wi)
+
+function init(p::WindowedProblem, rast::RasterStack;
     window_ranges=window_ranges(p, rast),
     sparse_sizes=nothing,
     indices=nothing,
@@ -77,7 +174,7 @@ function init(p::WindowedProblem, rast::RasterStack;
     kw...
 )
     window_ranges = vec(window_ranges)
-    # Estimate grid sizes. This is expensive, it us usually passed in from an Assessment
+    # Estimate grid sizes. This is expensive, it is usually passed in from an Assessment
     sparse_sizes = isnothing(sparse_sizes) ? _estimate_sparse_sizes(p, rast; window_ranges) : sparse_sizes |> vec
     @assert length(window_ranges) == length(sparse_sizes)
 
@@ -85,15 +182,37 @@ function init(p::WindowedProblem, rast::RasterStack;
     indices = isnothing(indices) ? _select_indices(p, rast; window_ranges, sparse_sizes) : indices
     sorted_indices = last.(sort!(first.(sparse_sizes[indices]) .=> indices; rev=true))
 
+    # Pre-allocate workspaces sized for the largest window
+    # These will be resized as needed for each window, avoiding repeated allocations
+    # Use already-computed sparse_sizes to find max (avoids re-scanning raster)
+    _, max_idx = findmax(prod, sparse_sizes)
+    max_size = sparse_sizes[max_idx]
+    inner_problem = problem(p)
+
+    # Create mat_workspaces - optionally mmap'd to reduce GC pressure
+    mat_ws = _create_mat_workspaces(max_size, num_mat_workspaces(inner_problem), mmap_path(inner_problem))
+
+    workspaces = WorkspaceCollection(
+        Workspaces(max_size[1], num_vec_workspaces(inner_problem)),
+        mat_ws,
+        Workspaces(spzeros(max_size[1], max_size[1]), num_sp_workspaces(inner_problem)),
+    )
+    sparse_builders = SparseBuilders()
+
     return WindowedInit(
-        p, rast, sparse_sizes, window_ranges, indices, sorted_indices
+        p, rast, sparse_sizes, window_ranges, indices, sorted_indices, workspaces, sparse_builders
     )
 end
 function init(wi::WindowedInit, i::Int; verbose=false)
     ranges = wi.ranges[i]
     verbose && println("Initialising window from ranges $ranges...")
     rast = _get_window_with_zeroed_buffer(wi, ranges)
-    init(problem(problem(wi)), rast; verbose)
+    # Pass pre-allocated workspaces to avoid repeated allocations
+    init(problem(problem(wi)), rast;
+        verbose,
+        workspaces=workspaces(wi),
+        sparse_builders=sparse_builders(wi),
+    )
 end
 
 solve(p::WindowedProblem, rast::RasterStack; verbose=false, kw...) =
@@ -168,30 +287,6 @@ function solve!(window_init::WindowedInit;
             output_stacks
         end
     end
-end
-
-function _max_estimated_sparse_sizes(p::AbstractWindowedProblem, rast; kw...)
-    sizes = _estimate_sparse_sizes(p, rast; kw...)
-    _, i = findmax(prod, sizes)
-    return sizes[i]
-end
-
-
-# Calculate the maximum number of source and target values in any window
-function _estimate_sparse_sizes(p::AbstractWindowedProblem, rast;
-    window_ranges=window_ranges(p, rast)
-)
-    # Calculate the maximum number of source and target values in any window
-    return map(r -> _estimate_sparse_sizes(p, rast, r), window_ranges)
-end
-
-# This function extimates problem size without actually constructing grids.
-# It cant be too small, but may be too large
-_estimate_sparse_sizes(p::AbstractProblem, rast) = _estimate_sparse_sizes(p, rast, axes(rast))
-function _estimate_sparse_sizes(p::AbstractProblem, rast, ranges::Tuple)
-    source_count = _valid_sources(count, p, rast, ranges)
-    target_count = _valid_targets(count, p, rast, ranges)
-    return source_count, target_count
 end
 
 """
@@ -269,6 +364,7 @@ rast = get_my_rasterstack()
 # Setting `to` to the original raster ensures the output matches it spatially.
 mosaic(batch_problem; to=rast, filename="dest_filename.tif")
 ```
+$WINDOW_LAYOUT
 """
 @kwdef struct BatchProblem{P} <: AbstractWindowedProblem{P}
     problem::P
@@ -481,7 +577,7 @@ function _get_window_with_zeroed_buffer(
     end
 
     targetquality = rebuild(tq; data=tq_sparse)
-    sourcequality = modify(Array, _get_sourcequality(window)::Raster)
+    sourcequality = Rasters.modify(Array, _get_sourcequality(window)::Raster)
     
     # Handle :circle shaped buffers
     if shape == :circle
@@ -542,6 +638,7 @@ Rasters.mosaic(p::BatchProblem; kw...) = Rasters.mosaic(sum, p::BatchProblem; kw
 function Rasters.mosaic(f::Function, p::BatchProblem; to::RasterStack, filename=nothing, force=false, progress=true, kw...)
     paths = filter(isdir, batch_paths(p, to))
     isempty(paths) && error("No directories exist to mosaic, have any batches been run?")
-    stacks = [RasterStack(path; lazy=true) for path in paths]
+    # GDAL reads tifs with (X, Y) order, permute to match target dims
+    stacks = [permutedims(RasterStack(path; lazy=true), dims(to)) for path in paths]
     return mosaic(f, stacks; to, filename, force, progress, missingval=NaN, kw...)
 end

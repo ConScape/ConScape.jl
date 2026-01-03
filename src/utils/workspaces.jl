@@ -1,39 +1,47 @@
 
 """
     Workspaces(length::Int, n::Int)
-    Workspaces(workspaces::Vector)
+    Workspaces(size::Tuple, n::Int)
+    Workspaces(template::SparseMatrixCSC, n::Int)
 
-Workspaces aim to avoid repeated allocations of similar arrays.
+A pool of reusable arrays to avoid repeated allocations.
 
-Create a workspace of `n` `Vector{Float64}` of length `length`,
-or pass in a custom Vector of Vectors.
+## Constructors
+- `Workspaces(length, n)`: creates `n` vectors of given length
+- `Workspaces(size, n)`: creates `n` matrices of given size
+- `Workspaces(template, n)`: creates `n` sparse matrices matching template's pattern
 
-Workspace vectors can be retrieved with `take!` and returned with `put!`.
+## Usage
+- `take!(ws)`: get an unused workspace (errors if none available)
+- `put!(ws, w)`: return a workspace to the pool
+- `free!(ws)`: mark all workspaces as unused
+- `resize!(ws, len)`: resize all workspaces
 
-The whole workspace can be free'd with `free!`, 
-and all workspace arrays can be resized at once with `resize!(workspace, length)`.
-
-Iterating over a `Workspaces` object `take!`s the next unused workspace(s).
-
-```juila
+## Example
+```julia
 ws = Workspaces(100, 5)
-workspace1, workspace2 = ws
+workspace1, workspace2 = ws  # iteration calls take!
 workspace3 = take!(ws)
-# And return two of them.
-put!(ws, workspace1)
+put!(ws, workspace1)         # return to pool
 put!(ws, workspace3)
-````
+free!(ws)                    # mark all as unused
+```
 """
-struct Workspaces{W}
+struct Workspaces{W,N}
+    size::NTuple{N,Int}
     workspaces::Vector{W}
     unused::BitVector
+    mmap_paths::Vector{String}  # Empty if not mmap-backed
 end
-Workspaces(workspaces::Vector) = Workspaces(workspaces, trues(length(workspaces)))
-Workspaces(len::Int, n::Int) = Workspaces(Float64, len, n)
-Workspaces(::Type{T}, len::Int, n::Int) where T = 
-    Workspaces([Vector{T}(undef, len) for _ in 1:n])
+Workspaces(size::Tuple, workspaces::Vector) = Workspaces(size, workspaces, trues(length(workspaces)), String[])
+Workspaces(size::Union{Int,Tuple}, n::Int) = Workspaces(Float64, size, n)
+Workspaces(::Type{T}, length::Int, n::Int) where T = Workspaces(T, (length,), n)
+Workspaces(::Type{T}, size::NTuple{N,Int}, n::Int) where {T,N} =
+    Workspaces(size, Array{T,N}[Array{T}(undef, size...) for _ in 1:n], trues(n), String[])
+Workspaces(template::SparseMatrixCSC{Tv,Ti}, n::Int) where {Tv,Ti} =
+    Workspaces(size(template), SparseMatrixCSC{Tv,Ti}[copy(template) for _ in 1:n], trues(n), String[])
 
-function Base.take!(ws::Workspaces)
+function Base.take!(ws::Workspaces{T})::T where T
     # Find the first unused workspace
     i = findfirst(ws.unused)
     # Error if there are no unused workspaces
@@ -43,7 +51,8 @@ function Base.take!(ws::Workspaces)
     # Return the workspace
     return ws.workspaces[i]
 end
-function Base.put!(ws::Workspaces, w)
+Base.put!(ws::Workspaces, w::AbstractArray) = put!(ws, parent(w))
+function Base.put!(ws::Workspaces, w::Array)
     # Find the which workspace `w` was
     i = findfirst(x -> x === w, ws.workspaces)
     # Error if its not actually a workspace
@@ -54,13 +63,152 @@ function Base.put!(ws::Workspaces, w)
 end
 Base.iterate(ws::Workspaces, args...) = take!(ws), nothing
 Base.length(ws::Workspaces) = length(first(ws.workspaces))
-function Base.resize!(ws::Workspaces, n::Int) 
-    ws = Workspaces(map(w -> resize!(w, n), ws.workspaces))
-    length(ws) == n || _not_matching_error(ws, n)
-    return ws
+Base.size(ws::Workspaces) = size(first(ws.workspaces))
+
+function Base.resize!(ws::Workspaces{V}, len::Int)::Workspaces{V} where {V<:AbstractVector}
+    for (i, w) in enumerate(ws.workspaces)
+        ws.workspaces[i] = resize!(w, len)
+    end
+    return free!(Workspaces((len,), ws.workspaces, ws.unused, ws.mmap_paths))
+end
+function Base.resize!(ws::Workspaces{A}, sze::Tuple)::Workspaces{A} where {A<:AbstractArray}
+    isempty(ws.workspaces) && return free!(Workspaces(sze, ws.workspaces, ws.unused, ws.mmap_paths))
+    size(ws) == sze && return free!(ws)
+    if !isempty(ws.mmap_paths)
+        # Mmap: truncate files to new size (no zeroing, caller writes first)
+        for (i, path) in enumerate(ws.mmap_paths)
+            finalize(ws.workspaces[i])
+            ws.workspaces[i] = _create_mmap_matrix(sze, path)
+        end
+    else
+        len = prod(sze)
+        for (i, w) in enumerate(ws.workspaces)
+            ws.workspaces[i] = reshape(resize!(vec(w), len), sze)
+        end
+    end
+    return free!(Workspaces(sze, ws.workspaces, ws.unused, ws.mmap_paths))
+end
+function Base.resize!(ws::Workspaces{A}, sze::Tuple{Int,Int})::Workspaces{A} where {A<:SparseMatrixCSC}
+    for (i, w) in enumerate(ws.workspaces)
+        ws.workspaces[i] = sparse!(w.csccolptr, w.cscrowval, w.nzvals, sze...)
+    end
+    return free!(Workspaces(sze, ws.workspaces, ws.unused, ws.mmap_paths))
 end
 
-@noinline _not_matching_error(ws, n) =
-    error("Not matching $(length(ws)), $n, $(map(length, ws.workspaces))")
+@noinline _not_matching_error(ws, sze) =
+    error("Not matching $(length(ws)), $sze, $(map(size, ws.workspaces))")
 
+"""
+    free!(ws::Workspaces)
+    free!(wc::WorkspaceCollection)
+
+Mark all workspaces as unused/available for `take!`.
+
+## When to call free!
+
+- After `_allocate_workspaces!`: marks fresh/resized workspaces as available
+- At start of `_solve_connectedgraph!`: resets all workspaces for a new solve
+- In `TargetInit`: frees only vec_workspaces between targets (mat/sp persist)
+
+Note: `free!` does NOT clear the data in workspaces - it only marks them as
+available. The data may be overwritten by the next `take!` user.
+"""
 free!(ws::Workspaces) = (ws.unused .= true; ws)
+
+"""
+    _create_mmap_matrix(size::Tuple{Int,Int}, path::String) -> Matrix{Float64}
+
+Create a writable memory-mapped matrix backed by a file at the given path.
+Uses truncate for fast allocation - contents are uninitialized.
+"""
+function _create_mmap_matrix(size::Tuple{Int,Int}, path::String)
+    # Create file with correct size
+    open(io -> truncate(io, prod(size) * sizeof(Float64)), path, "w")
+    # Open read+write and mmap (closing io is safe, kernel retains mapping)
+    io = open(path, "r+")
+    arr = Mmap.mmap(io, Matrix{Float64}, size)
+    close(io)
+    return arr
+end
+
+"""
+    _create_mat_workspaces(size, n, mmap_path) -> Workspaces
+
+Create matrix workspaces, optionally memory-mapped.
+
+WARNING: Only use mmap with LOCAL storage (SSD/NVMe). Network-attached storage
+(NFS, Lustre) will have high latency and degrade performance significantly.
+"""
+function _create_mat_workspaces(size::Tuple{Int,Int}, n::Int, mmap_path::Nothing)
+    return Workspaces(size, n)
+end
+function _create_mat_workspaces(size::Tuple{Int,Int}, n::Int, mmap_path::String)
+    isdir(mmap_path) || mkpath(mmap_path)
+    paths = String[]
+    workspaces = Matrix{Float64}[]
+    for i in 1:n
+        path = joinpath(mmap_path, "mat_workspace_$(i)_$(time_ns()).bin")
+        push!(paths, path)
+        push!(workspaces, _create_mmap_matrix(size, path))
+    end
+    return Workspaces(size, workspaces, trues(n), paths)
+end
+
+"""
+    cleanup!(ws::Workspaces)
+
+Clean up mmap files if this workspace is mmap-backed. No-op for regular arrays.
+"""
+function cleanup!(ws::Workspaces)
+    for w in ws.workspaces
+        finalize(w)
+    end
+    for path in ws.mmap_paths
+        isfile(path) && rm(path)
+    end
+    empty!(ws.mmap_paths)
+    return nothing
+end
+
+"""
+    WorkspaceCollection
+
+A container for all workspace types used in ConScape computations.
+
+## Fields
+- `vec`: Vector workspaces for target-level computations
+- `mat`: Dense matrix workspaces for full Z/Y matrices (may be mmap-backed)
+- `sp`: Sparse matrix workspaces for P, W, IW, etc.
+
+## Lifecycle
+1. Allocated via `_allocate_workspaces!` during GridGraphInit creation
+2. Resized via `_allocate_workspaces!` for each ConnectedGraph
+3. `free!(wc)` called at start of `_solve_connectedgraph!` to reset all
+4. `free!(vec_workspaces(wc))` called between targets in TargetInit
+5. Sparse workspaces persist through solve (used by precalculation results)
+
+## Accessors
+- `vec_workspaces(wc)`, `mat_workspaces(wc)`, `sp_workspaces(wc)`: get pool
+- `vec_workspace(wc)`, `mat_workspace(wc)`, `sp_workspace(wc)`: take! one workspace
+"""
+struct WorkspaceCollection
+    vec::Workspaces{Vector{Float64},1}
+    mat::Workspaces{Matrix{Float64},2}
+    sp::Workspaces{SparseMatrixCSC{Float64,Int64},2}
+end
+
+vec_workspaces(wc::WorkspaceCollection) = wc.vec
+mat_workspaces(wc::WorkspaceCollection) = wc.mat
+sp_workspaces(wc::WorkspaceCollection) = wc.sp
+
+vec_workspace(wc::WorkspaceCollection) = take!(vec_workspaces(wc))
+mat_workspace(wc::WorkspaceCollection) = take!(mat_workspaces(wc))
+sp_workspace(wc::WorkspaceCollection) = take!(sp_workspaces(wc))
+
+function free!(wc::WorkspaceCollection)
+    free!(wc.vec)
+    free!(wc.mat)
+    free!(wc.sp)
+    return wc
+end
+
