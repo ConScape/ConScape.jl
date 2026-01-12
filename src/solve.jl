@@ -10,13 +10,7 @@ solve(m::Union{MeasureTuple,MeasureNamedTuple}, p::ConScapeProblem, input::Union
     solve!(init(m, p, input, args...; kw...))
 solve(m::Measure, p::ConScapeProblem, input::Union{GridGraph,RasterStack}, args...; kw...) = 
     only(solve!(init(m, p, input, args...; kw...)))
-function solve(
-    m::MeasureNamedTuple, movement::MovementMode, x::Union{GridGraph,RasterStack}, args...; kw...
-) 
-    solve!(init(m, movement, x, args...; kw...))
-end
-solve(m::Measure, movement::MovementMode, x::Union{GridGraph,RasterStack}, args...; kw...) =
-    only(values(solve!(init(m, movement, x, args...; kw...))))
+# Catch mistaken use of `solve` rather than `solve!`
 solve(::Initialisation, args...; kw...) = _solve_initialisation_error()
 solve(a1::Union{ConScapeProblem,Measure,MeasureTuple,MeasureNamedTuple}, ::Initialisation, args...; kw...) = _solve_initialisation_error()
 
@@ -101,7 +95,7 @@ function _solve_target!(ti; finallevel)
         else
             result = compute_target!(output, finallevel, measure, ti_m)
             # Store simple array outputs
-            if result isa AbstractVector
+            if result isa Vector
                 store[key] = readonlyarray(result)
             end
         end
@@ -109,7 +103,7 @@ function _solve_target!(ti; finallevel)
 
     if finallevel isa TargetLevel
         # When just running one target we may return Raster/RasterStack
-        return _maybe_rasterstack(measures, outputs, ti)
+        return _maybe_rasterstack(measures_outputs(ti), ti)
     else
         # Otherwise outputs as-is
         return outputs

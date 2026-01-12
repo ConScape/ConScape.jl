@@ -73,15 +73,15 @@ blocks going into this computation.
 
 In this case our source and target qualities are the same:
 
-```{julia}
-qˢ = qᵗ = vec(rast.quality)
-```
-
 Then, we compute the proximity matrix between $s$ and $t$ using the RSP expected cost:
 
 ```{julia}
-ec = solve(ExpectedCost(), rsp, rast)
+connectedgraph_init = init(ExpectedCost(), rsp, rast, 1)
+# Returns a vector of sparse matrices (one per connected subgraph)
+ec = solve!(connectedgraph_init).ExpectedCost
 K = map(t -> iszero(t) ? t : exp(-t / 2000), ec);
+qˢ = ConScape.sourcequality(connectedgraph_init)
+qᵗ = ConScape.targetquality(connectedgraph_init)
 ```
 
 See Notebook [ecological distance](/notebooks/nbk_distance_metrics.qmd) for a
@@ -91,7 +91,7 @@ From the these quality vectors $q^s$ and $q^t$, and the proximity matrix
 $\mathbf{K}$ we compute the 'landscape matrix' $\mathbf{M}$:  
 
 ```{julia}
-M = qˢ .* K .* qᵗ';
+M = qˢ .* K .* qᵗ'
 ```
 
 The landscape matrix $\mathbf{M}$ can be summarized either through summation or
@@ -104,9 +104,11 @@ how well suitable target habitat is connected to suitable sources:
 #| label: fig-target_functionality
 #| fig-cap: Habitat functionality of each pixel as a target (i.e. in receiving suitable habitat from sources).
 
-func_habᵗ = vec(sum(replace(M, NaN => 0), dims=1)); # sum over rows
+func_habᵗ = vec(sum(replace(M, NaN => 0), dims=1)) # sum over rows
+func_habᵗ_rast = fill(NaN, dims(rast))
+func_habᵗ_rast[ConScape.sourceids(connectedgraph_init)] .= func_habᵗ 
 # Plot as a spatial Raster
-plot(Raster(func_habᵗ, dims(rast)); axis=(; title="Functional habitat"))
+plot(func_habᵗ_rast; axis=(; title="Target Functional habitat"))
 ```
 
 Similarly, by summing over all columns, we quantify how well suitable source
@@ -117,17 +119,18 @@ habitat is connected to suitable target habitat:
 
 # Sum over columns
 func_habˢ = vec(sum(replace(M, NaN => 0), dims=2));
-# Convert vector to a spatial Raster
-func_habˢrast = Raster(func_habˢ, dims(rast))
+func_habˢ_rast = fill(NaN, dims(rast))
+func_habˢ_rast[ConScape.sourceids(connectedgraph_init)] .= func_habˢ 
 # Plot
-plot(func_habˢrast; axis=(; title="Functional habitat"))
+plot(func_habˢ_rast; axis=(; title="Source functional habitat"))
 ```
 
 We could then multiply the functionality of a pixel as a source and as a target
 to identify pixels that are simultaneously functional as source and target.
 
 ```{julia}
-func_hab_to = func_habˢ .* func_habᵗ;
+func_habˢᵗ = func_habˢ .* func_habᵗ;
+plot(func_habˢ_rast; axis=(; title="Source*Target Functional habitat"))
 ```
 
 Note that this last computation is only possible, if func$^s$ and func$^t$ are
@@ -148,7 +151,7 @@ rsp = RSP(;
     proximity_measure=ExpectedCost(), 
     distance_transformation=x -> exp(-x/2000)
 );
-func_hab = solve(FunctionalHabitat(), rsp, rast)
+func_hab = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast)
 plot(func_hab; axis=(; title="Functional habitat"))
 ```
 is identical to the one in Fig. [@fig-target_functionality].
@@ -159,18 +162,14 @@ In addition to summarizing the landscape matrix $\mathbf{M}$ through summation,
 we can also use Eigenanalysis:
 
 ```{julia}
-# vˡ, λ, vʳ= ConScape.eigmax(h, connectivity_function=
-    # ConScape.expected_cost, distance_transformation=x -> exp(-x/2000))
-
-# vʳ = real.(vʳ)
-# vˡ = real.(vˡ);
+((vˡ, λ, vʳ),) = solve(ConScapeProblem(EigMax(), rsp), rast)
 ```
 
 Where $\lambda$ corresponds to the 'metapopulation capacity' in metapopulation
 ecology ([@hanski2000metapopulation]):
 
 ```{julia}
-# λ
+λ
 ```
 
 The interpretation of this value outside the context of metapopulation theory
@@ -225,7 +224,7 @@ to a suitable source pixel:
 #| fig-cap: Habitat functionality based on survival probability.
 
 rsp = RSP(; theta, proximity_measure=SurvivalProbability())
-func_hab_surv = solve(FunctionalHabitat(), rsp, rast)
+func_hab_surv = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast)
 plot(func_hab_surv; axis=(; title="Habitat functionality"))
 ```
 
@@ -246,7 +245,7 @@ distance:
 
 ```{julia}
 lcp = LeastCostPath(; distance_transformation=x -> exp(-x/40))
-func_hab_lcp = solve(FunctionalHabitat(), lcp, rast)
+func_hab_lcp = solve(ConScapeProblem(FunctionalHabitat(), lcp), rast)
 ```
 
 The 'connectivity of a landscape' from ([@drielsma2007spatial]) is then the sum

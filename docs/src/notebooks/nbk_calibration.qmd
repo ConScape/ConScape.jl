@@ -5,23 +5,34 @@ format: html
 
 ## Introduction
 
-This notebook shows the calibration of the paramters for an ecological network, which we illustrate with the reindeer data set provided with the ConScape library (Van Moorter et al. 2023). 
+This notebook shows the calibration of the paramters for an ecological network,
+which we illustrate with the reindeer data set provided with the ConScape
+library (Van Moorter et al. 2023). 
 
 An ecological network is based on four key parameters:
-  
-1. **Habitat suitabiltiy (landscape quality):** indicates habitat suitability spatially, represented as a quality map.
 
-2. **Habitat permeabiltiy:** indicates the ease of movement along an edge connecting two adjacent nodes, which consists of two components:  
+1. **Habitat suitabiltiy (landscape quality):** indicates habitat suitability
+   spatially, represented as a quality map.
 
-    _Step likelihood:_ the likelihood of moving along an edge, which defines the baseline transition probabilities
+2. **Habitat permeabiltiy:** indicates the ease of movement along an edge
+   connecting two adjacent nodes, which consists of two components:  
+
+    _Step likelihood:_ the likelihood of moving along an edge, which defines the
+    baseline transition probabilities
 
     _Step cost:** the cost associated with this movement.
 
-3. **Path Optimality ($\theta$):** describes how closely the organism’s movements follow the most cost-effective route.
+3. **Path Optimality ($\theta$):** describes how closely the organism’s
+   movements follow the most cost-effective route.
 
-4. **Proximity transformation:** a measure of how "ecologically close" two areas are, based on the length and cost of connecting paths.
+4. **Proximity transformation:** a measure of how "ecologically close" two areas
+   are, based on the length and cost of connecting paths.
 
-In this notebook we will demonstrate the calibration of these parameters using the ConScape library for Julia, we are loading the required libraries. These libraries can be installed, if they haven't been previously (for instance: `using Pkg; Pkg.add("some_library")`).
+In this notebook we will demonstrate the calibration of these parameters using
+the ConScape library for Julia, we are loading the required libraries. 
+
+These libraries can be installed, if they haven't been previously (for instance:
+`using Pkg; Pkg.add("SomeLibrary")`).
 
 ```{julia}
 using ConScape, SparseArrays, LinearAlgebra
@@ -33,7 +44,14 @@ using Printf
 
 ## Habitat suitability and permeability
 
-Guisan et al. (2017) provide a great introduction to habitat suitability models. Several modeling frameworks exist in Julia for habitat suitability and species distributions, such as Poisot et al. (2025) created the SpeciesDistributionsToolkit.jl and Van der Deuren leads the development of SpeciesDistributionModels.jl based on Julia's Machine Learning ecosystem. Such models formed the basis for the habitat suitability estimation by Panzacchi et al. (2015), which are provided with the library.
+Guisan et al. (2017) provide a great introduction to habitat suitability models.
+Several modeling frameworks exist in Julia for habitat suitability and species
+distributions, such as Poisot et al. (2025) created the
+SpeciesDistributionsToolkit.jl and Van der Deuren leads the development of
+SpeciesDistributionModels.jl based on Julia's Machine Learning ecosystem. 
+
+Such models formed the basis for the habitat suitability estimation by Panzacchi
+et al. (2015), which are provided with the library.
 
 ```{julia}
 #| echo: true
@@ -41,21 +59,20 @@ Guisan et al. (2017) provide a great introduction to habitat suitability models.
 #| label: fig-suitability
 #| fig-cap: "Map of suitable habitat in the Snøhetta reindeer area."
 
-datadir = joinpath(dirname(dirname(pathof(ConScape))), "data") # sets the directory to where the data from the library are stored, you can replace this to a custom directory
-
+# sets the directory to where the data from the library are stored, you can replace this to a custom directory
+datadir = joinpath(dirname(dirname(pathof(ConScape))), "data") 
 qual_file = "hab_qual_1000.asc"
+quality = Raster(joinpath(datadir, qual_file), missingval=NaN)
 
-if !isfile(joinpath(datadir, qual_file))
-    error("File not found: $qual_file")
-end
-
-qualities = Raster(joinpath(datadir, qual_file), missingval=NaN)
-
-Makie.plot(qualities, colormap=cgrad([:lightgrey, :green]))
+Makie.plot(quality; colormap=cgrad([:lightgrey, :green]))
 ```
 
 
-As reviewed by Zeller et al. (2012) different data can be used to estimate habitat permeability with tracking data (e.g. GPS-tracking) as the most informative. Panzacchi et al. (2016) used such GPS tracking data to parameterize step selection functions, which were used to estimate the likelihood of moving across the landscape.     
+As reviewed by Zeller et al. (2012) different data can be used to estimate
+habitat permeability with tracking data (e.g. GPS-tracking) as the most
+informative. Panzacchi et al. (2016) used such GPS tracking data to parameterize
+step selection functions, which were used to estimate the likelihood of moving
+across the landscape.     
 
 ```{julia}
 #| echo: true
@@ -63,22 +80,29 @@ As reviewed by Zeller et al. (2012) different data can be used to estimate habit
 #| label: fig-permeability
 #| fig-cap: "Map of habitat permeability in the Snøhetta reindeer area."
 
-perm_file = "mov_prob_1000.asc"
+steplikelihood_file = "mov_prob_1000.asc"
+steplikelihood = Raster(joinpath(datadir, steplikelihood_file), missingval=NaN)
 
-if !isfile(joinpath(datadir, perm_file))
-    error("File not found: $perm_file")
-end
-
-permeabilities = Raster(joinpath(datadir, perm_file), missingval=NaN)
-
-Makie.plot(permeabilities, colormap=cgrad(:acton))
+Makie.plot(steplikelihood, colormap=cgrad(:acton))
 ```
 
-We do not have access to independent cost data and assumed a functional relationship between the likelihood and cost of movement: $cost = -\log(likelihood)$.
+We do not have access to independent cost data and assumed a functional
+relationship between the likelihood and cost of movement: $cost =
+-\log(likelihood)$.
 
 ## Path Optimality - $\theta$
 
-Movement of animals is often neither completely random nor fully deterministic (Panzacchi et al. 2016; Goicolea et al. 2021). The Randomized Shortest Paths (RSP) framework interpolates across this continuum using an optimality parameter ($\theta$) by interpolating from random ($\theta \leftarrow 0$) to optimal ($\theta \leftarrow \infty$), it should be noted that due to numerical issues the RSP-algorithm in ConScape cannot compute network metrics near these extremes and requires the RandomWalk and LeastCostPath algorithms instead. The determination of the $\theta$ parameter is an active field of research, e.g. Kivimäki et al. (2020). Here we will use visual inspection to choose a value that focuses on path costs, while accounting for multiple paths (see Van Moorter et all. 2021 for further discussion).
+Movement of animals is often neither completely random nor fully deterministic
+(Panzacchi et al. 2016; Goicolea et al. 2021). The Randomized Shortest Paths
+(RSP) framework interpolates across this continuum using an optimality parameter
+($\theta$) by interpolating from random ($\theta \leftarrow 0$) to optimal
+($\theta \leftarrow \infty$), it should be noted that due to numerical issues
+the RSP-algorithm in ConScape cannot compute network metrics near these extremes
+and requires the RandomWalk and LeastCostPath algorithms instead. The
+determination of the $\theta$ parameter is an active field of research, e.g.
+Kivimäki et al. (2020). Here we will use visual inspection to choose a value
+that focuses on path costs, while accounting for multiple paths (see Van Moorter
+et all. 2021 for further discussion).
 
 To visualize the distribution over paths, we picked two points:
 
@@ -91,16 +115,18 @@ target = [2*10^5, 6.910*10^6]
 #target = [2.15*10^5, 6.575*10^6]
 ```
 
-These points are `{julia} sqrt((source[1]-target[1])^2+(source[2]-target[2])^2)` meter apart.
-
-We set all other habitat qualities to zero, except for these two points, which we set to one:
+These points are `{julia} sqrt((source[1]-target[1])^2+(source[2]-target[2])^2)`
+meter apart. We set all other habitat qualities to zero, except for these two
+points, which we set to one:
 
 ```{julia}
-qualities[.!isnan.(qualities)] .= 0
-target_qualities = copy(qualities)
+# Qualities is dense
+quality[.!isnan.(quality)] .= 0
+# Target qualities we make sparse to minimise computations
+target_quality = modify(sparse, quality .* 0)
 
-qualities[X=Near(source[1]), Y=Near(source[2])] = 1
-target_qualities[X=Near(target[1]), Y=Near(target[2])] = 1
+quality[X=Near(source[1]), Y=Near(source[2])] = 1
+target_quality[X=Near(target[1]), Y=Near(target[2])] = 1
 ```
 
 ```{julia}
@@ -109,7 +135,7 @@ target_qualities[X=Near(target[1]), Y=Near(target[2])] = 1
 #| label: fig-two_points
 #| fig-cap: "Map of the two points used to inspect the distribution over paths."
 
-tmp = copy(qualities)
+tmp = copy(quality)
 
 tol = 2000
 tmp[X=source[1]-tol .. source[1]+tol, Y=source[2]-tol .. source[2]+tol] .= 1
@@ -118,22 +144,24 @@ Makie.plot(tmp, colormap=cgrad([:lightgrey, :black]))
 ```
 
 
-We set up a problem, see details on this elsewhere, and loop over a range of $\theta$ values to demonstrate the effect of path optimality.
+We set up a problem, see details on this elsewhere, and loop over a range of
+$\theta$ values to demonstrate the effect of path optimality.
 
 ```{julia}
 measures = (; betq=Betweenness(QualityWeighted()))
-distance_transformation = (nodist=nothing)
 
-permeabilities[isnan.(qualities)] .= NaN
-rast = RasterStack((; affinities=permeabilities, source_qualities=qualities, target_qualities=modify(sparse, target_qualities)))
+steplikelihood[isnan.(qualities)] .= NaN
+rast = RasterStack((; steplikelihood, quality, target_quality))
 
 θs = [1, 0.5, 0.1, 0.01, 0.001, 0.0001]
 θs = 10 .^ (.-(0:0.25:5))
 
 betqs = map(θs) do θ
-    movement_mode = RandomisedShortestPath(ConScape.ExpectedCost(); distance_transformation=nothing, theta=θ)
-    problem = ConScapeProblem(; measures, movement_mode)
-    ConScape.solve(problem, rast).betq
+movement = RandomisedShortestPath(ConScape.ExpectedCost(); 
+distance_transformation=nothing, theta=θ
+)
+problem = ConScapeProblem(; measures, movement)
+solve(problem, rast).betq
 end
 betw = cat(betqs...; dims=Dim{:theta}(θs))
 ```
@@ -146,8 +174,8 @@ fig, ax, p = image(betw[theta=At(first(θs))])
 theta_sg = Slider(fig[2,1], range=θs)
 
 theta_betw = lift(theta_sg.value) do theta
-    ax.title = "theta: " * string(theta)
-    betw[theta=At(theta)]    
+ax.title = "theta: " * string(theta)
+betw[theta=At(theta)]    
 end
 image!(ax, theta_betw, colormap=:magma)
 fig
@@ -158,13 +186,15 @@ fig
 #| eval: true
 
 record(fig, "theta_animation.mp4", θs;
-        framerate = 1) do theta
-    theta_sg.value[] = theta
-    notify(theta_sg.value)
+framerate = 1) do theta
+theta_sg.value[] = theta
+notify(theta_sg.value)
 end
 ```
 
-Based on the visual inspection we will pick an optimality value of 0.5, which is quite optimal, but still considers alternative paths with somewhat higher costs than the lowest one.
+Based on the visual inspection we will pick an optimality value of 0.5, which is
+quite optimal, but still considers alternative paths with somewhat higher costs
+than the lowest one.
 
 ```{julia}
 θ = 0.5
@@ -172,27 +202,32 @@ Based on the visual inspection we will pick an optimality value of 0.5, which is
 
 ## Distance convertion rate
 
-The next challenge is to find a transformation of the cost distance to the proximity, different transformation kernels exist (e.g. Bullock et al. 2017). Typically, it is easier to think about movement kernels in terms of Euclidean distances. Therefore, start with identifying the distance conversion rate that converts ecological distances into "meter equivalents" (as suggested by Van Moorter et al. 2021). We first need to compute the ecological distances to a target: 
+The next challenge is to find a transformation of the cost distance to the
+proximity, different transformation kernels exist (e.g. Bullock et al. 2017).
+Typically, it is easier to think about movement kernels in terms of Euclidean
+distances. Therefore, start with identifying the distance conversion rate that
+converts ecological distances into "meter equivalents" (as suggested by Van
+Moorter et al. 2021). We first need to compute the ecological distances to a
+target: 
 
 ```{julia}
 #| echo: true
 #| warning: false
+#| eval: false
 #| label: fig-ecological_distance
 #| fig-cap: "Distance map."
 
+# Note: This section needs updating to work with the current API
+# The internal data structures have been refactored
+
 measures = (; betq=Betweenness(QualityWeighted()))
-distance_transformation = (nodist=nothing)
-movement_mode = RandomisedShortestPath(ConScape.ExpectedCost(); distance_transformation=nothing, theta=θ)
-problem = ConScape.Problem(; measures, movement_mode, solver)
+movement = RandomisedShortestPath(ConScape.ExpectedCost(); distance_transformation=nothing, theta=θ)
+problem = ConScapeProblem(; measures, movement)
 
-multigridinit = init(problem, rast)
-gridinit = init(multigridinit, 1)
-subgrid1 = ConScape.grid(gridinit)
-
-target_1 = init(gridinit, ConScape.target_ids(gridinit)[1])
-
-dists = ConScape.Raster(target_1.expected_costs, subgrid1)
-Makie.plot(dists, colormap=cgrad([:lightgrey, :black]))
+# Get expected costs for a single target
+gridgraph_init = init(problem, rast)
+connectedgraph_init_1 = init(gridgraph_init, 1) # First connected graph
+target_init_1 = init(connectedgraph_init_1, 1) # First target
 ```
 
 We then compute the Euclidean distance to this same target:
@@ -200,63 +235,73 @@ We then compute the Euclidean distance to this same target:
 ```{julia}
 #| echo: true
 #| warning: false
+#| eval: false
 #| label: fig-euclidean_distance
 #| fig-cap: "Euclidean distance map."
 
-subgrid1.source_ids == ConScape.source_ids(target_1)
-ConScape.target_ids(target_1)[1][1]
+ConScape.sourceids(connectedgraph_init_1) == ConScape.sourceids(target_init_1)
 
-euclid = step(dims(qualities, X)) .* [hypot(xy_i[1] - xy_j[1], xy_i[2] - xy_j[2]) for xy_i in
-        ConScape.source_ids(target_1), xy_j in [ConScape.target_ids(target_1)[1][1]]]
+euclid = step(dims(quality, X)) .* [hypot(xy_i[1] - xy_j[1], xy_i[2] - xy_j[2]) for xy_i in
+ConScape.sourceids(target_init_1), xy_j in [ConScape.targetids(target_init_1)[1].spatialidx]]
 
-Makie.plot(euclid[:,1], colormap=cgrad([:lightgrey, :black]))
+Makie.plot(euclid[:, 1], colormap=cgrad([:lightgrey, :black]))
 ```
 
-We can look at the relationship between both distances. We observe that there is a clear relationship, where there seems to be a lower bound to the ecological distance for the Euclidean one. The ecological distance may be considerably larger than the correponding Euclidean distance, when barriers are present.  
+We can look at the relationship between both distances. We observe that there is
+a clear relationship, where there seems to be a lower bound to the ecological
+distance for the Euclidean one. The ecological distance may be considerably
+larger than the correponding Euclidean distance, when barriers are present.  
 
 ```{julia}
 #| echo: true
 #| warning: false
+#| eval: false
 #| label: fig-scatter
 #| fig-cap: "scatter"
 
-Makie.scatter(euclid[:,1], target_1.expected_costs)
+Makie.scatter(euclid[:, 1], target_1.expected_costs)
 ```
 
-We estimate the conversion rate to express the ecological distance into metric units using the relationship with Euclidean distance. We optimize based on the quantile, and show below how different quantile levels affect the conversion rate.
+We estimate the conversion rate to express the ecological distance into metric
+units using the relationship with Euclidean distance. We optimize based on the
+quantile, and show below how different quantile levels affect the conversion
+rate.
 
 ```{julia}
 function quantile_loss(r; eco_dists, euc_dists, q=0.01)
-    residuals = (r .* eco_dists) .- euc_dists
-    qval = quantile(residuals, q)
-    return abs(qval)
+residuals = (r .* eco_dists) .- euc_dists
+qval = quantile(residuals, q)
+return abs(qval)
 end
 ```
 
 ```{julia}
 fig = Figure()
 ax = Axis(fig[1, 1])
-Makie.scatter!(ax, euclid[:,1], target_1.expected_costs)
+# Makie.scatter!(ax, euclid[:,1], target_1.expected_costs)
 
-sg = SliderGrid(fig[2,1],
-    (label="quantile (%)", range=0:1:100))
+sg = SliderGrid(fig[2,1], (label="quantile (%)", range=0:1:100))
 
 qnt = sg.sliders[1].value
 
 str = lift(t -> "[quantile = $t]", qnt)
 text!(ax, str)
+eco_dists = solve!(target_1, ExpectedCost())
+euc_dists = euclid[:, 1]
 
 opt_r = lift(qnt) do qn 
-    result = optimize(r -> quantile_loss(r, eco_dists=target_1.expected_costs, euc_dists=euclid[:,1], q=qn/100), 0.0, 1000.0)
-    optimal_r = Optim.minimizer(result)
+result = optimize(r -> quantile_loss(r, eco_dists, euc_dists=euclid[:,1], q=qn/100), 0.0, 1000.0)
+optimal_r = Optim.minimizer(result)
 end
 ablines!(ax, 0, lift(x -> 1 / x, opt_r), color=[:red])
 fig
 ```
 
-Based on this inspection, we decided to go with a 0.1 quantile, as it seems to capture quite well the relationship.
+Based on this inspection, we decided to go with a 0.1 quantile, as it seems to
+capture quite well the relationship.
+
 ```{julia}
-result = optimize(r -> quantile_loss(r, eco_dists=target_1.expected_costs, euc_dists=euclid[:,1], q=0.1), 0.0, 1000.0)
+result = optimize(r -> quantile_loss(r; eco_dists, euc_dists, q=0.1), 0.0, 1000.0)
 optimal_r = Optim.minimizer(result)
 ```
 
@@ -266,7 +311,9 @@ ablines!(0, 1/optimal_r, color=[:red])
 current_figure()
 ```
 
-We can now convert the ecological distance using this conversion rate to express it in metric units:
+We can now convert the ecological distance using this conversion rate to express
+it in metric units:
+
 ```{julia}
 Makie.scatter(euclid[:,1], optimal_r*target_1.expected_costs)
 ablines!(0, 1, color=[:red])
@@ -275,7 +322,8 @@ current_figure()
 
 ## Distance decay
 
-Different distance decay functions can be considered, see for instance Bullock et al. 2017, two common ones are an exponential and a Gaussian decay:
+Different distance decay functions can be considered, see for instance Bullock
+et al. 2017, two common ones are an exponential and a Gaussian decay:
 
 ```{julia}
 
@@ -297,14 +345,14 @@ fig
 These functions have a parameter controling the decay rate:
 
 ```{julia}
-euclidean_distance = (0:100:100000)
+euclidean_distance = 0:100:100000
 
 fig = Figure()
 ax = Axis(fig[1, 1], xlabel = "Euclidean distance (m)", ylabel = "Proximity [0,1]", title = "")
 
 sg = SliderGrid(fig[2,1],
-    (label="1/alpha", range=20:20:50000, startvalue = 25000),
-    (label="sigma", range=20:20:50000, startvalue = 25000))
+(label="1/alpha", range=20:20:50000, startvalue = 25000),
+(label="sigma", range=20:20:50000, startvalue = 25000))
 
 alpha = sg.sliders[1].value
 sigma = sg.sliders[2].value
@@ -315,10 +363,10 @@ str2 = lift(t -> "[sigma = $t]", sigma)
 #text!(ax, str2)
 
 exp_proximity = lift(alpha) do t 
-    exp.(- (1 / t) .* euclidean_distance)
+exp.(- (1 / t) .* euclidean_distance)
 end
 gauss_proximity = lift(sigma) do t
-    gaussian_shape(euclidean_distance; σ=t)
+gaussian_shape(euclidean_distance; σ=t)
 end
 
 lines!(ax, euclidean_distance, exp_proximity, linewidth = 3, color="red", label="Exponential")
@@ -337,33 +385,33 @@ ax = Axis(fig[1, 1:2])
 menu = Menu(fig, options = ["Exponential", "Gaussian"], default = "Exponential")
 
 fig[2, 1] = vgrid!(
-    Label(fig, "Decay function", width = nothing),
-    menu;
-    tellheight = false, width = 200)
+Label(fig, "Decay function", width = nothing),
+menu;
+tellheight = false, width = 200)
 
 sg = SliderGrid(fig[2,2],
-    (label="1/alpha", range=20:20:50000, startvalue = 25000),
-    (label="sigma", range=20:20:50000, startvalue = 25000))
+(label="1/alpha", range=20:20:50000, startvalue = 25000),
+(label="sigma", range=20:20:50000, startvalue = 25000))
 
 exp_prox = lift(sg.sliders[1].value) do alpha
-    ax.title = "alpha: " * @sprintf("%.2e", 1/alpha) * ";  1/alpha: " * string(alpha)
-    map(x -> exp(-(1/alpha)*optimal_r*x), dists)
+ax.title = "alpha: " * @sprintf("%.2e", 1/alpha) * ";  1/alpha: " * string(alpha)
+map(x -> exp(-(1/alpha)*optimal_r*x), dists)
 end
 gauss_prox = lift(sg.sliders[2].value) do sigma
-    ax.title = "sigma: " * string(sigma)
-    map(x -> gaussian_shape(optimal_r*x; σ=sigma), dists)
+ax.title = "sigma: " * string(sigma)
+map(x -> gaussian_shape(optimal_r*x; σ=sigma), dists)
 end
 
 on(menu.selection) do s
-    if s == "Gaussian"
-        sigma = sg.sliders[2].value[]
-        ax.title = "sigma: " * string(sigma)
-        image!(ax, gauss_prox, colormap=:magma)
-    else
-        alpha = sg.sliders[1].value[]
-        ax.title = "alpha: " * @sprintf("%.2e", 1/alpha) * ";  1/alpha: " * string(alpha)
-        image!(ax, exp_prox, colormap=:magma)
-    end
+if s == "Gaussian"
+sigma = sg.sliders[2].value[]
+ax.title = "sigma: " * string(sigma)
+image!(ax, gauss_prox, colormap=:magma)
+else
+alpha = sg.sliders[1].value[]
+ax.title = "alpha: " * @sprintf("%.2e", 1/alpha) * ";  1/alpha: " * string(alpha)
+image!(ax, exp_prox, colormap=:magma)
+end
 end
 notify(menu.selection)
 
@@ -380,8 +428,8 @@ fig, ax, p = image(map(x -> exp(-1/50000*optimal_r*x), dists))
 alpha_sg = Slider(fig[2,1], range=10:10:50000)
 
 prox = lift(alpha_sg.value) do alpha
-    ax.title = "alpha: " * string(1/alpha) * ";  1/alpha: " * string(alpha)
-    map(x -> exp(-(1/alpha)*optimal_r*x), dists)
+ax.title = "alpha: " * string(1/alpha) * ";  1/alpha: " * string(alpha)
+map(x -> exp(-(1/alpha)*optimal_r*x), dists)
 end
 image!(ax, prox, colormap=:magma)
 fig
@@ -396,8 +444,8 @@ fig, ax, p = image(map(x -> gaussian_shape(optimal_r*x; σ=5000), dists))
 sigma_sg = Slider(fig[2,1], range=10:10:50000)
 
 prox = lift(sigma_sg.value) do sigma
-    ax.title = "sigma: " * string(sigma)
-    map(x -> gaussian_shape(optimal_r*x; σ=sigma), dists)
+ax.title = "sigma: " * string(sigma)
+map(x -> gaussian_shape(optimal_r*x; σ=sigma), dists)
 end
 image!(ax, prox, colormap=:magma)
 fig
@@ -407,22 +455,42 @@ fig
 
 ## References 
 
-Bullock, J. M., Mallada González, L., Tamme, R., Götzenberger, L., White, S. M., Pärtel, M., & Hooftman, D. A. (2017). A synthesis of empirical plant dispersal kernels. Journal of Ecology, 105(1), 6-19.
+Bullock, J. M., Mallada González, L., Tamme, R., Götzenberger, L., White, S. M.,
+Pärtel, M., & Hooftman, D. A. (2017). A synthesis of empirical plant dispersal
+kernels. Journal of Ecology, 105(1), 6-19.
 
-Guisan, A., Thuiller, W., & Zimmermann, N. E. (2017). Habitat suitability and distribution models: with applications in R. Cambridge University Press.
+Guisan, A., Thuiller, W., & Zimmermann, N. E. (2017). Habitat suitability and
+distribution models: with applications in R. Cambridge University Press.
 
-Goicolea, T., Gastón, A., Cisneros-Araujo, P., García-Viñas, J. I., & Mateo-Sánchez, M. C. (2021). Deterministic, random, or in between? Inferring the randomness level of wildlife movements. Movement ecology, 9(1), 33.
+Goicolea, T., Gastón, A., Cisneros-Araujo, P., García-Viñas, J. I., &
+Mateo-Sánchez, M. C. (2021). Deterministic, random, or in between? Inferring the
+randomness level of wildlife movements. Movement ecology, 9(1), 33.
 
-Kivimäki, I., Van Moorter, B., Panzacchi, M., Saramäki, J., & Saerens, M. (2020). Maximum likelihood estimation for randomized shortest paths with trajectory data. Journal of Complex Networks, 8(4), cnaa024.
+Kivimäki, I., Van Moorter, B., Panzacchi, M., Saramäki, J., & Saerens, M.
+(2020). Maximum likelihood estimation for randomized shortest paths with
+trajectory data. Journal of Complex Networks, 8(4), cnaa024.
 
-Panzacchi, M., Van Moorter, B., Strand, O., Loe, L. E., & Reimers, E. (2015). Searching for the fundamental niche using individual‐based habitat selection modelling across populations. Ecography, 38(7), 659-669.
+Panzacchi, M., Van Moorter, B., Strand, O., Loe, L. E., & Reimers, E. (2015).
+Searching for the fundamental niche using individual‐based habitat selection
+modelling across populations. Ecography, 38(7), 659-669.
 
-Panzacchi, M., Van Moorter, B., Strand, O., Saerens, M., Kivimäki, I., St. Clair, C. C., ... & Boitani, L. (2016). Predicting the continuum between corridors and barriers to animal movements using Step Selection Functions and Randomized Shortest Paths. Journal of Animal Ecology, 85(1), 32-42.
+Panzacchi, M., Van Moorter, B., Strand, O., Saerens, M., Kivimäki, I., St.
+Clair, C. C., ... & Boitani, L. (2016). Predicting the continuum between
+corridors and barriers to animal movements using Step Selection Functions and
+Randomized Shortest Paths. Journal of Animal Ecology, 85(1), 32-42.
 
-Poisot, T., Bussières-Fournel, A., Dansereau, G., & Catchen, M. D. (2025). A Julia toolkit for species distribution data. https://ecoevorxiv.org/repository/view/8582/
+Poisot, T., Bussières-Fournel, A., Dansereau, G., & Catchen, M. D. (2025). A
+Julia toolkit for species distribution data.
+https://ecoevorxiv.org/repository/view/8582/
 
-Van Moorter, B., Kivimäki, I., Panzacchi, M., & Saerens, M. (2021). Defining and quantifying effective connectivity of landscapes for species' movements. Ecography, 44(6), 870-884.
+Van Moorter, B., Kivimäki, I., Panzacchi, M., & Saerens, M. (2021). Defining and
+quantifying effective connectivity of landscapes for species' movements.
+Ecography, 44(6), 870-884.
 
-Van Moorter, B., Kivimäki, I., Noack, A., Devooght, R., Panzacchi, M., Hall, K. R., ... & Saerens, M. (2023). Accelerating advances in landscape connectivity modelling with the ConScape library. Methods in Ecology and Evolution, 14(1), 133-145.
+Van Moorter, B., Kivimäki, I., Noack, A., Devooght, R., Panzacchi, M., Hall, K.
+R., ... & Saerens, M. (2023). Accelerating advances in landscape connectivity
+modelling with the ConScape library. Methods in Ecology and Evolution, 14(1),
+133-145.
 
-Zeller, K. A., McGarigal, K., & Whiteley, A. R. (2012). Estimating landscape resistance to movement: a review. Landscape ecology, 27, 777-797.
+Zeller, K. A., McGarigal, K., & Whiteley, A. R. (2012). Estimating landscape
+resistance to movement: a review. Landscape ecology, 27, 777-797.

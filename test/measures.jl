@@ -174,8 +174,8 @@ end
 @testset "LeastCostPath measures" begin
     lc = LeastCostPath(; distance_transformation=ExpMinus(),)
 
-    res_bet_lc = solve(betweenness_measures, lc, rast)
-    res_oth_lc = solve(other_measures, lc, rast)
+    res_bet_lc = solve(ConScapeProblem(betweenness_measures, lc), rast)
+    res_oth_lc = solve(ConScapeProblem(other_measures, lc), rast)
 
     # Not iplemented
     # res_ebet_lc = solve(edge_betweenness_measures, lc, rast)
@@ -183,7 +183,7 @@ end
     @testset "LeastCostPath is correlated with RandomisedShortestPath at high theta" begin
         # With theta above 5.0 the output becomes numerically unstable
         rsp_lc = RSP(; distance_transformation=ExpMinus(), theta=5.0)
-        res_bet_rsp_lc = solve(betweenness_measures, rsp_lc, rast)
+        res_bet_rsp_lc = solve(ConScapeProblem(betweenness_measures, rsp_lc), rast)
         @test cor(collect(skipmissing(res_bet_lc.betu)), collect(skipmissing(res_bet_rsp_lc.betu))) > 0.92
         @test cor(collect(skipmissing(res_bet_lc.betq)), collect(skipmissing(res_bet_rsp_lc.betq))) > 0.95
         @test cor(collect(skipmissing(res_bet_lc.betk)), collect(skipmissing(res_bet_rsp_lc.betk))) > 0.98
@@ -198,15 +198,15 @@ end
 @testset "RandomWalk measures" begin
     rw = RandomWalk(; distance_transformation=ExpMinus())
 
-    res_bet_rw = solve(betweenness_measures, rw, rast)
-    res_oth_rw = solve(other_measures, rw, rast)
+    res_bet_rw = solve(ConScapeProblem(betweenness_measures, rw), rast)
+    res_oth_rw = solve(ConScapeProblem(other_measures, rw), rast)
 
     # Not iplemented
     # res_ebet_rw = solve(edge_betweenness_measures, rw, rast)
 
     @testset "RandomWalk is correlated with RandomisedShortestPath at low theta" begin
         rsp_rw = RSP(; distance_transformation=ExpMinus(), theta=0.000000000001)
-        res_bet_rsp_rw = solve(betweenness_measures, rsp_rw, rast)
+        res_bet_rsp_rw = solve(ConScapeProblem(betweenness_measures, rsp_rw), rast)
         @test cor(collect(skipmissing(res_bet_rw.betu)), collect(skipmissing(res_bet_rsp_rw.betu))) > 0.9999
         @test cor(collect(skipmissing(res_bet_rw.betq)), collect(skipmissing(res_bet_rsp_rw.betq))) > 0.9999
         @test cor(collect(skipmissing(res_bet_rw.betk)), collect(skipmissing(res_bet_rsp_rw.betk))) > 0.96

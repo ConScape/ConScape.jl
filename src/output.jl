@@ -124,10 +124,15 @@ function allocate_connectedgraph_output(
     l::TargetLevel,
     ::ReturnAssignedDense,
     m::Measure,
-    ::GridGraph,
+    gridgraph::GridGraph,
     connectedgraph::ConnectedGraph,
 )
-    o = fill(NaN, nsources(connectedgraph))
+    o = if isnothing(dims(gridgraph))
+        fill(NaN, ntargets(connectedgraph))
+    else
+        # For single targets we return a spatial raster
+        fill(NaN, dims(gridgraph))
+    end
     return MeasureOutput(m, o)
 end
 
@@ -178,9 +183,13 @@ function update_connectedgraph_output!(
 end
 # AssignSparse varies by Level
 function update_connectedgraph_output!(
-    output::AbstractVector, ::TargetLevel, ::ReturnAssigned, ti::TargetInit, v::AbstractVector
+    output::AbstractArray, ::TargetLevel, ::ReturnAssigned, ti::TargetInit, v::AbstractVector
 )
-    output[sourceids(ti)] .= v
+    o = if isnothing(dims(ti))
+        output .= v
+    else
+        output[sourceids(ti)] .= v
+    end
     return output
 end
 function update_connectedgraph_output!(

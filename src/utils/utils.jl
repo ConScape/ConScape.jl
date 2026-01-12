@@ -196,6 +196,8 @@ const MeasureOutputNamedTuple = NamedTuple{<:Any,<:Tuple{Vararg{MeasureOutput}}}
 # This lets us specify different measures after defining a problem.
 setmeasures(p::ConScapeProblem, m::Measure) =
     setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
+setmeasures(i::Initialisation, m::Measure) =
+    setmeasures(i, NamedTuple{(Symbol(m),)}((m,)))
 function setmeasures(p::ConScapeProblem, measures::Union{Tuple,NamedTuple})
     ConstructionBase.setproperties(p, (; measures))
 end
@@ -205,8 +207,6 @@ function setmeasures(ggi::GridGraphInit, m::NamedTuple{<:Any,Tuple{Vararg{Measur
     problem = setmeasures(ConScape.problem(ggi), m)
     return ConstructionBase.setproperties(ggi, (; problem, outputs))
 end
-setmeasures(ggi::GridGraphInit, m::Measure) =
-    setmeasures(ggi, NamedTuple{(Symbol(m),)}((m,)))
 function setmeasures(ggi::GridGraphInit, m::MeasureNamedTuple)
     problem = setmeasures(ConScape.problem(ggi), m)
     outputs = map(measures(problem)) do m
@@ -246,7 +246,9 @@ function setmeasures(cgi::ConnectedGraphInit, mos::MeasureOutputNamedTuple;
         connectedgraphid(cgi),
     )
 end
-function setmeasures(ti::TargetInit, m; finallevel=defaultfinallevel(ti))
-    connectedgraphinit = setmeasures(connectedgraphinit(ti), m; finallevel)
-    return TargetInit(connectedgraphinit, target(ti))
+function setmeasures(ti::TargetInit, m::MeasureNamedTuple; 
+    finallevel=defaultfinallevel(ti)
+)
+    cgi = setmeasures(connectedgraphinit(ti), m; finallevel)
+    return TargetInit(cgi, target(ti))
 end

@@ -78,8 +78,6 @@ The first ConScape function is a helper to read maps in ASCII format, the functi
 datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
 ```
 
-:::
-
 ## Define a RasterStack input
 
 ConScape accepts a `RasterStack` as input, which is a collection of named
@@ -87,13 +85,13 @@ raster layers.
 
 These can be the following:
 
-- `steplikelihood` / `likelihood` : likelihood of movement (required).
-    This maybe calculated from `cost` using the `likelihoodfunction` passed to `Problem`.
-- `stepcost`/ `cost` : cost of movement. This maybe calculated from  
-    `likelihood` using the `costfunction` passed to `Problem`.
+- `steplikelihood` : likelihood of movement (required).
+    This maybe calculated from `stepcost` using the `likelihoodfunction` passed to `Problem`.
+- `stepcost` : cost of movement. This maybe calculated from  
+    `steplikelihood` using the `costfunction` passed to `Problem`.
 - `quality`: habitat quality (required, or the below alternatives)
-- `sourcequality`: source habitat quality if it does not match targetquality
-- `targetquality`: target habitat quality if it does not match sourcequality
+- `sourcequality`: source habitat quality if it does not match `quality`.
+- `targetquality`: target habitat quality if it does not match `quality`.
 
 ```{julia}
 # Define the paths to the raster files
@@ -114,17 +112,19 @@ plot(rast.quality;
 It is important that all cells or pixels that can be reached in the network
 (i.e. those with values for the permeability maps) also have matching habitat
 quality. Otherwise, the 'NaN' values may propagate in computations further down.
-This code ensures this match.
+This code ensures this match - simpliy masking the raster stack with itself.
 
 ```{julia}
 # Self mask so NaN values are shared across all layers
-mask!(rast; with=rast) # Self masking
+mask!(rast; with=rast)
 ```
+
+:::
 
 # Step 2: Defining a movement mode
 
-ConScape provides `RandomsedShortestPath`, `RandomWalk` and `LeastCost` as different
-modes of movement accross the landscape. 
+ConScape provides `RandomisedShortestPath`, `RandomWalk` and `LeastCostPath` as different
+modes of movement across the landscape. 
 
 Least-cost paths are computed as if organisms have perfect information about landscape,
 while random walks as if they have no information and move randomly. 
@@ -164,7 +164,7 @@ connected. The ConScape library was developed primarily to facilitate this task.
 The functionality of a pixel is computed with the function `connected_habitat`:
 
 ```{julia}
-func_hab = solve(FunctionalHabitat(), rsp, rast) 
+func_hab = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast) 
 ```
 
 See [@vanmoorter2021defining] for a discussion of the expected cost distance and
@@ -197,13 +197,13 @@ When we compare this value to the amount of 'unconnected' habitat, we see that
 there is some loss of habitat due to movement constraints, i.e.:
 
 ```{julia}
-100 * (1 - sqrt(sum(filter(x -> !isnan(x), func_hab))) /
+x = 100 * (1 - sqrt(sum(filter(x -> !isnan(x), func_hab))) /
                 sum(filter(x -> !isnan(x), rast.quality)))
+"$x% of the total available habitat."
 ```
 
-percent of the total habitat available.
 
-## Betweenness (Movement flow)
+## Betweenness / MovementFlow
 
 Finally, in addition to computing habitat functionality or amount of connected
 habitat, the ConScape library also computes the number of paths going through
@@ -220,7 +220,7 @@ The quality weighting `QualityWeighted()` highlights the pixels
 that are in between high quality pixels:
 
 ```{julia}
-qbetw = solve(Betweenness(QualityWeighted()), rsp, rast)
+qbetw = solve(ConScapeProblem(Betweenness(QualityWeighted()), rsp), rast)
 plot(qbetw; axis=(; title="Betweenness"))
 ```
 
@@ -245,14 +245,14 @@ We can now over a range of $\theta$ values show the pixels that are most
 
 thetas = (2.5, 1.0, 0.5, 0.1, 0.01, 0.001)
 betws = map(thetas) do theta
-    solve(Betweenness(QualityWeighted()), RSP(; theta), rast)
+    solve(ConScapeProblem(Betweenness(QualityWeighted()), RSP(; theta)), rast)
 end
 ```
 
 ```{julia}
 #| echo: false
-name = "theta=" .* string.(thetas)
-Rasters.rplot(RasterStack(betws; name))
+theta_names = "theta=" .* string.(thetas)
+Rasters.rplot(RasterStack(betws; name=theta_names))
 ```
 
 We see that as $\theta$ becomes larger the path distribution becomes narrowly
@@ -268,8 +268,8 @@ betweenness, we define `MovementFlow` as a shorthand for
 ```{julia}
 #| fig-cap: Quality and proximity weighted betweenness, which we refer to as the 'movement flow'.
 
-mflow = solve(MovementFlow(), rsp, rast)
-plot(mflow; axis=(; title="Betweenness"))
+mflow = solve(ConScapeProblem(MovementFlow(), rsp), rast)
+plot(mflow; axis=(; title="Movement Flow"))
 ```
 
 `MovementFlow` highlights the pixels that are most

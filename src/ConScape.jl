@@ -32,7 +32,7 @@ export RandomisedShortestPath, LeastCostPath, RandomWalk, Euclidean, RSP, LCP
 
 export Distance, ExpectedCost, FreeEnergyDistance, SurvivalProbability, PowerMeanProximity, MeanKullbackLeiblerDivergence
 
-export MovementFlow, Betweenness, EdgeBetweenness, FunctionalHabitat, EigMax, SensitivityAnalysis
+export MovementFlow, Betweenness, EdgeBetweenness, FunctionalHabitat, EigMax, SensitivityAnalysis, LandscapeMatrix
 
 export QualityWeighted, QualityAndProximityWeighted, ProximityWeighted, Unweighted
 

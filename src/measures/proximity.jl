@@ -4,7 +4,7 @@
 # All ProximityMeasure compute at target level,
 # and return a SparseArray of single s/t values
 computelevel(::ProximityMeasure) = TargetLevel()
-returntrait(::ProximityMeasure) = ReturnAssignedSparse()
+returntrait(::ProximityMeasure) = ReturnAssignedDense()
 # Most proximity measures use 1 vec_workspace
 num_vec_workspaces(::ProximityMeasure, ::LandscapeMovement) = 1
 

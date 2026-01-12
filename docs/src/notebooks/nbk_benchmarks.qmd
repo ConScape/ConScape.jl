@@ -41,18 +41,19 @@ function benchmark_init_allocs(mm, s; sparsity=nothing)
     end
     allocs = @allocated begin
         mgi = init(mm, rast_s)
-        nsubgraphs = ConScape.nsubgraphs(mgi)
+        nconnectedgraphs = ConScape.nconnectedgraphs(mgi)
         # Initialise all subgraphs
-        gis = map(1:nsubgraphs) do i
+        gis = map(1:nconnectedgraphs) do i
             init(mgi, i)
         end
     end
     summarysize = Base.summarysize(gis)
-    return (; allocs, summarysize, nsubgraphs)
+    return (; allocs, summarysize, nconnectedgraphs)
 end
 ```
 
 And run it for a range of sizes.
+
 ```{julia}
 benchmark_init_allocs(rsp, 10) # Warmup compilation
 sizes = [10, 30, 100, 300, 1000]
@@ -65,6 +66,7 @@ Now we can plot how much memory was allocated to run initialisation,
 and how much memory is used by the final `GridInit` object. Somewhere
 between these values is the maximum simlutaneous memory requirement, 
 although the upper value is safer to use.
+
 ```{julia}
 p = scatterlines(sizes .^ 2, allocations ./ 1e6; 
     axis=(; xlabel="Pixels", ylabel="MegaBytes", xscale=log10, yscale=log10, title="ConScape allocations and raster pixels"),
@@ -109,11 +111,7 @@ sparsities = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 memory = map(sparsity -> benchmark_init_allocs(rsp, 300; sparsity), sparsities)
 allocations = map(x -> x.allocs, memory)
 summary_sizes = map(x -> x.summarysize, memory)
-nsubgraphs = map(x -> x.nsubgraphs, memory)
-```
-
-```{julia}
-@profview benchmark_init_allocs(rsp, 300; sparsity=0.7)
+nconnectedgraphs = map(x -> x.nconnectedgraphs, memory)
 ```
 
 We can see that final allocated size decrease with the sparsity of the data, 
@@ -122,20 +120,22 @@ increases. It is unlikely that real data will have anywhere near this
 many subgraphs, as missing data is not evenly distributed, but patchy. 
 
 ```{julia}
-p = scatterlines(sparsities, allocations ./ 1e6; 
-    axis=(; xlabel="Percentage NaN", ylabel="MegaBytes / N subgraphs", title="ConScape allocations and raster pixels"),
-    color=:orange,
-    label="Total allocations during initialisation"
-)
-scatterlines!(p.axis, sparsities, summary_sizes ./ 1e6; 
-    color=:blue, 
-    label="Initialised object size"
-)
-scatterlines!(p.axis, sparsities, ngrids;
-    color=:red, 
-    label="Number of subgraph grids",
-)
+let
+  p = scatterlines(sparsities, allocations ./ 1e6; 
+      axis=(; xlabel="Percentage NaN", ylabel="MegaBytes or N connected graphs", title="ConScape allocations and raster pixels"),
+      color=:orange,
+      label="Total allocations during initialisation"
+  )
+  scatterlines!(p.axis, sparsities, summary_sizes ./ 1e6; 
+      color=:blue, 
+      label="Initialised object size"
+  )
+  scatterlines!(p.axis, sparsities, nconnectedgraphs;
+      color=:red, 
+      label="Number of connected graphs",
+  )
 # Makie.hidespines!(p.axis)
-axislegend(p.axis; position=:lt)
-p
+  axislegend(p.axis; position=:lt)
+  p
+end
 ```
