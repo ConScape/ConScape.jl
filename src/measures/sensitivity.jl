@@ -299,8 +299,8 @@ function _compute_sensitivity_precursors(::PowerMeanProximity, cgi::ConnectedGra
 
     edge_bet = EdgeBetweenness(custom_weighted)
     node_bet = Betweenness(custom_weighted)
-    edge_output = allocate_connectedgraph_output(finallevel, edge_bet, cgi).output
-    node_output = allocate_connectedgraph_output(finallevel, node_bet, cgi).output
+    edge_output = _allocate_connectedgraph_output(finallevel, edge_bet, cgi).output
+    node_output = _allocate_connectedgraph_output(finallevel, node_bet, cgi).output
 
     # Compute EdgeBetweenness
     compute_connectedgraph!(edge_output, edge_bet, cgi)

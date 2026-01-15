@@ -30,7 +30,7 @@ needs_edgebetweenness_workspace(::EdgeBetweenness, ::RSP) = true
     QuoteNode(Symbol(nameof(m), :_, nameof(W)))
 
 # At the ConnectedGraph level we return a SparseMatrixCSC
-function allocate_connectedgraph_output(
+function _allocate_connectedgraph_output(
     l::Union{ConnectedGraphLevel,TargetLevel},
     ::ReturnCustomSparse,
     m::EdgeBetweenness,

@@ -75,7 +75,7 @@ solve(targetinit)
 ```
 """
 struct ConScapeProblem{
-    MM<:MovementMode,M<:NamedTuple,S<:Solver,G<:Union{Int,Nothing},CF,LF,N,SW<:StepWeight,MP<:Union{Nothing,String}
+    MM<:MovementMode,M<:Union{Measure,NamedTuple},S<:Solver,G<:Union{Int,Nothing},CF,LF,N,SW<:StepWeight,MP<:Union{Nothing,String}
 } <: AbstractProblem
     movement::MM
     measures::M
@@ -87,18 +87,16 @@ struct ConScapeProblem{
     stepweight::SW
     mmap_path::MP
     function ConScapeProblem(
-        movement::MM, m::M, solver::S, grain::G, costfunction::CF, 
+        movement::MM, m::M, solver::S, grain::G, costfunction::CF,
         likelyhoodfunction::LF, neighbors::N, stepweight::NW, mmap_path::MP
     ) where {MM,M,S,G,CF,LF,N,NW,MP}
-        m1 = if m isa Measure
-            NamedTuple{(Symbol(m),)}((m,))
-        elseif m isa Tuple
+        m1 = if m isa Tuple
             NamedTuple{map(Symbol, m)}(m)
         else
             m
         end
         return new{MM,typeof(m1),S,G,CF,LF,N,NW,MP}(
-            movement, m1, solver, grain, costfunction, 
+            movement, m1, solver, grain, costfunction,
             likelyhoodfunction, neighbors, stepweight, mmap_path
         )
     end
