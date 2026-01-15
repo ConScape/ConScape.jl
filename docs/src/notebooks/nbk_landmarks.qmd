@@ -5,7 +5,10 @@ engine: julia
 ---
 
 ::: {.callout-tip}
-## Here you will learn
+oGeometryEditor] handleClick 
+Object { skipNextClick: false, draggingNewRingVertex: false, addingVertices: false, hasOnExit: false }
+forward-logs-shared.ts:95:22
+[GeometryEditor] calling onExit## Here you will learn
 
 How to use a coarse-grained subsample of target pixels - or "landmarks" -
 to increase computational performance with minimal loss in accuracy.
@@ -210,8 +213,8 @@ We found similar results for the quality and proximity weighted version of the
 betweenness: 
 
 ```{julia}
-mbetw = solve(ConScapeProble(MovementFlow(), rsp), rast)
-mbetw_coarse = solve(ConScapeProble(MovementFlow(), rsp), rast; grain=20)
+mbetw = solve(ConScapeProblem(MovementFlow(), rsp), rast)
+mbetw_coarse = solve(ConScapeProblem(MovementFlow(), rsp), rast; grain=20)
 ```
 
 ```{julia}
