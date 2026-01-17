@@ -1,59 +1,88 @@
 module ConScape
 
-using ArnoldiMethod
-using ConstructionBase
-using Graphs
 using LinearAlgebra
-using Rasters
-using SimpleWeightedGraphs
 using SparseArrays
-using Rasters.DimensionalData
 
-import CommonSolve
-import CommonSolve: solve, init
+import ArnoldiMethod
+import ConstructionBase
+import Graphs
+import Mmap
+import Rasters
+import FillArrays
+import ReadOnlyArrays
+import Random
 
-export RandomisedShortestPath, LeastCost, RandomWalk
+import GeometryOps as GO
+import GeometryOps.GeoInterface as GI
+import SortTileRecursiveTree as STR
 
-export ExpectedCost, FreeEnergyDistance, SurvivalProbability, PowerMeanProximity, KullbackLeiblerDivergence
+import Rasters.Extents
+import Rasters.DimensionalData
 
-export Betweenness, EdgeBetweenness, ConnectedHabitat, Criticality, EigMax, Sensitivity
+import CommonSolve: solve, solve!, init
+import Rasters: Raster
 
-export QualityWeighted, QualityAndProximityWeighted, ProximityWeighted
+using WoodburyMatrices: Woodbury
+using SimpleWeightedGraphs: SimpleWeightedGraph, SimpleWeightedDiGraph
+using ReadOnlyArrays: ReadOnlyArray
+using Rasters: AbstractRaster, AbstractRasterStack, RasterStack, rebuild, dims, mosaic
+
+
+export RandomisedShortestPath, LeastCostPath, RandomWalk, Euclidean, RSP, LCP
+
+export Distance, ExpectedCost, FreeEnergyDistance, SurvivalProbability, PowerMeanProximity, MeanKullbackLeiblerDivergence
+
+export MovementFlow, Betweenness, EdgeBetweenness, FunctionalHabitat, EigMax, SensitivityAnalysis, LandscapeMatrix
+
+export QualityWeighted, QualityAndProximityWeighted, ProximityWeighted, Unweighted
+
+export Sensitivity, Elasticity
+
+export Summation
+
+export Quality, SourceQuality, TargetQuality, StepCost, StepLikelihood, StepCostToLikelihood, StepLikelihoodToCost
+
+export TargetWeight, AverageWeight
 
 export VectorSolver, LinearSolver
 
 export MinusLog, MinusLogAlpha, Inv, OddsFor, OddsAgainst, ExpMinus, ExpMinusAlpha
 
-export solve, init, assess
+export ConScapeProblem, WindowedProblem, BatchProblem
 
-export WindowedProblem, BatchProblem
+export solve, solve!, init, assess, reassess, estimate_memory_for_centersize
 
-"""
-    Solver
 
-Abstract supertype for ConScape solvers.
-"""
-abstract type AbstractProblem end
-abstract type Solver end
+include("types.jl")
+include("measures/types.jl")
 
-# Randomized shortest path algorithms
-# Grid struct and methods
+include("utils/workspaces.jl")
+include("utils/bellman_ford.jl")
+include("utils/sparse.jl")
+
 include("transformations.jl")
-# Grid struct and methods
-include("grid.jl")
-# Utilities
-include("utils.jl")
-# Problems
-include("workspaces.jl")
-include("measures.jl")
-include("movement_modes.jl")
+include("graphs.jl")
+include("movement.jl")
 include("problem.jl")
 include("initialisation.jl")
-include("return.jl")
 include("solvers.jl")
-include("compute_measures.jl")
+include("measures/shared.jl")
+include("measures/proximity.jl")
+include("measures/eigmax.jl")
+include("measures/betweenness.jl")
+include("measures/edge_betweenness.jl")
+include("measures/kullback_leibler.jl")
+include("measures/landscape_matrix.jl")
+include("measures/functional_habitat.jl")
+include("measures/sensitivity.jl")
+include("precalculation.jl")
+include("solve.jl")
+include("output.jl")
 include("windows.jl")
 include("assessment.jl")
-include("simulations.jl")
+
+include("utils/coarse_graining.jl")
+include("utils/utils.jl")
+include("utils/simulations.jl")
 
 end

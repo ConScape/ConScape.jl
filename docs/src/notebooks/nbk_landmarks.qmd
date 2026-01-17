@@ -1,0 +1,287 @@
+---
+title: "Landmarks and coarse-graining"
+bibliography: biblio.bib
+engine: julia
+---
+
+::: {.callout-tip}
+oGeometryEditor] handleClick 
+Object { skipNextClick: false, draggingNewRingVertex: false, addingVertices: false, hasOnExit: false }
+forward-logs-shared.ts:95:22
+[GeometryEditor] calling onExit## Here you will learn
+
+How to use a coarse-grained subsample of target pixels - or "landmarks" -
+to increase computational performance with minimal loss in accuracy.
+
+:::
+
+In this notebook we demonstrate the use of landmarks with the `coarse_graining`
+function to reduce the computational demands in ConScape, see main text of
+details and discussion.
+
+# Data import
+
+See notebook [getting started](/notebooks/nbk_getting_started.qmd) for a 'basic
+workflow' to learn about data import and the creation of a ConScape `Grid`:
+
+```{julia}
+using ConScape
+using Rasters
+using ArchGDAL
+using Statistics
+using GLMakie
+```
+
+```{julia}
+#| echo: false
+#| eval: true
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+```{julia}
+paths = (steplikelihood=joinpath(datadir, "mov_prob_1000.asc"),
+         quality=joinpath(datadir, "hab_qual_1000.asc"))
+rast = RasterStack(paths; missingval=NaN)
+mask!(rast; with=rast) # Self masking
+```
+
+# Coarse graining
+
+Internally, target qualities can be represented by a sparse matrix. This means 
+that habitat of quality zero is not explicitly stored in the matrix, which
+reduces the memory footprint in case of matrices with many zeros. 
+
+We can further increase the sparseness of this matrix to reduce the computational
+requirements in terms of processing time. 
+
+`ConScape.Problem` has a `grain` argument to control the coase of aggregation.
+It does so by summing the target qualities of all pixels and assigning this value 
+to the center pixel, while setting all other cells to zero. When running 
+`init` or `solve` on a `MovementMode` like `RSP`, `grain` can be passed as a
+keyword, that will be used to construct a `Problem` internally.
+
+The idea is thus to connect pixels from a higher resolution
+source map to a lower resolution target map. The benefit of this approach
+compared to, for instance, using lower resolution maps in general is that
+movement paths are still represented with a high resolution. 
+
+The main assumption this is that all high-resolution pixels within a coarse pixel 
+are equally well connected to the source pixel as the high-resolution pixel at the 
+center of the coarse pixel. This assumption will be more difficult to meet with 
+increasing number of pixels aggregated and with increasing heterogeneity in the landscape.
+
+We will now investigate how the estimation of the amount of connected habitat
+and the movement flow are affected by this coarse graining of the target pixels.
+
+## Connected habitat and coarse graining
+
+We compute the amount of connected habitat or functionality for each pixel using
+the expected cost distance and an exponential decay for both the high-resolution
+and low-resolution target qualities:
+
+```{julia}
+theta = 1.0
+rsp = RSP(; theta, distance_transformation=x -> exp(-x / 75))
+fh = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast) 
+fh_coarse = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast; grain=20)
+```
+
+The reduction in computation is substantial. The processing time goes from 16 to
+0.05 seconds and the memory requirements from 2.5 Gb to 18 Mb by aggregating $20
+\times 20$ pixels into a single pixel. Obviously, the reduction in computation
+will be less with lower numbers of pixels aggregated. However, even merging as
+few as 2 or 3 pixels will result in substantial reductions in computation
+(respectively 2.6 and 1.2 seconds of processing time, and 503 Mb and 232 Mb of
+memory). 
+
+
+```{julia}
+#| fig-cap: Comparison of functional habitat without and with landmarks.
+#| fig-subcap: 
+#|   - "a"
+#|   - "b"
+#| layout-ncol: 2
+
+display(plot(fh; axis=(; title="Complete")))
+display(plot(fh_coarse; axis=(; title="Landmark-based")))
+```
+
+Compare the computation based on all pixels versus the one based on landmarks
+and we see they are highly similar.
+
+Hence, the correlation between these values is:
+
+```{julia}
+cor(filter(x -> !isnan(x), fh), filter(x -> !isnan(x), fh_coarse))
+```
+
+Clearly, the estimation of the ranking of source pixels based upon their
+functional connectivity to target pixels is relatively little affected by the
+aggregation of these target pixels. 
+
+When we look at the change in the amount of connected habitat in the landscape:
+
+```{julia}
+sqrt(sum(filter(x -> !isnan(x), fh_coarse))) / sqrt(sum(filter(x -> !isnan(x), fh)))
+```
+
+There is some under-estimation, however, note that we used a substantial level
+of coarse graining (i.e. $20 \times 20$). We now investigate how the accuracy
+changes for different levels of coarse graining.
+
+Compute both the correlation between pixel-level and landscape-level amount
+of connnected habitat over a range of aggregation levels (from 1, no
+aggregation, to 50):
+
+```{julia}
+coarseness = [1, 2, 3, 5, 7, 10, 15, 20, 50]
+time_fh_grains = map(coarseness) do grain
+    time = @elapsed begin
+        fh = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast; grain)
+    end
+    time, fh
+end
+```
+
+Calculate sums and correlations with non-aggregated outputs:
+
+```{julia}
+time_grains = first.(time_fh_grains)
+fh_grains = last.(time_fh_grains)
+skipnan(xs) = filter(x -> !isnan(x), xs)
+est_fh_grains = sum.(skipnan.(fh_grains))
+cor_fh_grains = cor.((skipnan(fh),), skipnan.(fh_grains))
+```
+
+```{julia}
+#| fig-cap: The correlation between the full and landmark-based habitat functionality in function of the level of 'coarse graining'.
+fig = Figure()
+ax1 = Axis(fig[1, 1])
+ax2 = Axis(fig[2, 1])
+scatterlines!(ax1, coarseness, est_fh_grains; color=:black, label="Estimated connected habitat")
+scatterlines!(ax2, coarseness, cor_fh_grains; label="Correlation")    
+scatterlines!(ax2, coarseness, time_grains ./ first(time_grains); label="Relative computation time")
+axislegend(ax1; position=:rc)
+axislegend(ax2; position=:rc)
+fig
+```
+
+The ranking of source pixels based on their functional connectivity to
+high-quality target pixels, is hardly affected by aggregation. Aggregating less
+than $10 \times 10$ pixels results in a virtual identical ranking, whereas even
+sever levels of aggregation ($50 \times 50$) still result in a correlation above
+$0.98$. 
+
+However the loss in accuracy is a bit more pronounced for the
+amount of connnected habitat.
+
+We can see in our example that aggregating less than 10 pixels will result in
+less than 1% drop in estimated amount of connected habitat, but increasing the
+level of aggregation will result in an accelerating underestimation of the
+actual amount of connected habitat.
+
+# Betweenness and coarse graining
+
+We compute the betweenness or movement flow for each pixel for both the
+high-resolution and low-resolution ($20 \times 20$) target qualities, first for
+the quality weighted version:
+
+```{julia}
+qbetw = solve(ConScapeProblem(Betweenness(QualityWeighted()), rsp), rast)
+qbetw_coarse = solve(ConScapeProblem(Betweenness(QualityWeighted()), rsp), rast; grain=20)
+```
+
+```{julia}
+cor(skipnan(qbetw), skipnan(qbetw_coarse))
+```
+
+Although, there is still a high correlation, this drop in accuracy is actually
+perceivable in the maps:
+
+```{julia}
+#| fig-cap: Comparison of quality-weighted betweenness without and with landmarks.
+#| fig-subcap: 
+#|   - "a"
+#|   - "b"
+#| layout-ncol: 2
+
+display(plot(qbetw; axis=(; title="Complete")))
+display(plot(qbetw_coarse; axis=(; title="Landmark-based")))
+```
+
+We found similar results for the quality and proximity weighted version of the
+betweenness: 
+
+```{julia}
+mbetw = solve(ConScapeProblem(MovementFlow(), rsp), rast)
+mbetw_coarse = solve(ConScapeProblem(MovementFlow(), rsp), rast; grain=20)
+```
+
+```{julia}
+cor(skipnan(mbetw), skipnan(mbetw_coarse))
+```
+
+```{julia}
+#| fig-cap: Comparison of proximity-weighted betweenness without and with landmarks.
+#| fig-subcap: 
+#|   - "a"
+#|   - "b"
+#| layout-ncol: 2
+
+display(plot(mbetw; axis=(; title="Complete")))
+display(plot(mbetw_coarse; axis=(; title="Landmark-based")))
+```
+
+As commented above, a $20 \times 20$ aggregation of pixels is quite a high level
+of compression. Let's now see how the accuracy changes with changing levels of
+aggregation.
+
+```{julia}
+betw = (
+    qbetw=Betweenness(QualityWeighted()),
+    mbetw=Betweenness(QualityAndProximityWeighted())
+)
+betw_grains = map(coarseness) do grain
+    solve(ConScapeProblem(betw, rsp), rast; grain)
+end
+```
+
+```{julia}
+qbetw_grains = map(g -> skipnan(g.qbetw), betw_grains)
+mbetw_grains = map(g -> skipnan(g.mbetw), betw_grains)
+est_qbetw_grains = sum.(qbetw_grains)
+est_mbetw_grains = sum.(mbetw_grains)
+cor_qbetw_grains = cor.((skipnan(qbetw),), qbetw_grains)
+cor_mbetw_grains = cor.((skipnan(mbetw),), mbetw_grains)
+```
+
+```{julia}
+#| fig-cap: The correlation between the full and landmark-based betweenness in function of the level of 'coarse graining'.
+
+p = scatterlines(coarseness, cor_qbetw_grains; 
+    alpha=0.7, label="Quality-weighted betweenness"
+)
+scatterlines!(p.axis, coarseness, cor_mbetw_grains; 
+    alpha=0.7, label="Quality and proximity-weighted betweenness"
+)
+axislegend(p.axis; position=:lb)
+p.figure
+```
+
+We see that the level of accuracy is good for levels of aggregation below 10,
+but starts to drop off rather rapidly above this. 
+
+## Summary
+
+The keyword `grain` in useful tool to reduce the computational demands of
+dealing with high-resolution landscapes by connecting a high-resolution map of
+source pixels to a lower resolution map of target pixels. 
+
+Unfortunately, the computational benefits come at the cost of a loss in
+accuracy. We found for our example that aggregation levels below 10 led to a
+substantial benefit in terms of computation with minimal loss in accuracy. We
+suggest that researchers explore how the accuracy changes in their landscape
+with changing levels of aggregation. 
+
+Windowing the landscape is an alternative approach to reduce computational
+demands, see [windowing](/notebooks/nbk_windowing.qmd).

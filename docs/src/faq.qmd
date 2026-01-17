@@ -1,0 +1,36 @@
+---
+title: "FAQ"
+format:
+  html:
+    toc: true
+---
+
+# Why is ConScape implemented in Julia?
+
+This question usually continues with "instead of R". There are two reasons, first, Julia is a high-performance language that combines the performance of C with the readability of a language like R. For instance, all libraries in R that do performance critical computations, such as the ["spatial absorbing Markov chain" library](https://cran.r-project.org/web/packages/samc/index.html), are wrappers around C code. This introduces what has been called the "two language problem", i.e. that one has to master two languages (in this case R and C) to use the library in a flexible way or contribute to its further development. As a side note, while the preformance benchmark, C is not a very easy language to read or write. Here comes in Julia, it has a performance of C, but the readability of R. It is therefore relatively easy for someone with some programming background (as any intermediate to advanced R user) to use the library in a flexible way and hopefully also contribute to its further development. A second reason was that Julia was also adopted by [Circuitscape](https://circuitscape.org/) for its latest [implementation](https://docs.circuitscape.org/Circuitscape.jl), which will facilitate collaboration and community contributions from a broader group of landscape connectivity modelers. 
+
+As we do appreciate the challenge associated with working in a new programming language, we did develop a large set of notebooks to serve as templates to modify for your own purposes. Indeed, our own experience with using Julia and ConScape did rely adjusting existing code at first. Hence, we encourage you to give it a try, it is by no means as daunting as it may seem (to [get started](/home/quick_start/)). 
+
+# Which value to choose for theta ($\theta$)?
+
+In other words: "which level of randomness for the paths between source and target?"
+
+A difficult question... First, testing different values of $\theta$ will allow you to assess the sensitivity of your results to this crucial parameter. Furthermore, several efforts exist to estimate $\theta$ from movement data, for instance: [Kivimäki et al. 2020](https://academic.oup.com/comnet/article-abstract/8/4/cnaa024/5989563), and [Panzacchi et al. 2015](https://besjournals.onlinelibrary.wiley.com/doi/10.1111/1365-2656.12386).
+
+# Where can I find the test data for the notebooks?
+
+[Here](https://github.com/ConScape/ConScape.jl/tree/main/data) in the github repository of the ConScape library
+
+# I am getting empty plots
+
+```{julia}
+#| eval: false
+
+non_matches = xor.(isnan.(mov_likelyhood), isnan.(qualities))
+mov_likelyhood[non_matches] .= NaN
+qualities[non_matches] .= NaN;
+```
+
+# Can I use a patch-matrix landscape representation in ConScape
+
+Yes, but we still have to make a notebook to demonstrate this application.

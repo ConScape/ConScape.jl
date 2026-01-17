@@ -1,0 +1,141 @@
+
+---
+title: "Problems and Windowing"
+bibliography: biblio.bib
+engine: julia
+---
+
+# Problem specifications: running ConScape at scale
+
+
+```{julia}
+using ConScape
+using Rasters
+using GLMakie
+using StatsBase
+using Random
+Random.seed!(1234)
+```
+
+# Data import
+
+```{julia}
+rsp = RSP(ExpectedCost(); theta=2, distance_transformation=x -> exp(-x/2000));
+measures = (;
+    func_hab=FunctionalHabitat(),
+    betm=Betweenness(QualityAndProximityWeighted()),
+)
+```
+
+Define a function to benchmark allocations during initialisation:
+
+```{julia}
+function benchmark_init_allocs(mm, s; sparsity=nothing)
+    rast_s = RasterStack((quality=Raster(rand(X(s), Y(s))), 
+                          steplikelihood=Raster(rand(X(s), Y(s)))))
+    if !isnothing(sparsity) && sparsity > 0
+        n = round(Int, length(rast_s) * sparsity)
+        inds = sample(eachindex(rast_s), n; replace=false)
+        rast_s.quality[inds] .= NaN
+        rast_s.steplikelihood[inds] .= NaN
+    end
+    allocs = @allocated begin
+        mgi = init(mm, rast_s)
+        nconnectedgraphs = ConScape.nconnectedgraphs(mgi)
+        # Initialise all subgraphs
+        gis = map(1:nconnectedgraphs) do i
+            init(mgi, i)
+        end
+    end
+    summarysize = Base.summarysize(gis)
+    return (; allocs, summarysize, nconnectedgraphs)
+end
+```
+
+And run it for a range of sizes.
+
+```{julia}
+benchmark_init_allocs(rsp, 10) # Warmup compilation
+sizes = [10, 30, 100, 300, 1000]
+memory = map(s -> benchmark_init_allocs(rsp, s), sizes)
+allocations = map(x -> x.allocs, memory)
+summary_sizes = map(x -> x.summarysize, memory)
+```
+
+Now we can plot how much memory was allocated to run initialisation,
+and how much memory is used by the final `GridInit` object. Somewhere
+between these values is the maximum simlutaneous memory requirement, 
+although the upper value is safer to use.
+
+```{julia}
+p = scatterlines(sizes .^ 2, allocations ./ 1e6; 
+    axis=(; xlabel="Pixels", ylabel="MegaBytes", xscale=log10, yscale=log10, title="ConScape allocations and raster pixels"),
+    color=:orange,
+    label="Total allocations during initialisation"
+)
+scatterlines!(p.axis, sizes .^ 2, summary_sizes ./ 1e6; 
+    color=:blue, 
+    label="Initialised object size"
+)
+Makie.hidespines!(p.axis)
+axislegend(p.axis; position=:rb)
+p
+```
+
+Importantly we see close to a linear relationship, 
+with 5 kilobytes allocated per filled raster pixel,
+and 1.6 kilobyte of final object size.
+
+```{julia}
+allocs_per_pixel = allocations ./ sizes .^ 2
+```
+
+## Allocations with missing data
+
+With missing data in the Raster, allocations will
+in general be significantly less than if all pixels
+have qualities and affinities. However, there are a 
+few caveats to this statement.
+
+ConScape operates on strongly connected subgraphs, and
+if parts of the raster are not at all connected, they 
+are split into separate `GridInit` objects. Overall this 
+improves performance, but with very many tiny subgraphs
+there will be some memory overhead from initialisation.
+
+Here we benchmark initialisation for a range of sparsities,
+with non-natural distribution of missing data.
+
+```{julia}
+sparsities = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+memory = map(sparsity -> benchmark_init_allocs(rsp, 300; sparsity), sparsities)
+allocations = map(x -> x.allocs, memory)
+summary_sizes = map(x -> x.summarysize, memory)
+nconnectedgraphs = map(x -> x.nconnectedgraphs, memory)
+```
+
+We can see that final allocated size decrease with the sparsity of the data, 
+but intermediate allocations spike as the number of disconnected subgraphs 
+increases. It is unlikely that real data will have anywhere near this 
+many subgraphs, as missing data is not evenly distributed, but patchy. 
+
+```{julia}
+let
+  p = scatterlines(sparsities, allocations ./ 1e6; 
+      axis=(; xlabel="Percentage NaN", ylabel="MegaBytes or N connected graphs", title="ConScape allocations and raster pixels"),
+      color=:orange,
+      label="Total allocations during initialisation"
+  )
+  scatterlines!(p.axis, sparsities, summary_sizes ./ 1e6; 
+      color=:blue, 
+      label="Initialised object size"
+  )
+  scatterlines!(p.axis, sparsities, nconnectedgraphs;
+      color=:red, 
+      label="Number of connected graphs",
+  )
+# Makie.hidespines!(p.axis)
+  axislegend(p.axis; position=:lt)
+  p
+end
+```

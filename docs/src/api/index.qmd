@@ -1,0 +1,16 @@
+# Reference
+
+_Docstrings for ConScape._
+
+```{julia}
+#| echo: false
+#| output: false
+using DocumenterQuarto
+using ConScape
+```
+
+```{julia}
+#| echo: false
+#| output: asis
+DocumenterQuarto.autodoc(ConScape)
+```

@@ -1,0 +1,32 @@
+---
+title: "Why is ConScape implemented in Julia?"
+author: "Bram van Moorter"
+date: "2022-12-05"
+categories: [curious]
+---
+
+This question usually continues with "instead of R". There are two reasons,
+first, Julia is a high-performance language that combines the performance of C
+with the readability of a language like R. For instance, all libraries in R that
+do performance critical computations, such as the ["spatial absorbing Markov
+chain" library](https://cran.r-project.org/web/packages/samc/index.html), are
+wrappers around C code. This introduces what has been called the provlem of "two
+languages", i.e. that one has to master two languages (in this case R and C) to
+use the library in a flexible way or contribute to its further development. As a
+side note, while the preformance benchmark, C is not a very easy language to
+read or write. Here comes in Julia, it has a performance very close to C, but
+the readability of R. It is therefore relatively easy for someone with some
+programming background (as any intermediate to advanced R user) to use the
+library in a flexible way and hopefully also contribute to its further
+development. A second reason was that Julia was also adopted by
+[Circuitscape](https://circuitscape.org/) for its latest
+[implementation](https://docs.circuitscape.org/Circuitscape.jl), which will
+facilitate collaboration and community contributions from a broader group of
+landscape connectivity modelers. 
+
+As we do appreciate the challenge associated with working in a new programming
+language, we did develop a large set of notebooks to serve as templates to
+modify for your own purposes. Indeed, our own experience with using Julia and
+ConScape did rely adjusting existing code at first. Hence, we encourage you to
+give it a try, it is by no means as daunting as it may seem (to [get
+started](/home/quick_start/)). 

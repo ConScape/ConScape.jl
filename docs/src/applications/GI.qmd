@@ -1,0 +1,9 @@
+---
+title: "Green infrastructure mapping"
+---
+
+Go [here](https://sites.google.com/view/greeninfrastructureapp/) for an application of ConScape for green infrastructure mapping, including interactive web maps in the [Google Earth Engine](https://earthengine.google.com/): 
+
+- [Species-specific ecological networks](https://bramvanmoorter.users.earthengine.app/view/greeninfrastructureviewer): where you can view landscapes from a species perspective using the Ecological Network Mapping Tool,
+- [Comparison with pixel-based maps](https://bramvanmoorter.users.earthengine.app/view/greeninfrastructurecomparison): where you can compare traditional, pixel-focussed maps to green infrastructure, network-based maps,
+- [GI prioritization](https://bramvanmoorter.users.earthengine.app/view/greeninfrastructuremultispecies): where you can identify priority areas for multi-species conservation using the Land Prioritization Tool.

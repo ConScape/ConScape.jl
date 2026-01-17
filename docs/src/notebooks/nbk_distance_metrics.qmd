@@ -1,0 +1,181 @@
+---
+title: "Ecological distance"
+bibliography: biblio.bib
+engine: julia
+---
+
+::: {.callout-tip}
+## Here you will learn
+
+Different ecological distance and proximity metrics implemented in ConScape.
+:::
+
+# Demonstration of distance and proximity metrics
+
+In this notebook we demonstrate different types of distances and proximities
+that can be used in ConScape to quantify the connectivity between source and
+target pixels.
+
+## Data import
+
+See notebook [Getting Started](/notebooks/nbk_getting_started.qmd) for a 'basic
+workflow' to learn about the fundamentals on data import and the creation of a
+ConScape `Grid`:
+
+```{julia}
+using ConScape
+using Rasters
+using ArchGDAL
+using Statistics
+using GLMakie
+```
+
+```{julia}
+#| echo: false
+#| eval: true
+
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+```{julia}
+steplikelihood = joinpath(datadir, "mov_prob_1000.asc") 
+quality = joinpath(datadir, "hab_qual_1000.asc")
+# Load raster files
+rast = RasterStack((; steplikelihood, quality), missingval=NaN)
+# Make sure all missing values are shared between steplikelihood and quality
+mask!(rast; with=rast)
+```
+
+```{julia}
+theta = 0.001
+rsp = RandomisedShortestPath(; theta, distance_transformation=MinusLog())
+```
+
+## Euclidean distance
+
+Compute the Euclidean distance for our target pixel 4300.
+Here we pass extra argumenst to `solve`, `1` for the 
+first subgraph, and I for the spatial index of the target pixel.
+
+```{julia}
+I = CartesianIndices(rast)[4300]
+euclid = solve(ConScapeProblem(Distance(), Euclidean()), rast, 1, I)
+```
+
+The distance from all source pixels to a given target pixel (e.g. pixel 4300):
+
+```{julia}
+#| fig-cap: Euclidean distance to target t.
+#| fig-subcap: 
+#|   - "a"
+#|   - "b"
+#| layout-ncol: 2
+
+location_demo = mask(zeros(dims(rast); missingval=NaN); with=rast)
+location_demo[I] = 1
+plot(location_demo; axis=(; title="Target")) |> display
+plot(euclid; axis=(; title="Euclidean distance")) |> display
+```
+
+
+## Least-cost distance
+
+From the `Grid` we can also compute the least-cost distances betweem $s$ and $t$:
+
+```{julia}
+I = CartesianIndices(rast)[4300]
+lcd = solve(ConScapeProblem(Distance(), LeastCostPath()), rast, 1, I)
+```
+
+The least-cost distance from all source pixels to target pixel 4300 is:
+
+```{julia}
+#| fig-cap: Least-cost distance to target t.
+
+plot(lcd; axis=(; title="Least-cost distance"))
+```
+
+Not too surprising there is a high, albeit imperfect, correlation between the
+Euclidean and least-cost distance:
+
+```{julia}
+matches = .!isnan.(euclid)
+cor(euclid[matches], lcd[matches])
+```
+
+## RSP expected cost distance
+
+The randomized shortest path (RSP) expected cost distance is the expected cost
+of moving from the source to the target following the RSP distribution:  
+
+```{julia}
+dists = solve(ConScapeProblem(ExpectedCost(), rsp), rast, 1, I)
+```
+
+The RSP expected cost from all pixels as sources to target pixel 4300:
+
+```{julia}
+#| fig-cap: RSP expected cost distance to target t.
+
+plot(dists; axis=(; title="RSP expected cost distance"))
+```
+
+Comparing the least-cost distance to the RSP expected cost distance we see there
+is strong positive relationship:
+
+```{julia}
+cor(lcd[matches], dists[matches])
+```
+
+Most computations in ConScape require a proximity instead of a distance. A
+proximity is a metric from zero to one, with zero no connectivity and one
+perfect connectivity between a source and a target. Different transformations
+can be used for this, a common choice is the exponential transformation with a
+scaling factor (here: 1000) representing the movement capabilities of a species
+(see [@vanmoorter2021defining] for a discussion):
+
+```{julia}
+#| fig-cap: RSP expected cost proximity (logarithm) to target t.
+
+plot(exp.(dists ./ -1000); axis=(; title="Proximity"))
+```
+
+## Survival probability
+
+[@fletcher2019towards] introduced the use of the 'absorbing Markov chain' or
+'killed random walk' to connectivity modeling in landscape ecology (see also:
+[@vanmoorter2021defining]). The RSP framework uses the same formalism and can be
+considered a generalization of the absorbing Markov chain in
+([@fletcher2019towards]) with the introduction of the $\theta$ paramter, see
+([@vanmoorter2021defining]) for discussion. Here we show ConScape's
+functionality to use the survival probability from source to target as a
+proximtiy metric:  
+
+```{julia}
+#| fig-cap: Survival proximity to target t.
+
+surv_prob = solve(ConScapeProblem(SurvivalProbability(), rsp), rast, 1, I)
+plot(surv_prob; axis=(; title="Survival proximity"))
+```
+
+The proximity based on the expected cost and on the survival probability show a
+strong positive relationship:
+
+```{julia}
+cor(exp.(dists[matches] / -1000), surv_prob[matches])
+```
+
+For more discussion on the use of the survival probability, in the context of
+the RSP framework we refer to ([@vanmoorter2021defining]) and more specifically
+in the context of ConScape to Notebook [dispersal
+mortality](/notebooks/nbk_cost.qmd).
+
+## Summary
+
+In ConScape different metrics are available to characterize the connectivity
+between source and target pixels. The metric that is most appropriate will
+depend upon the ecological application. [@vanmoorter2021defining] suggest the
+use of the RSP expected cost for applications modeling individuals that move
+with knowledge of their landscape, whereas the survival probability is probably
+a more appropriate model for dispersing individuals experiencing mortality
+([@fletcher2019towards] for this last type of applications). 

@@ -1,0 +1,296 @@
+---
+title: "Getting started"
+bibliography: biblio.bib
+engine: julia
+---
+
+::: {.callout-tip}
+## Here you will learn
+
+The basics of ConScape: importing data, running basic analyses, and exporting
+resulting maps.
+
+:::
+
+In this first notebook we demonstrate the basic workflow as presented in van
+Moorter et al. (2022) to compute the amount of connected habitat and the
+movement flow in four steps:
+
+1. Set up ConScape
+2. Data import and RasterStack
+3. Definition of a movement mode
+4. Computation of connected habitat and betweenness measures
+5. Exporting results to disk
+
+# Setup the environment
+
+::: {.callout-warning}
+
+This notebook assumes a running installation of Julia. If you didn't already
+install Julia go [here](/quick_start.qmd).
+
+:::
+
+# Step 1: Install ConScape
+
+In the first time we use ConsCape, we need to install the library. This step can
+be ignored in the afterwards, unless the user wants to reinstall or update the
+ConScape library to a new version.
+
+Within the Julia environment, installing ConScape is as simple as:
+
+```julia
+] add ConScape
+```
+
+`]` puts us in package mode where we can install, update and inspect our
+installed packages.
+
+## Load libraries
+
+We continue, and usually would start, by loading the required libraries.
+You may also need to install these, as above
+
+```{julia}
+# load libraries
+using ConScape
+using Rasters
+using ArchGDAL
+using GLMakie
+```
+
+This step is similar to using the `library()` function in R or the `import`
+command in Python.
+
+When setting up the environment, it is also useful to setup the path to the
+folders where the input data are located and where we want to write the results
+of our analysis. Here we set the `datadir` data folder to the folder where the
+internal ConScape example datasets are saved, after the library is installed.
+
+# Step 2: Data import and grid creation
+
+## Import data
+
+We start by importing and checking the input data to be used in ConScape.
+The first ConScape function is a helper to read maps in ASCII format, the function `readasc()`:
+```{julia}
+#| echo: false
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+## Define a RasterStack input
+
+ConScape accepts a `RasterStack` as input, which is a collection of named
+raster layers. 
+
+These can be the following:
+
+- `steplikelihood` : likelihood of movement (required).
+    This maybe calculated from `stepcost` using the `likelihoodfunction` passed to `Problem`.
+- `stepcost` : cost of movement. This maybe calculated from  
+    `steplikelihood` using the `costfunction` passed to `Problem`.
+- `quality`: habitat quality (required, or the below alternatives)
+- `sourcequality`: source habitat quality if it does not match `quality`.
+- `targetquality`: target habitat quality if it does not match `quality`.
+
+```{julia}
+# Define the paths to the raster files
+paths = (steplikelihood=joinpath(datadir, "mov_prob_1000.asc"),
+         quality=joinpath(datadir, "hab_qual_1000.asc"))
+rast = RasterStack(paths; missingval=NaN)
+```
+
+```{julia}
+plot(rast.quality;
+    axis=(; title = "Map of habitat quality"), 
+    colormap=cgrad([:white, :green])
+)
+```
+
+::: {.callout-warning}
+
+It is important that all cells or pixels that can be reached in the network
+(i.e. those with values for the permeability maps) also have matching habitat
+quality. Otherwise, the 'NaN' values may propagate in computations further down.
+This code ensures this match - simpliy masking the raster stack with itself.
+
+```{julia}
+# Self mask so NaN values are shared across all layers
+mask!(rast; with=rast)
+```
+
+:::
+
+# Step 2: Defining a movement mode
+
+ConScape provides `RandomisedShortestPath`, `RandomWalk` and `LeastCostPath` as different
+modes of movement across the landscape. 
+
+Least-cost paths are computed as if organisms have perfect information about landscape,
+while random walks as if they have no information and move randomly. 
+Randomised Shortest Paths fill the space between them - random movement 
+with some knowledge of the landscape, controlled by the `theta` parameter. 
+
+Before solving any ConScape measures, we must choose a movement mode.
+Here we use the `RandomisedShortestPath`, or `RSP`.
+
+```{julia}
+rsp = RandomisedShortestPath(
+    theta=1.0,
+    proximity_measure=ExpectedCost(),
+    distance_transformation=x -> exp(-x / 75)
+);
+```
+
+Large values of $\theta$ may result in numerical instabilities resulting 
+in warning messages, and instead `RandomWalk` should be considered.
+
+# Step 3: Solving Measures
+
+All `Measure` objects can produce outputs, either spatial, scalar or sparse.
+To solve them we can pass a single measure, a `Tuple` or `NamedTuple` of
+measures.
+
+## Habitat connectivity (functionality) measure
+
+One of the main goals of the ConScape library is the computation of the amount
+of connected habitat in a landscape. The suitability of habitat is typically
+evaluated based on the local environmental conditions (both biotic and abiotic).
+
+We have coined the term 'functional habitat' to evaluate not only the
+suitability, but also the functional connectivity of habitat. In other words,
+functional habitat is habitat that is simultaneously suitable and functionally
+connected. The ConScape library was developed primarily to facilitate this task.
+The functionality of a pixel is computed with the function `connected_habitat`:
+
+```{julia}
+func_hab = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast) 
+```
+
+See [@vanmoorter2021defining] for a discussion of the expected cost distance and
+the survival probability. The expected cost distance needs to be transformed to
+obtain a proximity ($k_{st} \in [0,1]$) necessary for the connected habitat
+computation, an exponential decay is the most common transformation, with a
+scaling parameter (here: $\alpha = 75$).  
+
+We plot the results:
+
+```{julia}
+plot(func_hab; axis=(; title="Functional habitat"))
+```
+
+We can now sum the pixel functionalities to obtain a landscape-level
+functionality (similar to: [@saura2007new]): 
+
+```{julia}
+sum(filter(!isnan, func_hab))
+```
+
+By taking the square root of this number, we can compute the amount of connected
+habitat similar to [@saura2011network]:
+
+```{julia}
+sqrt(sum(filter(x -> !isnan(x), func_hab)))
+```
+
+When we compare this value to the amount of 'unconnected' habitat, we see that
+there is some loss of habitat due to movement constraints, i.e.:
+
+```{julia}
+x = 100 * (1 - sqrt(sum(filter(x -> !isnan(x), func_hab))) /
+                sum(filter(x -> !isnan(x), rast.quality)))
+"$x% of the total available habitat."
+```
+
+
+## Betweenness / MovementFlow
+
+Finally, in addition to computing habitat functionality or amount of connected
+habitat, the ConScape library also computes the number of paths going through
+each pixel weighted by the likelihood of the path, which is a node's
+'betweenness' in network sciences. 
+
+ConScape also computes the betweenness weighted by the qualities of the source and 
+target node of a path (i.e. quality weighted) and weighted by the qualities of source 
+and target and their proximity (i.e. proximity weighted). This last version is closely 
+related to what Bodin2010ranking called the 'generalized betweenness centrality' 
+using the least-cost paths. 
+
+The quality weighting `QualityWeighted()` highlights the pixels
+that are in between high quality pixels:
+
+```{julia}
+qbetw = solve(ConScapeProblem(Betweenness(QualityWeighted()), rsp), rast)
+plot(qbetw; axis=(; title="Betweenness"))
+```
+
+We can use this function to illustrate the effect of the randomness
+parameter $\theta$. By setting the quality of two pixels to one while all others
+are zero we can visualize the distribution over paths between these two pixels,
+for instance, two pixels:
+
+```{julia}
+demo_quality = zeros(dims(rast))
+demo_quality[70, 60] = 1
+demo_quality[105, 50] = 1
+demo_rast = RasterStack((; quality=demo_quality, steplikelihood=rast.steplikelihood))
+plot(demo_quality; axis=(; title = "Source and target pixel"))
+```
+
+We can now over a range of $\theta$ values show the pixels that are most
+'in-between' the two focal pixels:
+
+```{julia}
+#| output: false
+
+thetas = (2.5, 1.0, 0.5, 0.1, 0.01, 0.001)
+betws = map(thetas) do theta
+    solve(ConScapeProblem(Betweenness(QualityWeighted()), RSP(; theta)), rast)
+end
+```
+
+```{julia}
+#| echo: false
+theta_names = "theta=" .* string.(thetas)
+Rasters.rplot(RasterStack(betws; name=theta_names))
+```
+
+We see that as $\theta$ becomes larger the path distribution becomes narrowly
+focused on a single path, i.e. the least-cost path, whereas as $\theta$ becomes
+smaller the path distribution becomes more diffuse, i.e. a random walk. 
+
+Finally, the weighting `QualityAndProximityWeighted()` computes
+the betweenness where paths are weighted by the quality of the source and
+target, but also by their proximity ($k_{st}$). As this is an important
+betweenness, we define `MovementFlow` as a shorthand for 
+`Betweenness{QualityAndProximityWeighted}`.
+
+```{julia}
+#| fig-cap: Quality and proximity weighted betweenness, which we refer to as the 'movement flow'.
+
+mflow = solve(ConScapeProblem(MovementFlow(), rsp), rast)
+plot(mflow; axis=(; title="Movement Flow"))
+```
+
+`MovementFlow` highlights the pixels that are most
+in-between high-quality pixels that are functionally connected together.
+This metric is expected to capture best the actual movement flows on the
+landscape (bodin2010ranking).
+
+# Step 4: Export
+
+Finally, we can write our outputs to disk using Rasters.jl:
+
+```{julia}
+write("movement_flow.tif", mflow; force=true)
+write("quality_weighted_betweenness.tif", qbetw; force=true)
+write("functional_habitat.tif", func_hab; force=true)
+```
+
+## Summary
+
+We showed a basic workflow to demonstrate the main functionalities in the
+ConScape library. Step 1 is data import and the representation of the landscape
+as a `RasterStack`. In step 2 we define a `MovementMode`, and step 3
+we compute measures of habitat functionality and betweenness, illustrating
+the effect of the randomness parameter $\theta$.

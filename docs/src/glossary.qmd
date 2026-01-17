@@ -1,0 +1,24 @@
+---
+title: "Glossary"
+---
+
+### Quality of habitat
+
+The quality of habitat refers to the contribution of the local environmental
+conditions to a population in terms of fitness. 
+
+### Permeability of habitat
+
+The permeability of habitat for movement refers to the effect of local
+environmental conditions on: (1) the likelihood of movement, and (2) the cost of
+movement. See for Fletcher et al. 2019 and Van Moorter et al. 2021 for further
+discussion.
+
+### Resource selection function
+
+See [Boyce and McDonald 1999](https://www.sciencedirect.com/science/article/pii/S0169534799015931)
+
+
+### Step selection function
+
+See [Fortin et al. 2005](https://esajournals.onlinelibrary.wiley.com/doi/full/10.1890/04-0953)

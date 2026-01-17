@@ -1,0 +1,80 @@
+project:
+    type: book
+    output-dir: "../build"
+
+book:
+    page-navigation: true
+    title: "ConScape.jl"
+    author: 
+        name: "Bram van Moorter and Rafael Schouten"
+        email: "rafaelschouten@gmail.com"
+    date: today
+    chapters:
+        - part: index.qmd
+          chapters:
+            - quick_start.qmd
+            - faq.qmd 
+            - glossary.qmd
+            - background.qmd
+        - part: applications/index.qmd
+          chapters:
+            - applications/GI.qmd
+            - applications/EIA.qmd
+        - part: "Tutorials"
+          chapters:
+            - notebooks/index.qmd
+            - notebooks/nbk_getting_started.qmd
+            - notebooks/nbk_landmarks.qmd
+            - notebooks/nbk_distance_metrics.qmd
+            - notebooks/nbk_functionality_variants.qmd
+            - notebooks/nbk_cost.qmd
+            - notebooks/nbk_windowing.qmd
+            - notebooks/nbk_benchmarks.qmd
+        - api/index.qmd 
+    navbar: 
+        background: primary
+        right: 
+        - text: Version
+          menu: 
+            - text: dev
+        
+    search: 
+        location: sidebar
+        type: textbox
+
+    twitter-card: true
+    open-graph: true
+    # site-url: "https://conscape.github.io/site" 
+    repo-url: https://github.com/ConScape/ConScape.jl
+    repo-actions: [issue]
+
+toc-title: "Table of Contents"
+
+execute:
+    echo: false
+    output: true
+    cache: false
+    freeze: false
+
+bibliography: references.bib
+
+format:
+    html:
+        include-in-header: 
+          file: _static/versions.html
+        css: _static/styles.css
+        code-link: true
+        number-sections: false
+        code-overflow: wrap
+        toc: true
+        resources: 
+            - _static/style.css
+            - _static/versions.html
+            - _static/theme.scss
+        theme: 
+            light: 
+                # - _static/theme.scss
+                - flatly
+            dark: 
+                # - _static/theme.scss
+                - darkly

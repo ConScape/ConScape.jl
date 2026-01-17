@@ -1,0 +1,294 @@
+---
+title: "Functional habitat"
+bibliography: biblio.bib
+engine: julia
+---
+
+::: {.callout-tip}
+## Here you will learn
+
+Different ways to compute the amount of connected habitat for a pixel/cell, 
+or the functional habitat of the whole landscape.
+
+:::
+
+# Demonstration of functional habitat computation
+
+In this notebook we demonstrate the different ways the amount of connected
+habitat or `habitat functionality' can be computed with ConScape.
+
+## Data import
+
+See notebook [Getting Started](/notebooks/nbk_getting_started.qmd) for a 'basic
+workflow' to learn about the fundamentals on data import and the creation of a
+ConScape `Grid`:
+
+```{julia}
+using ConScape
+using Rasters
+using ArchGDAL
+using Statistics
+using GLMakie
+```
+
+```{julia}
+#| echo: false
+#| eval: true
+
+datadir = joinpath(dirname(pathof(ConScape)), "..", "data")
+```
+
+```{julia}
+paths = (; steplikelihood = joinpath(datadir, "mov_prob_1000.asc"),
+           quality = joinpath(datadir, "hab_qual_1000.asc"))
+rast = RasterStack(paths; missingval=NaN)
+mask!(rast; with=rast)
+```
+
+```{julia}
+theta = 1.0
+rsp = RSP(; theta)
+```
+
+## Habitat functionality: introduction
+
+We have defined the functionality of habitat as its suitability and its
+functional connectivity to suitable habitat, which has its background in
+metapopulation theory ([@hanski1999metapopulation],[@hanski2000metapopulation]).
+Hanski and co-workers developed several of such metrics for patch-matrix
+representations of the landscape. In ConScape these different metrics are
+computed for continuous grid-based landscape representations. In the following
+we show the computation of the functionality of a pixel based: (1) on the RSP
+expected cost between source and target pixels and on the summation over sources
+or targets, (2) on eigenanalysis instead of summation, (3) on the survival
+probability instead of the RSP expected cost, (4) on the least-cost distance
+instead of the RSP expected cost. This last version corresponds to the popular
+'probability of connectivity' ([@saura2007new]).  
+
+## Functionality: RSP expected cost with summation
+
+Before demonstrating the convenience function ConScape has to computate the
+amount of connected habitat, we will demonstrate explicitly the main building
+blocks going into this computation.
+
+In this case our source and target qualities are the same:
+
+Then, we compute the proximity matrix between $s$ and $t$ using the RSP expected cost:
+
+```{julia}
+connectedgraph_init = init(ExpectedCost(), rsp, rast, 1)
+# Returns a vector of sparse matrices (one per connected subgraph)
+ec = solve!(connectedgraph_init)
+K = map(t -> iszero(t) ? t : exp(-t / 2000), ec);
+qˢ = ConScape.sourcequality(connectedgraph_init)
+qᵗ = ConScape.targetquality(connectedgraph_init)
+```
+
+See Notebook [ecological distance](/notebooks/nbk_distance_metrics.qmd) for a
+discussion of the proximity computation.
+
+From the these quality vectors $q^s$ and $q^t$, and the proximity matrix
+$\mathbf{K}$ we compute the 'landscape matrix' $\mathbf{M}$:  
+
+```{julia}
+M = qˢ .* K .* qᵗ'
+```
+
+The landscape matrix $\mathbf{M}$ can be summarized either through summation or
+Eigenanalysis, both can be used to quantify the functionality of a pixel as a
+source or as a target. The next section demonstrates Eigenanalysis, we first
+look at summation to summarize $\mathbf{M}$. By summing over all rows, we get
+how well suitable target habitat is connected to suitable sources:
+
+```{julia}
+#| label: fig-target_functionality
+#| fig-cap: Habitat functionality of each pixel as a target (i.e. in receiving suitable habitat from sources).
+
+func_habᵗ = vec(sum(replace(M, NaN => 0), dims=1)) # sum over rows
+func_habᵗ_rast = fill(NaN, dims(rast))
+func_habᵗ_rast[ConScape.sourceids(connectedgraph_init)] .= func_habᵗ 
+# Plot as a spatial Raster
+plot(func_habᵗ_rast; axis=(; title="Target Functional habitat"))
+```
+
+Similarly, by summing over all columns, we quantify how well suitable source
+habitat is connected to suitable target habitat:
+
+```{julia}
+#| fig-cap: Habitat functionality of each pixel as a source (i.e. in contributing suitable habitat to targets).
+
+# Sum over columns
+func_habˢ = vec(sum(replace(M, NaN => 0), dims=2));
+func_habˢ_rast = fill(NaN, dims(rast))
+func_habˢ_rast[ConScape.sourceids(connectedgraph_init)] .= func_habˢ 
+# Plot
+plot(func_habˢ_rast; axis=(; title="Source functional habitat"))
+```
+
+We could then multiply the functionality of a pixel as a source and as a target
+to identify pixels that are simultaneously functional as source and target.
+
+```{julia}
+func_habˢᵗ = func_habˢ .* func_habᵗ;
+plot(func_habˢ_rast; axis=(; title="Source*Target Functional habitat"))
+```
+
+Note that this last computation is only possible, if func$^s$ and func$^t$ are
+of the same length. In other words, the the target qualities cannot be
+represented as a sparse matrix (see Van Moorter et al. 2022 and Notebook
+[performance](/notebooks/nbk_landmarks.qmd) for more details).
+
+ConScape's convenience function focuses on the 'source functionality' to allow
+for the usage of the sparse matrix representation of target qualities, which
+allows the computation of these metrics on even larger landscapes (see Notebook
+[performance](/notebooks/nbk_landmarks.qmd) for explanation):
+
+```{julia}
+#| fig-cap: Habitat functionality of each pixel as a target using ConScape's convenience function.
+
+rsp = RSP(; 
+    theta, 
+    proximity_measure=ExpectedCost(), 
+    distance_transformation=x -> exp(-x/2000)
+);
+func_hab = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast)
+plot(func_hab; axis=(; title="Functional habitat"))
+```
+is identical to the one in Fig. [@fig-target_functionality].
+
+## Functionality: RSP expected cost with eigenanalysis
+
+In addition to summarizing the landscape matrix $\mathbf{M}$ through summation,
+we can also use Eigenanalysis:
+
+```{julia}
+((vˡ, λ, vʳ),) = solve(ConScapeProblem(EigMax(), rsp), rast)
+```
+
+Where $\lambda$ corresponds to the 'metapopulation capacity' in metapopulation
+ecology ([@hanski2000metapopulation]):
+
+```{julia}
+λ
+```
+
+The interpretation of this value outside the context of metapopulation theory
+still needs to be addressed in future research.
+
+The right Eigenvector corresponds to the reproductive value, which is analogous
+to the functionality as a source: 
+
+```{julia}
+#| fig-cap: Habitat functionality based on eigenanalysis of each pixel as a target (i.e. the reproductive value).
+
+# ConScape.plot_values(g, vʳ, title="Reproductive value", color=cgrad(:viridis))
+```
+
+Note that the landscape matrix $\mathbf{M}^{st}$ is transposed compared to (e.g.
+[@ovaskainen2003much]) and therefore the right and left Eigenvectors switched
+interpretation.
+
+The left Eigenvector then corresponds to the stable distribution, which is
+somewhat analogous to the functionality as a target:
+
+```{julia}
+#| fig-cap: Habitat functionality based on eigenanalysis of each pixel as a source (i.e. the stable distribution).
+
+# ConScape.plot_values(g, vˡ, title="Stable distribution", color=cgrad(:viridis))
+```
+
+Just as [@ovaskainen2003habitat] we can multiply the left and right
+Eigenvectors:
+
+```{julia}
+# eigenvec = vˡ .* vʳ;
+```
+
+An important note, Eigenanalysis requires the landscape matrix $\mathbf{M}^{st}$
+to be square, hence the sparse matrix representation of the target qualities is
+not possible (see main text and Notebook
+[performance](/notebooks/nbk_landmarks.qmd) for more details). Hence, we cannot
+rely on the 'landmark' approach to reduce the computational demands, which
+currently limits this type of eigenanalysis to relatively coarse landscape
+representations. 
+
+## Functionality: survival probability with summation
+
+See also Notebook [ecological distance](/notebooks/nbk_distance_metrics.qmd) for
+more details on the different distance and proximity metrics that can be used.
+We now demonstrate the use of the survival probability as an alternative metric
+to compute the amount of suitable target habitat that is functionally connected
+to a suitable source pixel:
+
+```{julia}
+#| fig-cap: Habitat functionality based on survival probability.
+
+rsp = RSP(; theta, proximity_measure=SurvivalProbability())
+func_hab_surv = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast)
+plot(func_hab_surv; axis=(; title="Habitat functionality"))
+```
+
+See Notebook [dispersal mortality](/notebooks/nbk_cost.qmd) for more details on
+the use of mortality data as the basis for survival connectivity.
+
+## Functionality: least-cost distance with summation
+
+Our final demonstration to quantify the amount of connected habitat is related
+to the 'probability of connectivity' [@saura2007new] and the 'cost-benefit
+analysis' ([@drielsma2007raster],[@drielsma2007spatial]). These approaches both
+are built from the least-cost distance between source and target pixels.
+Although the RSP expected cost in theory includes the least-cost distance for
+$\theta \rightarrow \infty$, it is not an efficient algorithm to use for
+least-cost based distances. We therefore implemented convenience functions to
+use Julia's implementation of the Dijkstra algorithm to compute the least-cost
+distance:
+
+```{julia}
+lcp = LeastCostPath(; distance_transformation=x -> exp(-x/40))
+func_hab_lcp = solve(ConScapeProblem(FunctionalHabitat(), lcp), rast)
+```
+
+The 'connectivity of a landscape' from ([@drielsma2007spatial]) is then the sum
+of all elements in the landscape matrix $\mathbf{M}^{st}$:
+
+```{julia}
+CL = sum(filter(x -> !isnan(x), func_hab_lcp))
+```
+
+And the 'probability of connectivity' further divides this 'connectivity of the
+landscape' by the squared area of the landscape ([@saura2007new]):
+
+```{julia}
+PC = CL / sum(map(x -> isnan(x) ? 0 : 1, func_hab_lcp))^2
+```
+
+In addition, as above we can compute the source and target functionalities using
+the least-cost distance by respectively summing over all columns or all rows of
+the landscape matrix $\mathbf{M}^{st}$, this corresponds to the colonization
+potential in [@drielsma2007raster]: 
+
+```{julia}
+#| fig-cap: Habitat functionality based on the least-cost distance, which corresponds to the 'colonization potential' in [@drielsma2007raster].
+
+plot(func_hab_lcp; axis=(; title="Colonization potential"))
+```
+
+## Summary
+
+ConScape allows for several different 'habitat functionality' metrics by
+combining different distance or proximity metrics to quantify the connectivity
+between sources and targets with different ways of summarizing across sources
+and/or targets. Theoretically, the RSP expected cost is a generalized version of
+the least-cost distance (i.e. RSP expected cost equals the least-cost distance
+for $\theta \rightarrow \infty$), although numerical issues with the current
+algorithms prevent the usage of the RSP expected cost to replace the least-cost
+distance in actual applications. In addition to the RSP expected cost (and
+least-cost distance), ConScape also offers the survival probability to quantify
+the connectivity between source and target pixels. Two summary statistics have
+been proposed to quantify habitat functionality: summation and eigenanalysis.
+Summation was first proposed in [@hanski1999metapopulation] with the
+'neighborhood habitat area index', whereas [@hanski2000metapopulation] proposed
+eigenanalysis to quantify the 'metapopulation capacity' for metapopulation
+persistence. Both of these approaches have been implemented in ConScape,
+however, the computational requirements for eigenanalysis may prevent this
+approach on large landscapes.  
