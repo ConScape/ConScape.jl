@@ -11,7 +11,7 @@ engine: julia
 ```{julia}
 using ConScape
 using Rasters
-using CairoMakie
+using GLMakie
 using StatsBase
 using Random
 Random.seed!(1234)

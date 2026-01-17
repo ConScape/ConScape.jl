@@ -28,7 +28,7 @@ using ConScape
 using Rasters
 using ArchGDAL
 using Statistics
-using CairoMakie
+using GLMakie
 ```
 
 ```{julia}
@@ -78,7 +78,7 @@ Then, we compute the proximity matrix between $s$ and $t$ using the RSP expected
 ```{julia}
 connectedgraph_init = init(ExpectedCost(), rsp, rast, 1)
 # Returns a vector of sparse matrices (one per connected subgraph)
-ec = solve!(connectedgraph_init).ExpectedCost
+ec = solve!(connectedgraph_init)
 K = map(t -> iszero(t) ? t : exp(-t / 2000), ec);
 qˢ = ConScape.sourcequality(connectedgraph_init)
 qᵗ = ConScape.targetquality(connectedgraph_init)

@@ -24,7 +24,7 @@ This notebook assumes familiarity with the basics as covered in the notebook
 using ConScape
 using Rasters
 using ArchGDAL
-using CairoMakie
+using GLMakie
 ```
 
 ```{julia}

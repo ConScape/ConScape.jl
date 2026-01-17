@@ -27,7 +27,7 @@ using ConScape
 using Rasters
 using ArchGDAL
 using Statistics
-using CairoMakie # Users may prefer GLMakie for interactivity
+using GLMakie
 ```
 
 ```{julia}

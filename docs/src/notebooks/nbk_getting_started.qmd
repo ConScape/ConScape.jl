@@ -56,7 +56,7 @@ You may also need to install these, as above
 using ConScape
 using Rasters
 using ArchGDAL
-using CairoMakie
+using GLMakie
 ```
 
 This step is similar to using the `library()` function in R or the `import`

@@ -23,7 +23,7 @@ using ConScape
 using Rasters
 using ArchGDAL
 using Statistics
-using CairoMakie
+using GLMakie
 ```
 
 ```{julia}

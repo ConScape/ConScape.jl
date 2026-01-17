@@ -32,7 +32,7 @@ repository in the ConScape github organisation.
 using ConScape
 using Rasters
 using ArchGDAL # We use GDAL for tiff files, but NCDatasets or ZarrDatasets could be used instead
-using CairoMakie # GLMakie could be used for interactivity
+using GLMakie
 using JSON3
 ```
 
