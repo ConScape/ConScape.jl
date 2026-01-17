@@ -5,7 +5,10 @@ engine: julia
 ---
 
 ::: {.callout-tip}
-## Here you will learn
+oGeometryEditor] handleClick 
+Object { skipNextClick: false, draggingNewRingVertex: false, addingVertices: false, hasOnExit: false }
+forward-logs-shared.ts:95:22
+[GeometryEditor] calling onExit## Here you will learn
 
 How to use a coarse-grained subsample of target pixels - or "landmarks" -
 to increase computational performance with minimal loss in accuracy.
@@ -26,7 +29,7 @@ using ConScape
 using Rasters
 using ArchGDAL
 using Statistics
-using CairoMakie
+using GLMakie
 ```
 
 ```{julia}
@@ -79,8 +82,8 @@ and low-resolution target qualities:
 ```{julia}
 theta = 1.0
 rsp = RSP(; theta, distance_transformation=x -> exp(-x / 75))
-fh = solve(FunctionalHabitat(), rsp, rast) 
-fh_coarse = solve(FunctionalHabitat(), rsp, rast; grain=20)
+fh = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast) 
+fh_coarse = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast; grain=20)
 ```
 
 The reduction in computation is substantial. The processing time goes from 16 to
@@ -134,12 +137,14 @@ aggregation, to 50):
 coarseness = [1, 2, 3, 5, 7, 10, 15, 20, 50]
 time_fh_grains = map(coarseness) do grain
     time = @elapsed begin
-        fh = solve(FunctionalHabitat(), rsp, rast; grain)
+        fh = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast; grain)
     end
     time, fh
 end
 ```
+
 Calculate sums and correlations with non-aggregated outputs:
+
 ```{julia}
 time_grains = first.(time_fh_grains)
 fh_grains = last.(time_fh_grains)
@@ -150,11 +155,15 @@ cor_fh_grains = cor.((skipnan(fh),), skipnan.(fh_grains))
 
 ```{julia}
 #| fig-cap: The correlation between the full and landmark-based habitat functionality in function of the level of 'coarse graining'.
-p = plot(coarseness, cor_fh_grains; label="Correlation")    
-plot!(p.axis, coarseness, est_fh_grains; label="Estimated connected habitat")
-plot!(p.axis, coarseness, time_grains ./ first(time_grains); label="Relative time taken")
-axislegend(p.axis; position=:lc)
-p.figure # TODO split Y axes?
+fig = Figure()
+ax1 = Axis(fig[1, 1])
+ax2 = Axis(fig[2, 1])
+scatterlines!(ax1, coarseness, est_fh_grains; color=:black, label="Estimated connected habitat")
+scatterlines!(ax2, coarseness, cor_fh_grains; label="Correlation")    
+scatterlines!(ax2, coarseness, time_grains ./ first(time_grains); label="Relative computation time")
+axislegend(ax1; position=:rc)
+axislegend(ax2; position=:rc)
+fig
 ```
 
 The ranking of source pixels based on their functional connectivity to
@@ -178,8 +187,8 @@ high-resolution and low-resolution ($20 \times 20$) target qualities, first for
 the quality weighted version:
 
 ```{julia}
-qbetw = solve(Betweenness(QualityWeighted()), rsp, rast)
-qbetw_coarse = solve(Betweenness(QualityWeighted()), rsp, rast; grain=20)
+qbetw = solve(ConScapeProblem(Betweenness(QualityWeighted()), rsp), rast)
+qbetw_coarse = solve(ConScapeProblem(Betweenness(QualityWeighted()), rsp), rast; grain=20)
 ```
 
 ```{julia}
@@ -204,8 +213,8 @@ We found similar results for the quality and proximity weighted version of the
 betweenness: 
 
 ```{julia}
-mbetw = solve(MovementFlow(), rsp, rast)
-mbetw_coarse = solve(MovementFlow(), rsp, rast; grain=20)
+mbetw = solve(ConScapeProblem(MovementFlow(), rsp), rast)
+mbetw_coarse = solve(ConScapeProblem(MovementFlow(), rsp), rast; grain=20)
 ```
 
 ```{julia}
@@ -233,7 +242,7 @@ betw = (
     mbetw=Betweenness(QualityAndProximityWeighted())
 )
 betw_grains = map(coarseness) do grain
-    solve(betw, rsp, rast; grain)
+    solve(ConScapeProblem(betw, rsp), rast; grain)
 end
 ```
 
@@ -249,27 +258,30 @@ cor_mbetw_grains = cor.((skipnan(mbetw),), mbetw_grains)
 ```{julia}
 #| fig-cap: The correlation between the full and landmark-based betweenness in function of the level of 'coarse graining'.
 
-p = plot(coarseness, cor_qbetw_grains; 
-    alpha=0.6, label="Quality-weighted betweenness"
+p = scatterlines(coarseness, cor_qbetw_grains; 
+    alpha=0.7, label="Quality-weighted betweenness"
 )
-plot!(p.axis, coarseness, cor_mbetw_grains; 
-    alpha=0.6, label="Quality and proximity-weighted betweenness"
+scatterlines!(p.axis, coarseness, cor_mbetw_grains; 
+    alpha=0.7, label="Quality and proximity-weighted betweenness"
 )
 axislegend(p.axis; position=:lb)
 p.figure
 ```
 
-We see that the level of accuracy is good for levels of aggregation below
-10, but starts to drop off rather rapidly above this. 
+We see that the level of accuracy is good for levels of aggregation below 10,
+but starts to drop off rather rapidly above this. 
 
 ## Summary
 
-The keyword `grain` in useful tool to reduce the computational demands of dealing 
-with high-resolution landscapes by connecting a high-resolution map of source pixels to a lower resolution map of target pixels. 
+The keyword `grain` in useful tool to reduce the computational demands of
+dealing with high-resolution landscapes by connecting a high-resolution map of
+source pixels to a lower resolution map of target pixels. 
 
-Unfortunately, the computational benefits come at the cost of a
-loss in accuracy. We found for our example that aggregation levels below 10 led
-to a substantial benefit in terms of computation with minimal loss in accuracy.
-We suggest that researchers explore how the accuracy changes in their landscape with changing levels of aggregation. 
+Unfortunately, the computational benefits come at the cost of a loss in
+accuracy. We found for our example that aggregation levels below 10 led to a
+substantial benefit in terms of computation with minimal loss in accuracy. We
+suggest that researchers explore how the accuracy changes in their landscape
+with changing levels of aggregation. 
 
-Windowing the landscape is an alternative approach to reduce computational demands, see [windowing](/notebooks/nbk_windowing.qmd).
+Windowing the landscape is an alternative approach to reduce computational
+demands, see [windowing](/notebooks/nbk_windowing.qmd).

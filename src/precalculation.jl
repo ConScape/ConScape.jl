@@ -32,7 +32,8 @@ num_sp_workspaces_base(::MovementMode, ::Any) = 0
 anymeasure(f, measures::NamedTuple, mov::MovementMode) =
     anymeasure(f, values(measures), mov)
 anymeasure(f, measures::Tuple{Vararg{Measure}}, mov::MovementMode) =
-    any(map(m -> f(m, mov), measures)) 
+    any(map(m -> f(m, mov), measures))
+anymeasure(f, m::Measure, mov::MovementMode) = f(m, mov) 
 
 # TODO: Move these to a precalculation.jl file with the computation precalculations
 function sparse_precalculation(problem::ConScapeProblem{<:RSP}, graph::ConnectedGraph, workspaces::WorkspaceCollection)
@@ -238,7 +239,7 @@ function dense_precalculation(::ConnectedGraphInit)
     (;)
 end
 
-function _get_eigmax(measures::NamedTuple)::EigMax
+function _get_eigmax(measures::NamedTuple)::Union{EigMax,Nothing}
     all_eigmax = map(_get_eigmax, values(measures))
     return reduce(all_eigmax; init=nothing) do out, cur
         if !(isnothing(out) || isnothing(cur))
@@ -247,9 +248,9 @@ function _get_eigmax(measures::NamedTuple)::EigMax
         isnothing(out) ? cur : out
     end
 end
-_get_eigmax(m::EigMax) = m
-_get_eigmax(m::SensitivityAnalysis) = metric(m) isa EigMax ? metric(m) : nothing
-_get_eigmax(m::Measure) = nothing
+_get_eigmax(m::EigMax)::EigMax = m
+_get_eigmax(m::SensitivityAnalysis)::Union{EigMax,Nothing} = metric(m) isa EigMax ? metric(m) : nothing
+_get_eigmax(m::Measure)::Nothing = nothing
 
 ###########################################################################################
 # Variable generation for ConnectedGraphInit

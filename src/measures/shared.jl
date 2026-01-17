@@ -70,15 +70,18 @@ function num_vec_workspaces(problem::ConScapeProblem)
     # Base of 10 covers target_precalculation needs:
     # Z (2), Zⁱ (1), Y (1), K (2 with proximity measure), M (1), plus buffer
     base = 10
-    return base + sum(m -> num_vec_workspaces(m, mov), values(mes); init=0)
+    return base + _sum_over_measures(num_vec_workspaces, mes, mov)
 end
 
 function num_sp_workspaces(problem::ConScapeProblem)
     mov = movement(problem)
     mes = measures(problem)
     base = num_sp_workspaces_base(mov, solver(problem))
-    return base + sum(m -> num_sp_workspaces(m, mov), values(mes); init=0)
+    return base + _sum_over_measures(num_sp_workspaces, mes, mov)
 end
+
+_sum_over_measures(f, mes::NamedTuple, mov) = sum(m -> f(m, mov), values(mes); init=0)
+_sum_over_measures(f, m::Measure, mov) = f(m, mov)
 
 # Define the default output Level for that initialisation object
 defaultfinallevel(::GridGraphInit) = GridGraphLevel()

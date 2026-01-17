@@ -4,7 +4,7 @@ bibliography: biblio.bib
 engine: julia
 ---
 
-Here I will present an annotated index of the different notebooks through a
+This is an annotated index of the different notebooks through a
 short summary.
 
 The first Notebook on how [getting started](/notebooks/nbk_getting_started.qmd)

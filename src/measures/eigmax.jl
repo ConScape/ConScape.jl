@@ -23,7 +23,7 @@ returntrait(::EigMax) = ReturnCustom()
 needs_eigmax(::EigMax, ::RSP) = true
 
 # Allocate sqauare matrix of target * target size
-function allocate_gridgraph_output(
+function _allocate_gridgraph_output(
     ::ReturnCustom,
     m::EigMax,
     ::GridGraph,
@@ -33,7 +33,7 @@ function allocate_gridgraph_output(
     o = Vector{T}(undef, length(connectedgraphs))
     return MeasureOutput(m, o)
 end
-function allocate_connectedgraph_output(
+function _allocate_connectedgraph_output(
     ::ConnectedGraphLevel,
     ::ReturnCustom,
     m::EigMax,

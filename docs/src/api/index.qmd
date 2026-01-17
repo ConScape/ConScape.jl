@@ -1,7 +1,3 @@
----
-number-depth: 2
----
-
 # Reference
 
 _Docstrings for ConScape._

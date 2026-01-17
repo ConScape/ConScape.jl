@@ -23,7 +23,7 @@ using ConScape
 using Rasters
 using ArchGDAL
 using Statistics
-using CairoMakie
+using GLMakie
 ```
 
 ```{julia}
@@ -46,6 +46,7 @@ simply assumed that the movementl likelihood adequately represents quality (see 
 independent quality data).
 
 We remove negative values:
+
 ```{julia}
 steplikelihood = max.(0, steplikelihood)
 quality = max.(0, quality);
@@ -103,7 +104,7 @@ target_only[I] = 1
 #| layout-ncol: 2
 #| 
 targetinit = init(rsp, rast, 1, I)
-sp = solve(SurvivalProbability(), targetinit)
+sp = solve!(targetinit, SurvivalProbability())
 replace!(sp, 1.0 => NaN)
 display(plot(target_only; axis=(; title="Target")))
 display(plot(sp; axis=(; title="Survival probability")))
@@ -115,7 +116,7 @@ amount of habitat it is functionally connected to:
 ```{julia}
 #| fig-cap: Amount of connected habitat based on survival connectivity.
 rsp = RSP(; proximity_measure=SurvivalProbability(), theta, distance_transformation=MinusLog()) 
-ch = solve(FunctionalHabitat(), rsp, rast)
+ch = solve(ConScapeProblem(FunctionalHabitat(), rsp), rast)
 plot(ch; axis=(; title="Functional habitat based on survival probability"))
 ```
 

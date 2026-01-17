@@ -44,23 +44,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: julia-actions/setup-julia@v2
+        with: # Fetches the last commit only
+          fetch-depth: 0
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - uses: julia-actions/setup-julia@latest
+      - uses: actions/cache@v4
+        env:
+          cache-name: cache-docs-artifacts
         with:
-          version: '1'
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-docs-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-docs-${{ env.cache-name }}-
+            ${{ runner.os }}-docs-
+            ${{ runner.os }}-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install jupyter
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri
       - run: |
-          julia --project=docs -e '
-            using Pkg
-            Pkg.develop(PackageSpec(path=pwd()))
-            Pkg.instantiate()'
-      - run: |
-          julia --project=docs -e '
-            using Documenter: doctest, DocMeta
-            using ConScape
-            DocMeta.setdocmeta!(ConScape, :DocTestSetup, :(using ConScape); recursive=true)
-            doctest(ConScape)'
+          Xvfb :0 -screen 0 1024x768x24 &
+          sleep 3
         env:
-          COLUMNS: 120
-      - run: julia --project=docs docs/make.jl
+          DISPLAY: ':0'
+      - uses: julia-actions/julia-docdeploy@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+          DISPLAY: ':0'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # For authentication with GitHub Actions token
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # For authentication with SSH deploy key
+          JULIA_DEBUG: "Documenter"

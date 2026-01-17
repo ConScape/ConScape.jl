@@ -2,3 +2,4 @@
 *.html
 *.tif
 /site_libs/
+**/*.quarto_ipynb

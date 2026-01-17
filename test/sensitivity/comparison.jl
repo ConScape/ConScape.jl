@@ -70,7 +70,7 @@ end
                     proximity_measure, 
                     theta, 
                 );
-                ConScapeProblem(; movement, grain)
+                ConScapeProblem(sensitivity_measures, movement; grain)
             end
         end
     end
@@ -128,7 +128,7 @@ end
     @time new_sens = map(problems) do problems_by_grain
         map(problems_by_grain) do problems_by_theta
             map(problems_by_theta) do proximity_problem
-                solve(sensitivity_measures, proximity_problem, rast)
+                solve(proximity_problem, rast)
             end
         end
     end;

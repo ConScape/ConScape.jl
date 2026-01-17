@@ -4,6 +4,8 @@ bibliography: biblio.bib
 engine: julia
 ---
 
+TODO: approx does not work anymore
+
 ::: {.callout-tip}
 ## Here you will learn about
 
@@ -22,7 +24,7 @@ This notebook assumes familiarity with the basics as covered in the notebook
 using ConScape
 using Rasters
 using ArchGDAL
-using CairoMakie
+using GLMakie
 ```
 
 ```{julia}
@@ -82,6 +84,8 @@ rsp = RSP(;
 )
 ```
 
+# TODO: rewrite this its dated 
+
 Despite the warning, the \texttt{GridRSP} will be constructed and the functions
 can be run. The distance functions, such as `expected_cost`, will return _Inf_
 for the elements $(s,t)$ of the distance matrices for which $z_{st} = 0$. As a
@@ -120,7 +124,8 @@ RSP-based distance functions are called upon the `Grid` struct instead of the
 as they require a loop over target nodes.
 
 ```{julia}
-@time func_hab = solve(FunctionalHabitat(), rsp, rast)
+problem = ConScapeProblem(FunctionalHabitat(), rsp)
+@time func_hab = solve(problem, rast)
 plot(func_hab)
 ```
 
@@ -132,13 +137,14 @@ aiming at convergence for the true RSP-based distance, see
 Appendix~\ref{appendix_singlePass} for full details and explanation:
 
 ```{julia}
-rsp = RSP(; 
+approx_rsp = RSP(; 
     distance_transformation=x -> exp(-x/75), 
     proximity_measure=ExpectedCost(),
     approx=true,
     theta=1.0, 
 )
-@time func_hab = solve(FunctionalHabitat(), rsp, rast);
+approx_problem = ConScapeProblem(FunctionalHabitat(), approx_rsp)
+@time func_hab = solve(approx_problem, rast);
 plot(func_hab)
 ```
 

@@ -134,7 +134,10 @@ _get_cost(rast::RasterStack) = _keys_or_nothing(rast, (:cost, :stepcost))
 _maybe_rasterstack(ggi) = _maybe_rasterstack(measures_outputs(ggi), ggi)
 function _maybe_rasterstack(measures_outputs, ggi)
     out = _maybe_raster(measures_outputs, ggi)
-    if all(map(o -> o isa Raster, out))
+    # Unwrap single-measure results if the problem was defined with a single Measure
+    if measures(problem(ggi)) isa Measure
+        return only(out)
+    elseif all(map(o -> o isa Raster, out))
         return RasterStack(out)
     else
         return out
@@ -196,6 +199,8 @@ const MeasureOutputNamedTuple = NamedTuple{<:Any,<:Tuple{Vararg{MeasureOutput}}}
 # This lets us specify different measures after defining a problem.
 setmeasures(p::ConScapeProblem, m::Measure) =
     setmeasures(p, NamedTuple{(Symbol(m),)}((m,)))
+setmeasures(i::Initialisation, m::Measure) =
+    setmeasures(i, NamedTuple{(Symbol(m),)}((m,)))
 function setmeasures(p::ConScapeProblem, measures::Union{Tuple,NamedTuple})
     ConstructionBase.setproperties(p, (; measures))
 end
@@ -205,12 +210,10 @@ function setmeasures(ggi::GridGraphInit, m::NamedTuple{<:Any,Tuple{Vararg{Measur
     problem = setmeasures(ConScape.problem(ggi), m)
     return ConstructionBase.setproperties(ggi, (; problem, outputs))
 end
-setmeasures(ggi::GridGraphInit, m::Measure) =
-    setmeasures(ggi, NamedTuple{(Symbol(m),)}((m,)))
 function setmeasures(ggi::GridGraphInit, m::MeasureNamedTuple)
     problem = setmeasures(ConScape.problem(ggi), m)
     outputs = map(measures(problem)) do m
-        allocate_gridgraph_output(m, ggi)
+        _allocate_gridgraph_output(m, ggi)
     end
     return ConstructionBase.setproperties(ggi, (; problem, outputs))
 end
@@ -219,7 +222,7 @@ function setmeasures(cgi::ConnectedGraphInit, m::MeasureNamedTuple;
 )
     problem = setmeasures(ConScape.problem(cgi), m)
     outputs = map(measures(problem)) do m
-        allocate_connectedgraph_output(finallevel, m, cgi)
+        _allocate_connectedgraph_output(finallevel, m, cgi)
     end
     return ConnectedGraphInit(
         problem,
@@ -246,7 +249,9 @@ function setmeasures(cgi::ConnectedGraphInit, mos::MeasureOutputNamedTuple;
         connectedgraphid(cgi),
     )
 end
-function setmeasures(ti::TargetInit, m; finallevel=defaultfinallevel(ti))
-    connectedgraphinit = setmeasures(connectedgraphinit(ti), m; finallevel)
-    return TargetInit(connectedgraphinit, target(ti))
+function setmeasures(ti::TargetInit, m::MeasureNamedTuple; 
+    finallevel=defaultfinallevel(ti)
+)
+    cgi = setmeasures(connectedgraphinit(ti), m; finallevel)
+    return TargetInit(cgi, target(ti))
 end
