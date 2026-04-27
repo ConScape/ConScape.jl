@@ -208,11 +208,16 @@ function init(wi::WindowedInit, i::Int; verbose=false)
     verbose && println("Initialising window from ranges $ranges...")
     rast = _get_window_with_zeroed_buffer(wi, ranges)
     # Pass pre-allocated workspaces to avoid repeated allocations
-    init(problem(problem(wi)), rast;
-        verbose,
-        workspaces=workspaces(wi),
-        sparse_builders=sparse_builders(wi),
-    )
+    # In threaded mode, each task allocates its own to avoid concurrent mutation
+    if problem(wi).threaded
+        init(problem(problem(wi)), rast; verbose)
+    else
+        init(problem(problem(wi)), rast;
+            verbose,
+            workspaces=workspaces(wi),
+            sparse_builders=sparse_builders(wi),
+        )
+    end
 end
 
 solve(p::WindowedProblem, rast::RasterStack; verbose=false, kw...) =
