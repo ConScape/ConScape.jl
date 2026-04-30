@@ -138,8 +138,9 @@ mutable struct WindowedInit{P,R} <: Initialisation
     sorted_indices::Vector{Int}
     workspaces::WorkspaceCollection
     sparse_builders::SparseBuilders
-    function WindowedInit(problem::P, rast::R, sparse_sizes, ranges, indices, sorted_indices, workspaces, sparse_builders) where {P,R}
-        wi = new{P,R}(problem, rast, sparse_sizes, ranges, indices, sorted_indices, workspaces, sparse_builders)
+    workspace_channel::Union{Nothing,Channel}  # Optional: for threaded mode with channel pool
+    function WindowedInit(problem::P, rast::R, sparse_sizes, ranges, indices, sorted_indices, workspaces, sparse_builders, workspace_channel=nothing) where {P,R}
+        wi = new{P,R}(problem, rast, sparse_sizes, ranges, indices, sorted_indices, workspaces, sparse_builders, workspace_channel)
         # Register finalizer to clean up mmap files if any
         isempty(mat_workspaces(workspaces).mmap_paths) || finalizer(_cleanup_windowed_init!, wi)
         return wi
@@ -157,6 +158,7 @@ vec_workspaces(wi::WindowedInit) = vec_workspaces(workspaces(wi))
 mat_workspaces(wi::WindowedInit) = mat_workspaces(workspaces(wi))
 sp_workspaces(wi::WindowedInit) = sp_workspaces(workspaces(wi))
 sparse_builders(wi::WindowedInit) = wi.sparse_builders
+workspace_channel(wi::WindowedInit) = wi.workspace_channel
 
 """
     cleanup!(wi::WindowedInit)
@@ -199,20 +201,47 @@ function init(p::WindowedProblem, rast::RasterStack;
     )
     sparse_builders = SparseBuilders()
 
+    # Create workspace channel pool for threaded mode
+    # When threaded=true, pre-allocate N workspaces (N = nthreads())
+    workspace_channel = if p.threaded
+        ch = Channel{WorkspaceCollection}(Threads.nthreads())
+        for _ in 1:Threads.nthreads()
+            put!(ch, WorkspaceCollection(
+                Workspaces(max_size[1], num_vec_workspaces(inner_problem)),
+                _create_mat_workspaces(max_size, num_mat_workspaces(inner_problem), mmap_path(inner_problem)),
+                Workspaces(spzeros(max_size[1], max_size[1]), num_sp_workspaces(inner_problem)),
+            ))
+        end
+        ch
+    else
+        nothing
+    end
+
     return WindowedInit(
-        p, rast, sparse_sizes, window_ranges, indices, sorted_indices, workspaces, sparse_builders
+        p, rast, sparse_sizes, window_ranges, indices, sorted_indices, workspaces, sparse_builders, workspace_channel
     )
 end
-function init(wi::WindowedInit, i::Int; verbose=false)
+function init(wi::WindowedInit, i::Int; verbose=false, ws_pool=nothing, sparse_builders_arg=nothing)
     ranges = wi.ranges[i]
     verbose && println("Initialising window from ranges $ranges...")
     rast = _get_window_with_zeroed_buffer(wi, ranges)
     # Pass pre-allocated workspaces to avoid repeated allocations
-    # In threaded mode, each task allocates its own to avoid concurrent mutation
+    # Can receive workspaces from caller (channel pool) or allocate fresh
     if problem(wi).threaded
-        init(problem(problem(wi)), rast; verbose)
+        if !isnothing(ws_pool)
+            # Use provided workspaces (from channel pool) with fresh sparse builders to avoid concurrent mutation
+            return init(problem(problem(wi)), rast;
+                verbose,
+                workspaces=ws_pool,
+                sparse_builders=SparseBuilders(),
+            )
+        else
+            # Allocate fresh to avoid concurrent mutation
+            return init(problem(problem(wi)), rast; verbose)
+        end
     else
-        init(problem(problem(wi)), rast;
+        # Single-threaded: use pre-allocated
+        return init(problem(problem(wi)), rast;
             verbose,
             workspaces=workspaces(wi),
             sparse_builders=sparse_builders(wi),
@@ -246,21 +275,39 @@ function solve!(window_init::WindowedInit;
    end
 
     # Set up channels for threading
+    # Determine if we're using channel pool or fresh allocation
+    ch = workspace_channel(window_init)
+    use_channel = p.threaded && !isnothing(ch)
+    
     # Define a runner for threaded/non-threaded operation
     function run(i, iw)
         verbose && println("Running window $i - $iw on thread $(Threads.threadid())")
-        # Initialise the window using stored memory
-        ggi = init(window_init, iw; verbose)
-        @assert ggi isa GridGraphInit
-        # Solve for the window
-        elapsed = @elapsed begin
-            output = solve!(ggi; verbose)
+        # Get workspace from channel if using pool approach
+        ws = use_channel ? take!(ch) : nothing
+        try
+            # Initialise the window using stored memory or channel workspace
+            ggi = if use_channel
+                # When using channel, allocate fresh sparse_builders to avoid concurrent mutation
+                init(window_init, iw; verbose, ws_pool=ws)
+            else
+                init(window_init, iw; verbose)
+            end
+            @assert ggi isa GridGraphInit
+            # Solve for the window
+            elapsed = @elapsed begin
+                output = solve!(ggi; verbose)
+            end
+            # Garbage collect for this window
+            # Inneficient for few/small windows but
+            # often needed for many/large windows
+            p.gc && GC.gc()
+            return output, elapsed
+        finally
+            # Return workspace to channel if using pool
+            if use_channel
+                put!(ch, ws)
+            end
         end
-        # Garbage collect for this window
-        # Inneficient for few/small windows but
-        # often needed for many/large windows
-        p.gc && GC.gc()
-        return output, elapsed
     end
     # Run the window problems
     out_elapsed = if p.threaded
