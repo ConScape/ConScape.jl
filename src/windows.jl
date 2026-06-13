@@ -563,7 +563,7 @@ _get_window_with_zeroed_buffer(wi::Union{WindowedInit,BatchInit}, args...; kw...
 _get_window_with_zeroed_buffer(p::AbstractWindowedProblem, rast::RasterStack; kw...) =
     _get_window_with_zeroed_buffer(p, rast, axes(rast); kw...)
 function _get_window_with_zeroed_buffer(
-    p::AbstractWindowedProblem, rast::RasterStack, 
+    p::AbstractWindowedProblem, rast::RasterStack,
     rs::Tuple{<:AbstractUnitRange,<:AbstractUnitRange};
     shape=shape(p)
 )
@@ -578,16 +578,24 @@ function _get_window_with_zeroed_buffer(
 
     targetquality = rebuild(tq; data=tq_sparse)
     sourcequality = Rasters.modify(Array, _get_sourcequality(window)::Raster)
-    
+
     # Handle :circle shaped buffers
     if shape == :circle
         center = CartesianIndex(size(sourcequality) .÷ 2 .+ 1)
         maxdist = buffer(p) + max(centersize(p)...) / 2
+        movement_keys = (:likelihood, :steplikelihood, :cost, :stepcost)
+        present_movement = filter(k -> haskey(window, k), movement_keys)
+        movement_layers = map(k -> Rasters.modify(Array, window[k]), present_movement)
         for I in CartesianIndices(sourcequality)
             if _dist_from_center(I, center) >= maxdist
                 sourcequality[I] = 0.0
+                for layer in movement_layers
+                    layer[I] = 0.0
+                end
             end
         end
+        movement_nt = NamedTuple{present_movement}(movement_layers)
+        return merge(window, (; sourcequality, targetquality), movement_nt)
     elseif shape != :square
         error("WindowedProblem shape must be :square or :circle")
     end
