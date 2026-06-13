@@ -1,0 +1,2131 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Reference – ConScape.jl</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../notebooks/nbk_benchmarks.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-0a6b7249c26820e032cb0bd839ff02b1.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-255f2ef00af56acabf76f5004b685274.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-cb118d9c33e3265a985319bd0e26f5b7.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-255f2ef00af56acabf76f5004b685274.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+<script>
+// 
+// The code below was originally written by the authors of Wflow.jl. Their 
+// license is provided below. ChatGPT was used to iterately modify the code.
+// 
+
+// MIT License for Wflow.jl
+//
+// Copyright (c) 2020 Deltares and contributors
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+window.onload = function () {
+    const versionsUrl = 'https://raw.githubusercontent.com/ConScape/ConScape.jl/gh-pages/versions.js';
+
+    // Fetch the versions.js file
+    fetch(versionsUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to fetch ${versionsUrl}: ${response.statusText}`);
+            }
+            return response.text();
+        })
+        .then(scriptContent => {
+            // Use a regular expression to find the DOC_VERSIONS array
+            const regex = /var DOC_VERSIONS = (\[.*?\]);/s;
+            const match = scriptContent.match(regex);
+
+            if (match && match[1]) {
+                // Remove trailing commas if they exist and fix the array syntax for JSON
+                let arrayString = match[1].trim();
+
+                // Remove any trailing comma before closing bracket
+                arrayString = arrayString.replace(/,\s*([\]}])/g, '$1');
+
+                // Parse the cleaned array string
+                try {
+                    const DOC_VERSIONS = JSON.parse(arrayString);
+
+                    console.log('DOC_VERSIONS loaded:', DOC_VERSIONS);
+
+                    // Process DOC_VERSIONS as usual
+                    const dropdown = document.querySelector('#nav-menu-version')?.nextElementSibling;
+                    if (!dropdown) {
+                        console.error('Dropdown element not found!');
+                        return;
+                    }
+
+                    dropdown.innerHTML = ''; // Clear existing items
+                    DOC_VERSIONS.forEach(version => {
+                        const li = document.createElement('li');
+                        const a = document.createElement('a');
+                        a.className = 'dropdown-item';
+                        a.href = `/ConScape.jl/${version}/index.html`;
+
+                        // Wrap version text in a <code> element
+                        const code = document.createElement('code');
+                        code.textContent = version;
+
+                        // Add <code> to <a>
+                        a.appendChild(code);
+
+                        li.appendChild(a); // Add <a> to <li>
+                        dropdown.appendChild(li); // Add <li> to the dropdown
+                    });
+
+                    console.log('Dropdown populated:', dropdown);
+
+                } catch (error) {
+                    console.error('Error parsing DOC_VERSIONS:', error);
+                }
+            } else {
+                console.error('DOC_VERSIONS not found in script.');
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching versions.js:', error);
+        });
+};
+</script>
+
+
+<link rel="stylesheet" href="_static/styles.css">
+<meta property="og:title" content="Reference – ConScape.jl">
+<meta property="og:description" content="">
+<meta property="og:site_name" content="ConScape.jl">
+<meta name="twitter:title" content="Reference – ConScape.jl">
+<meta name="twitter:description" content="">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">ConScape.jl</span>
+    </a>
+  </div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-version" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Version</span>
+    </a>
+    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="nav-menu-version">    
+        <li class="dropdown-header">dev</li>
+    </ul>
+  </li>
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+    <a href="https://github.com/ConScape/ConScape.jl" title="Source Code" class="quarto-navigation-tool px-1" aria-label="Source Code"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../api/index.html"><span class="chapter-title">Reference</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ConScape.jl</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../quick_start.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Installation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../faq.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">FAQ</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../glossary.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Glossary</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../background.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Background</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../applications/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Applications</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../applications/GI.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Green infrastructure mapping</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../applications/EIA.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Environmental Impact Assessment</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tutorials</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notebooks/index.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Notebooks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notebooks/nbk_getting_started.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Getting started</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notebooks/nbk_landmarks.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Landmarks and coarse-graining</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notebooks/nbk_distance_metrics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Ecological distance</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notebooks/nbk_functionality_variants.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Functional habitat</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notebooks/nbk_cost.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Dispersal mortality</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notebooks/nbk_windowing.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Problems and Windowing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notebooks/nbk_benchmarks.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Problems and Windowing</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../api/index.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">Reference</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
+        
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">Reference</span></h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p><em>Docstrings for ConScape.</em></p>
+<div class="markdown"><h2 class="anchored">`AverageWeight`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.AverageWeight</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.AverageWeight</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.AverageWeight &lt;: ConScape.StepWeight &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`BatchProblem`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">BatchProblem(problem::AbstractProblem; buffer, centersize, path, ext)</code></pre>
+<p>Split a large <code>ConScapeProblem</code> into windowed batches, similar to <code>WindowedProblem</code>, but allow launching individual batches separately with a batch id, and stores them to separate files when finished, rather than returning the finished job.   </p>
+<p><code>BatchProblem</code> is useful when compute times are long and intermediate storage is needed, and is designed for use with SLURM and similar computate clusters.</p>
+<p><code>problem</code> can be a <a href="#ConScapeProblem"><code>ConScapeProblem</code></a> object or a <code>WindowedProblem</code> for nested operations. Deciding to use a ConScapeProblem or NestedProblem will depend on the tradeoffs of loading and  saving raster data for each window area. This may be relatively expensive if the batch windows are not very large. Due to the ON^2 scaling of connectivity calculations large batches will also  become expensive using <code>ConScapeProblem</code> directly.</p>
+<p>If <code>problem</code> is a <code>WindowedProblem</code> IO overheads should be negligible in comparison to the workload of running <code>solve</code> for all windows in a batch.</p>
+<h4 class="anchored">Keywords {.unnumbered}</h4>
+<ul>
+<li><p><code>nwindows</code>: When <code>problem</code> is a <code>WindowedProblem</code>, the number of windows to use.   When used, <code>centersize</code> and <code>buffer</code> are not needed.</p>
+</li>
+<li><p><code>centersize</code>: The size of the target square.</p>
+</li>
+<li><p><code>buffer</code>: The number of pixels outside target square. If using a <code>WindowedProblem</code>,   this is not needed, but if passed it must match.</p>
+</li>
+<li><p><code>datapath</code>: The path to store the output rasters.</p>
+</li>
+<li><p><code>grain</code>: amount of thinning to apply to the target qualities. <code>nothing</code> by default.   if <code>2 is used</code>, the target qualities will be sampled every 2x2 pixels, and should run 4x faster.</p>
+</li>
+<li><p><code>ext</code>: The file extension for Rasters.jl to write to. Defaults to <code>.tif</code>,   But can be <code>.nc</code> for NetCDF, or most other common extensions.</p>
+</li>
+</ul>
+<p>BatchProblem is designed so that <code>init</code>, <code>init!</code>, <code>solve</code> and <code>solve!</code> can all be called on  <code>f(p::BatchProblem, rast::RasterStack)</code> to run all batches, or with a batch number <code>f(p::BatchProblem, rast::RasterStack, batch::Int)</code> to run a single batch.</p>
+<h3 class="anchored">Example {.unnumbered}</h3>
+<p>Calculating <code>init</code> for <code>BatchProblem</code> is relatively expensive. Running <a href="#assess"><code>assess</code></a>  first is the best option, and is intended to allow assessment of the scale of the  problem, as it may require hundreds or thousands of CPU hours to complete. </p>
+<p>With this approach, batches can be run with:</p>
+<pre><code class="language-julia">using ConScape, JSON3, MyConScapeApp
+batchproblem = MyConScapeApp.define_my_batchproblem()
+rast = MyConScapeApp.get_my_rasterstack()
+assessment = assess(batchproblem, rast) # Will take a long time
+JSON3.write("assessment.json")</code></pre>
+<p>Noticed we defined our own application package MyConScapeApp. This is a good way to  share functions like <code>define_my_batchproblem</code> accross multiple task launches on a cluster.  See the ConScape GitHub organisation for working examples of packages like this, ConScapeJobs.</p>
+<pre><code class="language-julia">usign ConScape, Rasters, MyConScapeApp
+batch_problem = define_my_batch()
+rast = get_my_rasterstack()
+assessment = JSON3.read("assessment.json")
+batch_id = 1
+# And here we pass the assesment and batch id to `solve`
+solve(batch_problem, rast, assessment, batch_id)</code></pre>
+<p>Finally, when all batches have run we can mosaic the results together</p>
+<pre><code class="language-julia">usign ConScape, Rasters, MyConScapeApp
+batch_problem = define_my_batch()
+rast = get_my_rasterstack()
+# Setting `to` to the original raster ensures the output matches it spatially.
+mosaic(batch_problem; to=rast, filename="dest_filename.tif")</code></pre>
+<h4 class="anchored">Visualising Window Layout {.unnumbered}</h4>
+<p>Due to some windows being all zeros or missing values,  the windows that actually run may be something like this:</p>
+<pre><code class="language-julia">┏━━━━━━━━━━━━┳━━━┳━━━━━━━━━━━━┓┄┄┄┄┄┄┄┄┏━━━━━━━━━━━━┓
+┃            ┃░░░┃            ┃        ┃            ┃
+┃            ┃░░░┃            ┃        ┃            ┃
+┃            ┃░░░┃            ┃        ┃            ┃
+┃       1    ┃░░░┃    5       ┃    -   ┃        13  ┃
+┃            ┃░░░┃            ┃        ┃            ┃
+┃            ┣━━━╋━━━━━━━━┳━━━╋━━━━━━━━╋━━━┳━━━━━━━━┫
+┃            ┃▓▓▓┃░░░░░░░░┃▓▓▓┃        ┃▓▓▓┃░░░░░░░░┃
+┗━━━━━━━━━━━━╋━━━╋━━━━━━━━╋━━━┫        ┣━━━╋━━━━━━━━┫
+┆            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
+┆       -    ┃░░░┃    6   ┃░░░┃   10   ┃░░░┃    14  ┃
+┆            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
+┆            ┣━━━╋━━━━━━━━╋━━━╋━━━━━━━━╋━━━╋━━━━━━━━┫
+┆            ┃▓▓▓┃░░░░░░░░┃▓▓▓┃░░░░░░░░┃▓▓▓┃░░░░░░░░┃
+┆            ┣━━━┻━━━━━━━━╋━━━╋━━━━━━━━╋━━━╋━━━━━━━━┫
+┆            ┃            ┃░░░┃        ┃░░░┃        ┃
+┆       -    ┃        7   ┃░░░┃   11   ┃░░░┃    15  ┃
+┆            ┃            ┃░░░┃        ┃░░░┃        ┃
+┏━━━━━━━━━━━━╋━━━┓        ┃░░░┃        ┃░░░┃        ┃
+┃            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
+┃            ┗━━━╋━━━━━━━━┻━━━┻━━━━━━━━┻━━━┻━━━━━━━━┛
+┃       4        ┃    -            -             -  ┆
+┃                ┃                                  ┆
+┗━━━━━━━━━━━━━━━━┛┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘</code></pre>
+<p>Overlapping <code>buffer</code> areas are represented with ░ and ▓. Bottom and right windows may be smaller than the others, as pictured.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`Betweenness`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">Betweenness &lt;: SpatialMeasure
+
+Betweenness(weighting)</code></pre>
+<p>Compute betweenness of all edges weighted by qualities of  source s and target t and the proximity between s and t, as defined by the <a href="#MovementMode"><code>MovementMode</code></a>).</p>
+<h6 class="anchored">Arguments {.unnumbered} {.unnumbered}</h6>
+<ul>
+<li><p><code>weighting</code>: a <a href="#BetweennessWeighting"><code>BetweennessWeighting</code></a>: <code>Unweighted()</code>, <code>QualityWeighted()</code>    <code>ProximityWeighted()</code> or <code>QualityAndProximityWeighted()</code></p>
+</li>
+</ul>
+<p>The value returned from <code>solve</code> is a spatial <code>Raster</code> or <code>Matrix</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`ConScape`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No docstring found for public module <code>ConScape</code>.</p>
+<h3 class="anchored">Public names {.unnumbered}</h3>
+<p><code>AverageWeight</code>, <code>BatchProblem</code>, <code>Betweenness</code>, <code>ConScapeProblem</code>, <code>Distance</code>, <code>EdgeBetweenness</code>, <code>EigMax</code>, <code>Elasticity</code>, <code>Euclidean</code>, <code>ExpMinus</code>, <code>ExpMinusAlpha</code>, <code>ExpectedCost</code>, <code>FreeEnergyDistance</code>, <code>FunctionalHabitat</code>, <code>Inv</code>, <code>LCP</code>, <code>LandscapeMatrix</code>, <code>LeastCostPath</code>, <code>LinearSolver</code>, <code>MeanKullbackLeiblerDivergence</code>, <code>MinusLog</code>, <code>MinusLogAlpha</code>, <code>MovementFlow</code>, <code>OddsAgainst</code>, <code>OddsFor</code>, <code>PowerMeanProximity</code>, <code>ProximityWeighted</code>, <code>Quality</code>, <code>QualityAndProximityWeighted</code>, <code>QualityWeighted</code>, <code>RSP</code>, <code>RandomWalk</code>, <code>RandomisedShortestPath</code>, <code>Sensitivity</code>, <code>SensitivityAnalysis</code>, <code>SourceQuality</code>, <code>StepCost</code>, <code>StepCostToLikelihood</code>, <code>StepLikelihood</code>, <code>StepLikelihoodToCost</code>, <code>Summation</code>, <code>SurvivalProbability</code>, <code>TargetQuality</code>, <code>TargetWeight</code>, <code>Unweighted</code>, <code>VectorSolver</code>, <code>WindowedProblem</code>, <code>assess</code>, <code>estimate_memory_for_centersize</code>, <code>init</code>, <code>reassess</code>, <code>solve</code>, <code>solve!</code></p>
+<hr>
+<p><em>Package description from <code>README.md</code>:</em></p>
+<h3 class="anchored">ConScape {.unnumbered}</h3>
+<p>[![][pipeline-status-img]][pipeline-status-url] [![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url] [![][codecov-img]][codecov-url]</p>
+<p>Repository for the ConScape project</p>
+<p>[pipeline-status-img]: https://gitlab.com/ConScape/ConScape.jl/badges/master/pipeline.svg [pipeline-status-url]: https://gitlab.com/ConScape/ConScape.jl/commits/master</p>
+<p>[docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg [docs-stable-url]: https://conscape.github.io/ConScape.jl/stable/</p>
+<p>[docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg [docs-dev-url]: https://conscape.github.io/ConScape.jl/dev/</p>
+<p>[codecov-img]: https://codecov.io/gl/ConScape/ConScape.jl/branch/master/graph/badge.svg?token=qVMzC5XABw [codecov-url]: https://codecov.io/gl/ConScape/ConScape.jl</p>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`ConScapeProblem`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">ConScapeProblem(measures; movement, solver, θ)</code></pre>
+<p>A <code>Problem</code> collects all parameters required to generate one or multiple  <a href="#Measure"><code>Measure</code></a> outputs from a single <code>RasterStack</code> or <code>Grid</code> input.</p>
+<p>This lazy specification allows ConScape to minimize the work required to calculate multiple measures: connectivity, betweenness  and sensitivity (etc) measures can use the same memory allocations, sparse matrix factorizations, and solves.</p>
+<h4 class="anchored">Keywords {.unnumbered}</h4>
+<ul>
+<li><p><code>measures</code>: A NamedTuple of <a href="#Measure"><code>Measure</code></a>s.</p>
+</li>
+<li><p><code>movement</code>: A <a href="#MovementMode"><code>MovementMode</code></a>, <a href="#RandomisedShortestPath"><code>RandomisedShortestPath</code></a>   by default.</p>
+</li>
+<li><p><code>solver</code>: A <a href="#Solver"><code>Solver</code></a> specification, <code>ColumnSolver</code> by default.   <a href="#LinearSolver"><code>LinearSolver</code></a> allows for the use of any LinearSolve.jl solvers,   when the LinearSolve.jl package is loaded.</p>
+</li>
+<li><p><code>grain::Int</code>: used to apply coarse_graining to target qualities,    to reduce computational requirements.</p>
+</li>
+<li><p><code>costfunction</code>: A <code>Function</code> or <a href="#Transformation"><code>Transformation</code></a> to   convert likelyhoods to costs.</p>
+</li>
+<li><p><code>likelyhoodfunction</code>: A <code>Function</code> or <a href="#Transformation"><code>Transformation</code></a> to   convert costs to likelyhoods.</p>
+</li>
+<li><p><code>neighbors</code>: Whether to use 8 (queen) or 4 (rook) neighbors when generating,    graphs from a two-dimensional raster. <code>ConScape.N8</code> by default, can be <code>ConScape.N4</code>.   With a three-dimensional matrix, <code>neighbors</code> keyword is not used.</p>
+</li>
+<li><p><code>stepweight</code>: <code>TargetWeight()</code> by default, using only the value of the   destination pixel (neighbor). Can be <code>AverageWeight()</code> to use the average of   both neighboring nodes. If a three-dimensional matrix is provided,   <code>stepweight</code> is not used as the array values are already transitions.</p>
+</li>
+<li><p><code>mmap_path</code>: Directory path for storing memory-mapped matrix workspaces, or    <code>nothing</code> (default) to use in-memory arrays. When set, large intermediate matrices   (Z, Y) are stored as memory-mapped files, reducing Julia RAM usage at the   cost of some disk I/O. This is only important for <code>SensitivityAnalysis</code>,    <code>EigMax</code> and <code>EdgeBetweenness</code> measures that need full matrices allocated.   Only use with fast local drives (SSD/NVMe); network storage will degrade    performance significantly. </p>
+</li>
+</ul>
+<h4 class="anchored">Initialising and solving {.unnumbered}</h4>
+<p>Problems are solved with <code>solve</code>:</p>
+<pre><code class="language-julia">problem = ConScapeProblem(measures; movement)
+rast = RasterStack((source_qualities=qualpath, affinities=affinitypath))
+result = solve(problem, rast)</code></pre>
+<p>For interactive work you can use <code>init</code>:</p>
+<pre><code class="language-julia"># Init for all subgraphs of the grid made from rast
+multiinit = init(problem, rast)
+# Init for the first subgraph
+singleinit = init(multiinit, 1)
+# Init for a single target
+targetinit = init(singleinit, 1)
+
+And `solve` will work at each level:
+</code></pre>
+<p>julia solve(multiinit) solve(singleinit) solve(targetinit)  ```</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`Distance`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.Distance</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.Distance</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.Distance &lt;: ConScape.DistanceMeasure &lt;: ConScape.ProximityMeasure &lt;: ConScape.GraphMeasure &lt;: ConScape.Measure &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`EdgeBetweenness`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">EdgeBetweenness &lt;: GraphMeasure
+
+EdgeBetweenness(weighting)</code></pre>
+<p>Compute betweenness of all edges weighted by qualities of source s and target t and the proximity between s and t.</p>
+<ul>
+<li><p><code>weighting</code>: a <a href="#BetweennessWeighting"><code>BetweennessWeighting</code></a>: <code>Unweighted()</code>, <code>QualityWeighted()</code>    <code>ProximityWeighted()</code> or <code>QualityAndProximityWeighted()</code></p>
+</li>
+</ul>
+<p>Returns a sparse matrix where element (i, j) is the betweenness of edge (i, j).</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`EigMax`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">EigMax &lt;: Measure
+
+Eigmax(; kw...)</code></pre>
+<p>Compute the largest eigenvalue triple (left vector, value, and right vector) of the quality-scaled proximities with respect to the distance/proximity measure in the <a href="#MovementMode"><code>MovementMode</code></a>.</p>
+<h4 class="anchored">Keywords {.unnumbered}</h4>
+<ul>
+<li><p><code>seed</code>: seed for the random seed for the left eigenvector solve.    Useful if exact floating point replication is needed accross runs.</p>
+</li>
+<li><p><code>tol</code>: tolerance, defaults to <code>1e-14</code>.</p>
+</li>
+</ul>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`Elasticity`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.Elasticity</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.Elasticity</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.Elasticity &lt;: ConScape.SensitivityType &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`Euclidean`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">Euclidian &lt;: MovementMode
+
+Euclidian(; kw...)</code></pre>
+<p>Identical to <a href="#RandomisedShortestPath"><code>RandomisedShortestPath</code></a> with <code>theta</code> of <code>Inf</code>,  if that could run without numerical problems.</p>
+<p>Assumes infinite knowledge and immortality.</p>
+<h4 class="anchored">Keywords {.unnumbered}</h4>
+<ul>
+<li><p><code>distance_transformation</code>: the transformation to apply to a distance matrix to    convert it to a proximity matrix. <a href="#DistanceMeasure"><code>DistanceMeasure</code></a>s like <code>ExpectedCost()</code> and    <code>FreeEnergyDistance()</code> use this transformation, but <code>ProximityMeasure</code>s like    <code>PowerMeanProximity()</code> or <code>SurvivalProbability()</code> do not.</p>
+</li>
+<li><p><code>diagvalue</code>: The value to use for the diagonal of the proximity matrix.   (TODO: explain why its relevent)</p>
+</li>
+</ul>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`ExpMinus`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">ExpMinus &lt;: Transformation</code></pre>
+<p>Equivalent to:</p>
+<pre><code class="language-julia">x -&gt; exp(-x)</code></pre>
+<p>The inverse <code>inv</code> of <code>ExpMinus</code> is <code>MinusLog</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`ExpMinusAlpha`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">ExpMinusAlpha &lt;: Transformation</code></pre>
+<p>Equivalent to:</p>
+<pre><code class="language-julia">x -&gt; exp(-x / alpha)</code></pre>
+<p>The inverse <code>inv</code> of <code>ExpMinusAlpha</code> is <code>MinusLogAlph</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`ExpectedCost`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.ExpectedCost</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.ExpectedCost</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.ExpectedCost &lt;: ConScape.DistanceMeasure &lt;: ConScape.ProximityMeasure &lt;: ConScape.GraphMeasure &lt;: ConScape.Measure &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`FreeEnergyDistance`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.FreeEnergyDistance</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.FreeEnergyDistance</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.FreeEnergyDistance &lt;: ConScape.DistanceMeasure &lt;: ConScape.ProximityMeasure &lt;: ConScape.GraphMeasure &lt;: ConScape.Measure &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`FunctionalHabitat`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">FunctionalHabitat &lt;: SpatialMeasure
+
+FunctionalHabitat()</code></pre>
+<p>Compute connected habitat of all sources weighted by qualities of  source s and target t and the proximity between s and t,  as defined by the <a href="#MovementMode"><code>MovementMode</code></a>).</p>
+<p>The value returned from <code>solve</code> is a spatial <code>Raster</code> or <code>Matrix</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`Inv`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">Inv &lt;: Transformation</code></pre>
+<p>Equivalent to <code>inv</code></p>
+<p>The <code>inv</code> of <code>Inv</code> is <code>Inv</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`LCP`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.LCP</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.LeastCostPath{DT, DV}</code></pre>
+<h3 class="anchored">Fields {.unnumbered}</h3>
+<pre><code>distance_transformation :: DT
+diagvalue               :: DV</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.LeastCostPath{DT, DV} &lt;: ConScape.ArrivingMovement &lt;: ConScape.LandscapeMovement &lt;: ConScape.MovementMode &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`LandscapeMatrix`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.LandscapeMatrix</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.LandscapeMatrix</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.LandscapeMatrix &lt;: ConScape.GraphMeasure &lt;: ConScape.Measure &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`LeastCostPath`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">LeastCostPath &lt;: ArrivingMovementMode
+
+LeastCostPath(; kw...)</code></pre>
+<p>Identical to <a href="#RandomisedShortestPath"><code>RandomisedShortestPath</code></a> with <code>theta</code> of <code>Inf</code>,  if that could run without numerical problems.</p>
+<p>Assumes infinite knowledge and immortality.</p>
+<h4 class="anchored">Keywords {.unnumbered}</h4>
+<ul>
+<li><p><code>distance_transformation</code>: the transformation to apply to a distance matrix to    convert it to a proximity matrix. <a href="#DistanceMeasure"><code>DistanceMeasure</code></a>s like <code>ExpectedCost()</code> and    <code>FreeEnergyDistance()</code> use this transformation, but <code>ProximityMeasure</code>s like    <code>PowerMeanProximity()</code> or <code>SurvivalProbability()</code> do not.</p>
+</li>
+<li><p><code>diagvalue</code>: The value to use for the diagonal of the proximity matrix.   (TODO: explain why its relevent)</p>
+</li>
+</ul>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`LinearSolver`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>LinearSolver(args...; kw...)</p>
+<p>Solve all operations column-by-column using LinearSolve.jl solvers.</p>
+<p>Arguments and keywords are passed to <code>LinearSolve.solve</code> after the problem object, like:</p>
+<pre><code class="language-julia">`LinearSolve.solve(linearproblem, args...; kw...)`</code></pre>
+<h3 class="anchored">Example {.unnumbered}</h3>
+<p>This example uses LinearSolve.jl wth <code>KrylovJL_GMRES</code> and a preconditioner.</p>
+<p>TODO: an example that is realistic</p>
+<pre><code class="language-julia">using LinearSolve
+measures = (;
+    func=ConnectedHabitat(),
+    qbetw=Betweenness(QualityWeighted()),
+)
+movement = RandomisedShortestPath(ExpectedCost(); theta=1.0)
+solver = LinearSolver(KrylovJL_GMRES(precs = (A, p) -&gt; (Diagonal(A), I)))
+problem = ConScape.Problem(measures; movement, solver) 
+
+rast = RasterStack((source_qualities="source_qs.tif", target_qualities="target_qs.tif"))
+result = solve(problem, rast)</code></pre>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`MeanKullbackLeiblerDivergence`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.MeanKullbackLeiblerDivergence</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.MeanKullbackLeiblerDivergence</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.MeanKullbackLeiblerDivergence &lt;: ConScape.PathDistributionMeasure &lt;: ConScape.Measure &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`MinusLog`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">MinusLog &lt;: Transformation</code></pre>
+<p>Equivalent to:</p>
+<pre><code class="language-julia">x -&gt; -log(x)</code></pre>
+<p>The inverse <code>inv</code> of <code>MinusLog</code> is <code>ExpMinus</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`MinusLogAlpha`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">MinusLog &lt;: Transformation</code></pre>
+<p>Equivalent to:</p>
+<pre><code class="language-julia">x -&gt; -log(x * alpha)</code></pre>
+<p>The inverse <code>inv</code> of <code>MinusLogAlpha</code> is <code>ExpMinusAlpha</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`MovementFlow`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">Betweenness &lt;: SpatialMeasure
+
+Betweenness(weighting)</code></pre>
+<p>Compute betweenness of all edges weighted by qualities of  source s and target t and the proximity between s and t, as defined by the <a href="#MovementMode"><code>MovementMode</code></a>).</p>
+<h6 class="anchored">Arguments {.unnumbered} {.unnumbered}</h6>
+<ul>
+<li><p><code>weighting</code>: a <a href="#BetweennessWeighting"><code>BetweennessWeighting</code></a>: <code>Unweighted()</code>, <code>QualityWeighted()</code>    <code>ProximityWeighted()</code> or <code>QualityAndProximityWeighted()</code></p>
+</li>
+</ul>
+<p>The value returned from <code>solve</code> is a spatial <code>Raster</code> or <code>Matrix</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`OddsAgainst`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">OddsAgainst &lt;: Transformation</code></pre>
+<p>Equivalent to:</p>
+<pre><code class="language-julia"></code></pre>
+<p>The inverse <code>inv</code> of <code>OddsAgainst</code> is <code>OddsFor</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`OddsFor`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">OddsFor &lt;: Transformation</code></pre>
+<p>Equivalent to:</p>
+<pre><code class="language-julia">x -&gt; x / (0 - x)</code></pre>
+<p>The inverse <code>inv</code> of <code>OddsFor</code> is <code>OddsAgainst</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`PowerMeanProximity`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.PowerMeanProximity</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.PowerMeanProximity</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.PowerMeanProximity &lt;: ConScape.ProximityMeasure &lt;: ConScape.GraphMeasure &lt;: ConScape.Measure &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`ProximityWeighted`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">ProximityWeighted &lt;: BetweennessWeighting
+
+ProximityWeighted()</code></pre>
+<p>Compute betweenness of nodes or edges weighted by the  proxmimity between source qualities s and target qualities t.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`Quality`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.Quality</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.Quality</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.Quality &lt;: ConScape.AbstractQuality &lt;: ConScape.InputType &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`QualityAndProximityWeighted`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">QualityAndProximityWeighted &lt;: BetweennessWeighting
+
+QualityAndProximityWeighted()</code></pre>
+<p>Compute betweenness of nodes or edges weighted by both the source  qualities s and target qualities t, and by the proximity between s and t.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`QualityWeighted`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">QualityWeighted &lt;: BetweennessWeighting
+
+QualityWeighted()</code></pre>
+<p>Compute betweenness of nodes or edges weighted by source and target qualities.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`RSP`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.RSP</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.RandomisedShortestPath{PM&lt;:ConScape.ProximityMeasure, DT&lt;:Union{Nothing, Function}, T&lt;:Real, DV}</code></pre>
+<h3 class="anchored">Fields {.unnumbered}</h3>
+<pre><code>proximity_measure       :: PM&lt;:ConScape.ProximityMeasure
+distance_transformation :: DT&lt;:Union{Nothing, Function}
+theta                   :: T&lt;:Real
+diagvalue               :: DV
+approx                  :: Bool</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.RandomisedShortestPath{PM&lt;:ConScape.ProximityMeasure, DT&lt;:Union{Nothing, Function}, T&lt;:Real, DV} &lt;: ConScape.ArrivingMovement &lt;: ConScape.LandscapeMovement &lt;: ConScape.MovementMode &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`RandomWalk`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">RandomWalk &lt;: ArrivingMovementMode
+
+RandomWalk(; kw...)</code></pre>
+<p>Identical to <a href="#RandomisedShortestPath"><code>RandomisedShortestPath</code></a> with <code>theta</code> of <code>0</code>,  if that could run without numerical problems.</p>
+<p>Performance is usually 2-3 times slower than RSP.</p>
+<p>Assumes zero knowledge but immortality.</p>
+<h4 class="anchored">Keywords {.unnumbered}</h4>
+<ul>
+<li><p><code>distance_transformation</code>: the transformation to apply to a distance matrix to    convert it to a proximity matrix. <a href="#DistanceMeasure"><code>DistanceMeasure</code></a>s like <code>ExpectedCost()</code> and    <code>FreeEnergyDistance()</code> use this transformation, but <code>ProximityMeasure</code>s like    <code>PowerMeanProximity()</code> or <code>SurvivalProbability()</code> do not.</p>
+</li>
+<li><p><code>diagvalue</code>: The value to use for the diagonal of the proximity matrix.   (TODO: explain why its relevent)</p>
+</li>
+</ul>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`RandomisedShortestPath`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">RandomisedShortestPath &lt;: ArrivingMovementMode
+
+RandomisedShortestPath(; kw...)</code></pre>
+<p>Randomised shortest path movement. Intermediate between  <a href="#LeastCostPath"><code>LeastCostPath</code></a> and <a href="#RandomWalk"><code>RandomWalk</code></a>.</p>
+<p>Assumes partial knowledge and immortality.</p>
+<h4 class="anchored">Keywords {.unnumbered}</h4>
+<ul>
+<li><p><code>proximity_measure</code>: the measure to use for the probability of arrival at the target.   By default this is <code>ExpectedCost()</code></p>
+</li>
+<li><p><code>distance_transformation</code>: the transformation to apply to a distance matrix to    convert it to a proximity matrix. <a href="#DistanceMeasure"><code>DistanceMeasure</code></a>s like <code>ExpectedCost()</code> and    <code>FreeEnergyDistance()</code> use this transformation, but <code>ProximityMeasure</code>s like    <code>PowerMeanProximity()</code> or <code>SurvivalProbability()</code> do not.</p>
+</li>
+<li><p><code>diagvalue</code>: The value to use for the diagonal of the proximity matrix.   (TODO: explain why its relevent)</p>
+</li>
+<li><p><code>theta</code>: the inverse temperature (TODO: in more ecological terms)</p>
+</li>
+<li><p><code>approx</code>: Whether to use an approximate algorithm, <code>false</code> by default.   (TODO: more detail)</p>
+</li>
+</ul>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`Sensitivity`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.Sensitivity</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.Sensitivity</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.Sensitivity &lt;: ConScape.SensitivityType &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`SensitivityAnalysis`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">SensitivityAnalysis &lt;: SpatialMeasure
+
+SensitivityAnalysis(; wrt, metric, sentitivitytype)</code></pre>
+<p>Compute sensitivity of all nodes. </p>
+<h4 class="anchored">Keywords {.unnumbered}</h4>
+<ul>
+<li><p><code>wrt</code>: Seven types of node sensitivity are implemented: <code>StepLikelihood()</code>, <code>StepCost()</code>,    <code>StepCostAndLikelihood()</code> and <code>StepLikelihoodAndCost()</code>, <code>Quality()</code>, <code>TargetetQualtiy()</code>   and <code>SourceQuality()</code>.</p>
+</li>
+<li><p><code>metric</code>: Two <a href="#TopologicalMetric"><code>TopologicalMetric</code></a>s are implemented to summarize the    landscape matrix either through summation (<a href="#Summation"><code>Summation</code></a>) or through eigen    analysis <a href="#LandscapeEigen"><code>LandscapeEigen</code></a>. The default is <code>Eigen()</code>.</p>
+</li>
+<li><p><code>type</code>: The results can be provided either as sensitivity w.r.t. <code>Sensitivity()</code>   or w.r.t. <code>Elasticity()</code>, the latter are also known as elasticities.    The default is <code>Sensitivity()</code>.</p>
+</li>
+</ul>
+<p>The value returned from <code>solve</code> is a spatial <code>Raster</code> or <code>Matrix</code>.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`SourceQuality`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.SourceQuality</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.SourceQuality</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.SourceQuality &lt;: ConScape.AbstractQuality &lt;: ConScape.InputType &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`StepCost`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.StepCost</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.StepCost</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.StepCost &lt;: ConScape.Permeability &lt;: ConScape.InputType &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`StepCostToLikelihood`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.StepCostToLikelihood</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.StepCostToLikelihood</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.StepCostToLikelihood &lt;: ConScape.StepCostAndLikelihood &lt;: ConScape.Permeability &lt;: ConScape.InputType &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`StepLikelihood`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.StepLikelihood</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.StepLikelihood</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.StepLikelihood &lt;: ConScape.Permeability &lt;: ConScape.InputType &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`StepLikelihoodToCost`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.StepLikelihoodToCost</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.StepLikelihoodToCost</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.StepLikelihoodToCost &lt;: ConScape.StepCostAndLikelihood &lt;: ConScape.Permeability &lt;: ConScape.InputType &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`Summation`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.Summation</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.Summation</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`SurvivalProbability`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.SurvivalProbability</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.SurvivalProbability</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.SurvivalProbability &lt;: ConScape.ProximityMeasure &lt;: ConScape.GraphMeasure &lt;: ConScape.Measure &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`TargetQuality`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.TargetQuality</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.TargetQuality</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.TargetQuality &lt;: ConScape.AbstractQuality &lt;: ConScape.InputType &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`TargetWeight`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.TargetWeight</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.TargetWeight</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.TargetWeight &lt;: ConScape.StepWeight &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`Unweighted`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.Unweighted</code>.</p>
+<h3 class="anchored">Summary {.unnumbered}</h3>
+<pre><code>struct ConScape.Unweighted</code></pre>
+<h3 class="anchored">Supertype Hierarchy {.unnumbered}</h3>
+<pre><code>ConScape.Unweighted &lt;: ConScape.BetweennessWeighting &lt;: Any</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`VectorSolver`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<p>No documentation found for public binding <code>ConScape.VectorSolver</code>.</p>
+<p><code>ConScape.VectorSolver</code> is a <code>Function</code>.</p>
+<pre><code># 1 method for generic function "VectorSolver" from ConScape:
+ [1] VectorSolver(args...; kwargs...)
+     @ deprecated.jl:223</code></pre>
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`WindowedProblem`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">WindowedProblem(problem::AbstractProblem; kw...)</code></pre>
+<p>Combine multiple compute operations into a single object, to be run over windowed grids.</p>
+<h4 class="anchored">Arguments {.unnumbered}</h4>
+<p><code>problem</code>: A <a href="#ConScapeProblem"><code>ConScapeProblem</code></a> object.</p>
+<h4 class="anchored">Keywords {.unnumbered}</h4>
+<ul>
+<li><p><code>centersize::Int</code>: The size of one side of the square of target   pixels, in the center of the window. This is the key parameter for controlling   memory usage - see Memory section below.</p>
+</li>
+<li><p><code>buffer::Int</code>: The number of pixels outside the target square (the dispersal context).</p>
+</li>
+<li><p><code>shape</code>: whether to make the shape of the window a :square or a :circle.   using <code>:circle</code> will give faster runtime and leave less artifacts.</p>
+</li>
+<li><p><code>threaded</code>: Whether to run windows in parallel on separate threads. <code>false</code> by default.</p>
+</li>
+<li><p><code>mosaic_return</code>: Whether to <code>mosaic</code> returned spatial rasters from each window,   or return them as a vector. This can be useful for diagnostics. <code>true</code> by default.</p>
+</li>
+<li><p><code>gc</code>: Whether to run the garbage collector between windows. This may be important in   restricted memory environments, such as a small node on a SLURM cluster.   <code>true</code> by default. It may improve performance to set to <code>false</code>.</p>
+</li>
+</ul>
+<h4 class="anchored">Memory usage {.unnumbered}</h4>
+<p>For measures requiring dense matrices (<code>EigMax</code>, <code>SensitivityAnalysis</code>), memory scales as <code>O(sources × targets)</code> where:</p>
+<ul>
+<li><p><code>sources = (centersize + 2×buffer)²</code> (the full window)</p>
+</li>
+<li><p><code>targets = centersize²</code> (the center region)</p>
+</li>
+</ul>
+<p>Since <code>targets = centersize²</code>, <strong><code>centersize</code> is the key parameter for controlling memory</strong>. Halving <code>centersize</code> reduces dense matrix memory by approximately 4×.</p>
+<p>Example memory estimates for <code>SensitivityAnalysis</code> at 10× resolution (buffer=190):</p>
+
+<table class="caption-top table">
+<tbody>
+<tr class="odd">
+<th style="text-align: right;" data-quarto-table-cell-role="th">centersize</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">targets</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Memory estimate</th>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">~1.2 GB</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td style="text-align: right;">225</td>
+<td style="text-align: right;">~2.4 GB</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td style="text-align: right;">400</td>
+<td style="text-align: right;">~4.1 GB</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">900</td>
+<td style="text-align: right;">~9.3 GB</td>
+</tr>
+</tbody>
+</table>
+
+<p>For a typical 4 GB/core cluster limit, use <code>centersize ≤ 20</code> for <code>SensitivityAnalysis</code>.</p>
+<p>To quickly test different <code>centersize</code> values after running an expensive <code>assess()</code> call, use <a href="#estimate_memory_for_centersize"><code>estimate_memory_for_centersize</code></a>.</p>
+<h4 class="anchored">Visualising Window Layout {.unnumbered}</h4>
+<p>Due to some windows being all zeros or missing values,  the windows that actually run may be something like this:</p>
+<pre><code class="language-julia">┏━━━━━━━━━━━━┳━━━┳━━━━━━━━━━━━┓┄┄┄┄┄┄┄┄┏━━━━━━━━━━━━┓
+┃            ┃░░░┃            ┃        ┃            ┃
+┃            ┃░░░┃            ┃        ┃            ┃
+┃            ┃░░░┃            ┃        ┃            ┃
+┃       1    ┃░░░┃    5       ┃    -   ┃        13  ┃
+┃            ┃░░░┃            ┃        ┃            ┃
+┃            ┣━━━╋━━━━━━━━┳━━━╋━━━━━━━━╋━━━┳━━━━━━━━┫
+┃            ┃▓▓▓┃░░░░░░░░┃▓▓▓┃        ┃▓▓▓┃░░░░░░░░┃
+┗━━━━━━━━━━━━╋━━━╋━━━━━━━━╋━━━┫        ┣━━━╋━━━━━━━━┫
+┆            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
+┆       -    ┃░░░┃    6   ┃░░░┃   10   ┃░░░┃    14  ┃
+┆            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
+┆            ┣━━━╋━━━━━━━━╋━━━╋━━━━━━━━╋━━━╋━━━━━━━━┫
+┆            ┃▓▓▓┃░░░░░░░░┃▓▓▓┃░░░░░░░░┃▓▓▓┃░░░░░░░░┃
+┆            ┣━━━┻━━━━━━━━╋━━━╋━━━━━━━━╋━━━╋━━━━━━━━┫
+┆            ┃            ┃░░░┃        ┃░░░┃        ┃
+┆       -    ┃        7   ┃░░░┃   11   ┃░░░┃    15  ┃
+┆            ┃            ┃░░░┃        ┃░░░┃        ┃
+┏━━━━━━━━━━━━╋━━━┓        ┃░░░┃        ┃░░░┃        ┃
+┃            ┃░░░┃        ┃░░░┃        ┃░░░┃        ┃
+┃            ┗━━━╋━━━━━━━━┻━━━┻━━━━━━━━┻━━━┻━━━━━━━━┛
+┃       4        ┃    -            -             -  ┆
+┃                ┃                                  ┆
+┗━━━━━━━━━━━━━━━━┛┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘</code></pre>
+<p>Overlapping <code>buffer</code> areas are represented with ░ and ▓. Bottom and right windows may be smaller than the others, as pictured.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`assess`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">assess(p::AbstractProblem, rast::RasterStack)</code></pre>
+<p>Assess the computational requirements of problem <code>p</code> for <code>RasterStack</code> <code>rastr</code>. </p>
+<p>This can be used to indicate memory and time reequiremtents on a cluster.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`estimate_memory_for_centersize`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">estimate_memory_for_centersize(problem::ConScapeProblem, assessment::WindowAssessment, centersize::Int)</code></pre>
+<p>Quickly estimate memory requirements for a different <code>centersize</code> without re-running the full assessment. This is approximate - it assumes the worst case where all <code>centersize²</code> target cells in the center are valid.</p>
+<p>This is useful for tuning <code>centersize</code> to fit memory constraints after running an expensive <code>assess()</code> call on a large raster.</p>
+<h3 class="anchored">Arguments {.unnumbered}</h3>
+<ul>
+<li><p><code>problem</code>: The ConScapeProblem (needed for vec_workspace counts)</p>
+</li>
+<li><p><code>assessment</code>: An existing WindowAssessment from <code>assess()</code></p>
+</li>
+<li><p><code>centersize</code>: The new centersize to estimate memory for</p>
+</li>
+</ul>
+<h3 class="anchored">Returns {.unnumbered}</h3>
+<p>Memory estimate in MB for the new centersize.</p>
+<h3 class="anchored">Example {.unnumbered}</h3>
+<pre><code class="language-julia"># Run assessment once (expensive for large rasters)
+assessment = assess(wp, rast)
+
+# Quickly test different centersize values
+for cs in [10, 15, 20, 25, 30]
+    mem = estimate_memory_for_centersize(problem, assessment, cs)
+    println("centersize=$cs: $(round(mem, digits=1)) MB")
+end</code></pre>
+<h3 class="anchored">Memory scaling {.unnumbered}</h3>
+<p>For measures with dense matrices (EigMax, SensitivityAnalysis), memory scales as <code>O(sources × targets)</code> where <code>targets = centersize²</code>. Halving centersize reduces dense matrix memory by ~4x.</p>
+<p>See also: <a href="#assess"><code>assess</code></a>, <a href="#estimate_memory"><code>estimate_memory</code></a></p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`init`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">iter = CommonSolve.init(args...; kwargs...)</code></pre>
+<p>Creates an iterator or cache object to hold a problem <code>prob</code> and a solver algorithm <code>alg</code> to be passed to <code>solve!</code> or <code>step!</code>. Generally, the interface is:</p>
+<pre><code class="language-julia">iter = CommonSolve.init(prob::ProblemType, alg::SolverType; kwargs...)::IterType
+CommonSolve.solve!(iter)::SolutionType</code></pre>
+<p>where the keyword arguments are uniform across all choices of algorithms. The <code>iter</code> type will be different for the different problem types.</p>
+<p>The object returned by <code>init</code> allows more direct control over the internal solving process, and users shouldn't generally need to handle it.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`reassess`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">reassess(p::BatchProblem, a::NestedAssessment)</code></pre>
+<p>Re-asses an existing nested assessment of a <a href="#BatchProblem"><code>BatchProblem</code></a>.</p>
+<p>The returned <code>NestedAssessment</code> will have removed batches that  already have a data folder (assumed to be successfully completed).</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`solve`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">CommonSolve.solve(args...; kwargs...)</code></pre>
+<p>Solves an equation or other mathematical problem using the algorithm specified in the arguments. Generally, the interface is:</p>
+<pre><code class="language-julia">CommonSolve.solve(prob::ProblemType, alg::SolverType; kwargs...)::SolutionType</code></pre>
+<p>where the keyword arguments are uniform across all choices of algorithms.</p>
+<p>By default, <code>solve</code> defaults to using <code>solve!</code> on the iterator form, i.e.:</p>
+<pre><code class="language-julia">solve(args...; kwargs...) = solve!(init(args...; kwargs...))</code></pre>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+<h2 class="anchored">`solve!`</h2>
+<p>:::{.callout appearance="minimal"}</p>
+
+<pre><code class="language-julia">CommonSolve.solve!(iter)</code></pre>
+<p>Solves an equation or other mathematical problem using the algorithm specified in the arguments. Generally, the interface is:</p>
+<pre><code class="language-julia">iter = CommonSolve.init(prob::ProblemType, alg::SolverType; kwargs...)::IterType
+CommonSolve.solve!(iter)::SolutionType</code></pre>
+<p>where the keyword arguments are uniform across all choices of algorithms. The <code>iter</code> type will be different for the different problem types.</p>
+
+
+
+<p>:::</p>
+
+
+<p>{{&lt; pagebreak &gt;}}</p>
+
+
+</div>
+
+
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../notebooks/nbk_benchmarks.html" class="pagination-link" aria-label="Problems and Windowing">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">Problems and Windowing</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions"><ul><li><a href="https://github.com/ConScape/ConScape.jl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
