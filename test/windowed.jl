@@ -85,6 +85,43 @@ end
 end
 
 
+@testset "threaded WindowedProblem uses ChannelWorkspacePool" begin
+    distance_transformation = x -> exp(-x / 50)
+    movement = RandomisedShortestPath(ExpectedCost(); theta=θ, distance_transformation)
+    csp = ConScapeProblem(; measures, movement, solver=VectorSolver())
+    kw = (; buffer=10, centersize=5)
+
+    # Non-threaded: SinglePool, accessors return the only workspace.
+    wp_serial = WindowedProblem(csp; kw..., threaded=false)
+    wi_serial = init(wp_serial, rast)
+    @test wi_serial.pool isa ConScape.SingleWorkspacePool
+    @test ConScape.mat_workspaces(wi_serial) isa ConScape.Workspaces
+
+    # Threaded with multiple valid windows: ChannelPool sized to min(nthreads, nwindows).
+    wp_threaded = WindowedProblem(csp; kw..., threaded=true)
+    wi_threaded = init(wp_threaded, rast)
+    @test wi_threaded.pool isa ConScape.ChannelWorkspacePool
+    @test length(wi_threaded.pool.window_workspaces) ==
+        min(Threads.nthreads(), length(wi_threaded.sorted_indices))
+
+    # Direct workspace accessors must error on the threaded pool — they would
+    # otherwise return a workspace another task may currently hold.
+    @test_throws ErrorException ConScape.workspaces(wi_threaded)
+    @test_throws ErrorException ConScape.sparse_builders(wi_threaded)
+    @test_throws ErrorException ConScape.mat_workspaces(wi_threaded)
+
+    # Threaded path produces the same result as serial.
+    serial_result = solve(wp_serial, rast)
+    threaded_result = solve(wp_threaded, rast)
+    for k in keys(serial_result)
+        s = serial_result[k]
+        t = threaded_result[k]
+        @test all(zip(s, t)) do (a, b)
+            isnan(a) && isnan(b) || isapprox(a, b; atol=1e-8)
+        end
+    end
+end
+
 # BatchProblem writes files to disk and mosaics to RasterStack
 @testset "batch problem matches windowed problem" begin
     solver = VectorSolver()
