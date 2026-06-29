@@ -102,15 +102,22 @@ function compute_target(
     end
 end
 function finalize_connectedgraph_output!(
-    output, 
-    m::SensitivityAnalysis{<:AbstractQuality}, 
+    output,
+    m::SensitivityAnalysis{<:AbstractQuality},
     level::ConnectedGraphLevel,
-    cgi::ConnectedGraphInit, 
+    cgi::ConnectedGraphInit,
 )
     # Divide final summed output by source quality.
-    # This has better fp characteristics than summing smaller numbers.
+    # Skip qˢ == 0 sources to avoid 0/0 = NaN.
     if sensitivitytype(m) isa Sensitivity
-        output[sourceids(cgi)] ./= sourcequality(cgi)
+        qs = sourcequality(cgi)
+        sids = sourceids(cgi)
+        @inbounds for k in eachindex(qs)
+            q = qs[k]
+            if !iszero(q)
+                output[sids[k]] /= q
+            end
+        end
     end
 
     # Maybe scale by eigmax

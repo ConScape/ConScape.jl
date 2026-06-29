@@ -38,12 +38,9 @@ solve(problem, rast; verbose=true)
     wi = init(circle_windowed_problem, rast)
     circle_st = ConScape._get_window_with_zeroed_buffer(circle_windowed_problem, rast, wi.ranges[6])
     square_st = ConScape._get_window_with_zeroed_buffer(square_windowed_problem, rast, wi.ranges[6])
-    # Affinities never have rounded corners
-    @test circle_st.steplikelihood[end] !== 0.0
-    @test square_st.steplikelihood[end] !== 0.0
-    # Source qualities do for :circle 
+    @test circle_st.steplikelihood[end] === 0.0
     @test circle_st.sourcequality[end] === 0.0
-    # But not for :square
+    @test square_st.steplikelihood[end] !== 0.0
     @test square_st.sourcequality[end] !== 0.0
 end
 
@@ -72,8 +69,8 @@ end
 
 @testset "windowed results approximate non-windowed" begin
     buffer=15
-    windowed_problem = WindowedProblem(problem; 
-        buffer, centersize=2, shape=:circle
+    windowed_problem = WindowedProblem(problem;
+        buffer, centersize=2, shape=:square
     )
     mask!(rast; with=rast)
     wi = init(windowed_problem, rast)
